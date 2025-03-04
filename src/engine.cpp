@@ -759,21 +759,52 @@ bool Engine::loadAssets() {
     
     // Load weapon texture (ID 5)
     std::cout << "Loading weapon texture (shotgun.webp)..." << std::endl;
-    m_weaponTexture = m_textureManager->loadTexture(assetsPath + "shotgun.webp");
-    if (m_weaponTexture < 0) {
+    SDL_Surface* tempSurface = IMG_Load((assetsPath + "shotgun.webp").c_str());
+    if (tempSurface) {
+        // Set black as the transparent color
+        SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
+        
+        // Create texture from surface
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
+        if (texture) {
+            // Enable alpha blending for the texture
+            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+            m_weaponTexture = m_textureManager->addTexture(texture);
+            SDL_FreeSurface(tempSurface);
+        } else {
+            SDL_FreeSurface(tempSurface);
+            std::cout << "Failed to create weapon texture from surface, creating solid color" << std::endl;
+            m_weaponTexture = m_textureManager->createSolidTexture(256, 256, Color(128, 128, 128));
+        }
+    } else {
         std::cout << "Failed to load weapon texture (shotgun.webp), creating solid color" << std::endl;
         m_weaponTexture = m_textureManager->createSolidTexture(256, 256, Color(128, 128, 128));
     }
     std::cout << "Weapon texture ID: " << m_weaponTexture << std::endl;
     
-    // Load machine gun texture (ID 6)
+    // Load machine gun texture (ID 6) with transparency
     std::cout << "Loading machine gun texture (machine_gun.png)..." << std::endl;
-    m_machineGunTexture = m_textureManager->loadTexture(assetsPath + "machine_gun.png");
-    if (m_machineGunTexture < 0) {
+    tempSurface = IMG_Load((assetsPath + "machine_gun.png").c_str());
+    if (tempSurface) {
+        // Set black as the transparent color
+        SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
+        
+        // Create texture from surface
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
+        if (texture) {
+            // Enable alpha blending for the texture
+            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+            m_machineGunTexture = m_textureManager->addTexture(texture);
+            SDL_FreeSurface(tempSurface);
+        } else {
+            SDL_FreeSurface(tempSurface);
+            std::cout << "Failed to create machine gun texture from surface, creating solid color" << std::endl;
+            m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 100));
+        }
+    } else {
         std::cout << "Failed to load machine gun texture, creating solid color" << std::endl;
         m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 100));
     }
-    std::cout << "Machine gun texture ID: " << m_machineGunTexture << std::endl;
     
     // Set initial weapon texture
     m_currentWeaponTexture = m_weaponTexture;

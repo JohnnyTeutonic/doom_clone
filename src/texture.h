@@ -80,6 +80,26 @@ public:
     // Create a texture from an SDL surface
     int createTextureFromSurface(SDL_Surface* surface);
     
+    // Add an existing SDL texture
+    int addTexture(SDL_Texture* sdlTexture) {
+        if (!sdlTexture) return -1;
+        
+        auto texture = std::make_unique<Texture>();
+        
+        // Get texture dimensions
+        int width, height;
+        SDL_QueryTexture(sdlTexture, nullptr, nullptr, &width, &height);
+        texture->m_width = width;
+        texture->m_height = height;
+        
+        // Store the SDL texture
+        texture->m_sdlTexture.reset(sdlTexture);
+        
+        // Add texture to the manager
+        m_textures.push_back(std::move(texture));
+        return static_cast<int>(m_textures.size() - 1);
+    }
+    
     // Get a texture by ID
     const Texture* getTexture(int id) const;
     
