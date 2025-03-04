@@ -37,6 +37,9 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_font(nullptr)
     , m_notificationTexture(nullptr)
     , m_notificationRect{}
+    , m_audioSystem(nullptr)
+    , m_musicEnabled(true)
+    , m_prevKeyboardState{}
 {
     std::cout << "Engine created with resolution " << screenWidth << "x" << screenHeight << std::endl;
 }
@@ -48,7 +51,7 @@ Engine::~Engine() {
     if (m_projectileManager) delete m_projectileManager;
     if (m_spriteManager) delete m_spriteManager;
     if (m_textureManager) delete m_textureManager;
-    if (m_renderer) delete m_renderer;
+    if (m_audioSystem) delete m_audioSystem;
     
     // Clean up font resources
     if (m_notificationTexture) SDL_DestroyTexture(m_notificationTexture);
@@ -75,8 +78,8 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_targetFPS = targetFPS;
     m_frameTime = 1.0 / targetFPS;
     
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    // Initialize SDL with explicit keyboard support
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS) != 0) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
         return false;
     }
@@ -141,6 +144,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_renderer->init(m_screenWidth, m_screenHeight, m_fullscreen);
     m_renderer->setSDLRenderer(m_sdlRenderer);
     m_renderer->setTextureManager(m_textureManager);
+    m_renderer->setEngine(this);  // Set the engine reference
     std::cout << "Renderer initialized: " << m_renderer << std::endl;
     
     // Create sprite manager
@@ -193,6 +197,24 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_gameState = GameState::Playing;
     m_running = true;
     
+    // Initialize audio system
+    m_audioSystem = new AudioSystem();
+    if (!m_audioSystem->init()) {
+        std::cerr << "Failed to initialize audio system!" << std::endl;
+        // Continue anyway, audio is not critical
+    } else {
+        std::cout << "Audio system initialized: " << m_audioSystem << std::endl;
+        
+        // Load and play the background music
+        std::string musicPath = "assets/music/M_E1M1.mid";
+        if (m_audioSystem->loadMusic(musicPath)) {
+            if (m_musicEnabled) {
+                m_audioSystem->playMusic(true); // Loop the music
+            }
+        } else {
+            std::cerr << "Failed to load music: " << musicPath << std::endl;
+        }
+    }
     
     std::cout << "Engine initialization complete!" << std::endl;
     std::cout << "=============================================================" << std::endl;
@@ -284,140 +306,214 @@ void Engine::restartGame() {
 }
 
 void Engine::processInput() {
-    // Handle SDL events
+    // Process SDL events
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
             m_running = false;
         }
-        else if (event.type == SDL_KEYDOWN) {
-            switch (event.key.keysym.sym) {
-                case SDLK_ESCAPE:
-                    m_running = false;
-                    break;
-                case SDLK_2:  // Switch to machine gun
-                    if (m_currentWeaponTexture != m_machineGunTexture) {
-                        m_currentWeaponTexture = m_machineGunTexture;
-                        m_notificationText = "Switched to machine gun";
-                        m_notificationTimer = 3.0;  // Show for 3 seconds
-                        std::cout << "Switched to machine gun" << std::endl;
-                    }
-                    break;
-                case SDLK_1:  // Switch back to default weapon
-                    if (m_currentWeaponTexture != m_weaponTexture) {
-                        m_currentWeaponTexture = m_weaponTexture;
-                        m_notificationText = "Switched to shotgun";
-                        m_notificationTimer = 3.0;  // Show for 3 seconds
-                        std::cout << "Switched to shotgun" << std::endl;
-                    }
-                    break;
-                case SDLK_F1:  // Low performance mode
-                    if (m_renderer) {
-                        m_renderer->setPerformanceLevel(PerformanceLevel::Low);
-                        m_notificationText = "Performance: LOW (maximum FPS)";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Switched to LOW performance mode" << std::endl;
-                    }
-                    break;
-                case SDLK_F2:  // Medium performance mode
-                    if (m_renderer) {
-                        m_renderer->setPerformanceLevel(PerformanceLevel::Medium);
-                        m_notificationText = "Performance: MEDIUM (balanced)";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Switched to MEDIUM performance mode" << std::endl;
-                    }
-                    break;
-                case SDLK_F3:  // High performance mode
-                    if (m_renderer) {
-                        m_renderer->setPerformanceLevel(PerformanceLevel::High);
-                        m_notificationText = "Performance: HIGH (best visuals)";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Switched to HIGH performance mode" << std::endl;
-                    }
-                    break;
-                case SDLK_l:  // Toggle lighting
-                    if (m_renderer) {
-                        m_renderer->toggleLighting();
-                        m_notificationText = "Lighting toggled";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Lighting toggled" << std::endl;
-                    }
-                    break;
-                case SDLK_SPACE:
-                    // Manual firing test (independent of player state)
-                    std::cout << "SPACE key pressed - Manual firing test" << std::endl;
-                    if (m_projectileManager) {
-                        Vec2 bulletPos = m_player.getPosition();
-                        Vec2 bulletDir = m_player.getDirection();
-                        
-                        // Move bullet in front of player
-                        bulletPos.x += bulletDir.x * 1.0;
-                        bulletPos.y += bulletDir.y * 1.0;
-                        
-                        int bulletId = m_projectileManager->createProjectile(
-                            bulletPos, 
-                            bulletDir, 
-                            ProjectileType::Bullet,
-                            15.0,  // Speed
-                            30.0   // Damage
-                        );
-                        
-                        std::cout << "Created manual test bullet with ID " << bulletId 
-                                  << " at (" << bulletPos.x << ", " << bulletPos.y << ")" << std::endl;
-                    } else {
-                        std::cerr << "ERROR: Could not create manual test bullet - Projectile manager is null!" << std::endl;
-                    }
-                    break;
+        
+        // Let the input handler process the event
+        m_inputHandler.processEvent(event);
+    }
+    
+    // WSL2 workaround: Get keyboard state directly
+    int numKeys;
+    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
+    
+    // Process input actions
+    if (m_gameState == GameState::Playing) {
+        // Movement - use direct keyboard state for better compatibility with WSL2
+        if (keyboardState[SDL_SCANCODE_W]) {
+            m_player.moveForward(m_deltaTime, m_map);
+        }
+        if (keyboardState[SDL_SCANCODE_S]) {
+            m_player.moveBackward(m_deltaTime, m_map);
+        }
+        if (keyboardState[SDL_SCANCODE_A]) {
+            m_player.strafeLeft(m_deltaTime, m_map);
+        }
+        if (keyboardState[SDL_SCANCODE_D]) {
+            m_player.strafeRight(m_deltaTime, m_map);
+        }
+        if (keyboardState[SDL_SCANCODE_LEFT]) {
+            m_player.rotateLeft(m_deltaTime);
+        }
+        if (keyboardState[SDL_SCANCODE_RIGHT]) {
+            m_player.rotateRight(m_deltaTime);
+        }
+        
+        // Vertical looking - use direct keyboard state for up and down arrow keys
+        if (keyboardState[SDL_SCANCODE_UP]) {
+            m_player.lookUp(m_deltaTime);
+        }
+        if (keyboardState[SDL_SCANCODE_DOWN]) {
+            m_player.lookDown(m_deltaTime);
+        }
+        
+        // Shooting - use direct keyboard state for Space
+        if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
+            if (m_player.fire()) {
+                // Apply recoil effect
+                m_weaponRecoil = 0.1;
+                
+                // Apply muzzle flash effect
+                m_flashIntensity = 1.0;
             }
+            m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
+        } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
+            m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
+        }
+        
+        // Reload - use direct keyboard state for R
+        if (keyboardState[SDL_SCANCODE_R] && !m_prevKeyboardState[SDL_SCANCODE_R]) {
+            m_player.reload();
+            m_prevKeyboardState[SDL_SCANCODE_R] = true;
+        } else if (!keyboardState[SDL_SCANCODE_R]) {
+            m_prevKeyboardState[SDL_SCANCODE_R] = false;
+        }
+        
+        // Toggle lighting - use direct keyboard state for L
+        if (keyboardState[SDL_SCANCODE_L] && !m_prevKeyboardState[SDL_SCANCODE_L]) {
+            if (m_renderer) {
+                m_renderer->toggleLighting();
+                showNotification("Lighting toggled", 2.0);
+            }
+            m_prevKeyboardState[SDL_SCANCODE_L] = true;
+        } else if (!keyboardState[SDL_SCANCODE_L]) {
+            m_prevKeyboardState[SDL_SCANCODE_L] = false;
+        }
+        
+        // Toggle displays - use direct keyboard state for function keys
+        if (keyboardState[SDL_SCANCODE_F1] && !m_prevKeyboardState[SDL_SCANCODE_F1]) {
+            m_renderer->toggleFPS();
+            m_prevKeyboardState[SDL_SCANCODE_F1] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F1]) {
+            m_prevKeyboardState[SDL_SCANCODE_F1] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_F2] && !m_prevKeyboardState[SDL_SCANCODE_F2]) {
+            m_renderer->toggleMinimap();
+            m_prevKeyboardState[SDL_SCANCODE_F2] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F2]) {
+            m_prevKeyboardState[SDL_SCANCODE_F2] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_F3] && !m_prevKeyboardState[SDL_SCANCODE_F3]) {
+            m_renderer->toggleWeapon();
+            m_prevKeyboardState[SDL_SCANCODE_F3] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F3]) {
+            m_prevKeyboardState[SDL_SCANCODE_F3] = false;
+        }
+        
+        // Weapon switching - use direct keyboard state for 1 and 2
+        if (keyboardState[SDL_SCANCODE_1] && !m_prevKeyboardState[SDL_SCANCODE_1]) {
+            if (m_currentWeaponTexture != m_weaponTexture) {
+                m_currentWeaponTexture = m_weaponTexture;
+                showNotification("Switched to shotgun", 2.0);
+            }
+            m_prevKeyboardState[SDL_SCANCODE_1] = true;
+        } else if (!keyboardState[SDL_SCANCODE_1]) {
+            m_prevKeyboardState[SDL_SCANCODE_1] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_2] && !m_prevKeyboardState[SDL_SCANCODE_2]) {
+            if (m_currentWeaponTexture != m_machineGunTexture) {
+                m_currentWeaponTexture = m_machineGunTexture;
+                showNotification("Switched to machine gun", 2.0);
+            }
+            m_prevKeyboardState[SDL_SCANCODE_2] = true;
+        } else if (!keyboardState[SDL_SCANCODE_2]) {
+            m_prevKeyboardState[SDL_SCANCODE_2] = false;
+        }
+        
+        // Audio controls - use direct keyboard state for better compatibility with WSL2
+        if (keyboardState[SDL_SCANCODE_M] && !m_prevKeyboardState[SDL_SCANCODE_M]) {
+            toggleMusic();
+            m_prevKeyboardState[SDL_SCANCODE_M] = true;
+        } else if (!keyboardState[SDL_SCANCODE_M]) {
+            m_prevKeyboardState[SDL_SCANCODE_M] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_PAGEUP] && !m_prevKeyboardState[SDL_SCANCODE_PAGEUP]) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getMusicVolume();
+                setMusicVolume(currentVolume + 8); // Increase by ~6% (8/128)
+            }
+            m_prevKeyboardState[SDL_SCANCODE_PAGEUP] = true;
+        } else if (!keyboardState[SDL_SCANCODE_PAGEUP]) {
+            m_prevKeyboardState[SDL_SCANCODE_PAGEUP] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_PAGEDOWN] && !m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN]) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getMusicVolume();
+                setMusicVolume(currentVolume - 8); // Decrease by ~6% (8/128)
+            }
+            m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = true;
+        } else if (!keyboardState[SDL_SCANCODE_PAGEDOWN]) {
+            m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_HOME] && !m_prevKeyboardState[SDL_SCANCODE_HOME]) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getSfxVolume();
+                setSfxVolume(currentVolume + 8); // Increase by ~6% (8/128)
+            }
+            m_prevKeyboardState[SDL_SCANCODE_HOME] = true;
+        } else if (!keyboardState[SDL_SCANCODE_HOME]) {
+            m_prevKeyboardState[SDL_SCANCODE_HOME] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_END] && !m_prevKeyboardState[SDL_SCANCODE_END]) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getSfxVolume();
+                setSfxVolume(currentVolume - 8); // Decrease by ~6% (8/128)
+            }
+            m_prevKeyboardState[SDL_SCANCODE_END] = true;
+        } else if (!keyboardState[SDL_SCANCODE_END]) {
+            m_prevKeyboardState[SDL_SCANCODE_END] = false;
         }
     }
     
-    // Get keyboard state
-    const Uint8* keyState = SDL_GetKeyboardState(NULL);
-    
-    // Handle movement
-    double moveSpeed = 3.0 * m_deltaTime;
-    double rotSpeed = 2.0 * m_deltaTime;
-    
-    if (keyState[SDL_SCANCODE_W]) {
-        m_player.moveForward(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_S]) {
-        m_player.moveBackward(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_D]) {
-        m_player.strafeRight(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_A]) {
-        m_player.strafeLeft(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_RIGHT]) {
-        m_player.rotateLeft(rotSpeed);
-    }
-    if (keyState[SDL_SCANCODE_LEFT]) {
-        m_player.rotateRight(rotSpeed);
+    // Global actions (work in any state)
+    if (keyboardState[SDL_SCANCODE_ESCAPE] && !m_prevKeyboardState[SDL_SCANCODE_ESCAPE]) {
+        if (m_gameState == GameState::Playing) {
+            setState(GameState::Paused);
+        } else if (m_gameState == GameState::Paused) {
+            setState(GameState::Playing);
+        }
+        m_prevKeyboardState[SDL_SCANCODE_ESCAPE] = true;
+    } else if (!keyboardState[SDL_SCANCODE_ESCAPE]) {
+        m_prevKeyboardState[SDL_SCANCODE_ESCAPE] = false;
     }
     
-    // Handle vertical looking with Up and Down arrow keys
-    if (keyState[SDL_SCANCODE_UP]) {
-        m_player.lookUp(m_deltaTime);
-    }
-    if (keyState[SDL_SCANCODE_DOWN]) {
-        m_player.lookDown(m_deltaTime);
+    if (keyboardState[SDL_SCANCODE_Q] && !m_prevKeyboardState[SDL_SCANCODE_Q]) {
+        m_running = false;
+        m_prevKeyboardState[SDL_SCANCODE_Q] = true;
+    } else if (!keyboardState[SDL_SCANCODE_Q]) {
+        m_prevKeyboardState[SDL_SCANCODE_Q] = false;
     }
     
-    // Normal fire through player object
-    if (keyState[SDL_SCANCODE_SPACE]) {
-        std::cout << "Trying to fire through player object..." << std::endl;
-        
-        // Check if player has a project manager
-        if (m_player.getProjectileManager()) {
-            std::cout << "Player has projectile manager: " << m_player.getProjectileManager() << std::endl;
-            bool fireSuccess = m_player.fire();
-            std::cout << "Player fire result: " << (fireSuccess ? "SUCCESS" : "FAILED") << std::endl;
+    // Process mouse movement for camera rotation
+    int mouseX, mouseY;
+    m_inputHandler.getMouseMotion(mouseX, mouseY);
+    
+    if (mouseX != 0) {
+        // Use the existing rotation methods with the mouse input
+        if (mouseX > 0) {
+            m_player.rotateLeft(m_deltaTime * mouseX * 0.01);
         } else {
-            std::cerr << "ERROR: Player has no projectile manager! Reconnecting..." << std::endl;
-            m_player.setProjectileManager(m_projectileManager);
+            m_player.rotateRight(m_deltaTime * -mouseX * 0.01);
+        }
+    }
+    
+    if (mouseY != 0) {
+        // Use the existing look methods with the mouse input
+        if (mouseY > 0) {
+            m_player.lookDown(m_deltaTime * mouseY * 0.01);
+        } else {
+            m_player.lookUp(m_deltaTime * -mouseY * 0.01);
         }
     }
 }
@@ -473,6 +569,9 @@ void Engine::update() {
             setState(GameState::Paused);
         }
     }
+    
+    // Update input handler at the end of the frame
+    m_inputHandler.update();
 }
 
 void Engine::renderNotification() {
@@ -858,103 +957,138 @@ bool Engine::loadAssets() {
     
     // Create enemy texture
     std::cout << "Creating enemy texture..." << std::endl;
-    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 32, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    
+    // Create an array of enemy textures for animation frames
+    const int enemyFrameCount = 4;
+    m_enemyTextureFrames.resize(enemyFrameCount);
+    
+    // Create a surface for the enemy sprite sheet
+    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0, 0, 0, 0);
     if (enemySurface) {
+        // Lock surface for direct pixel access
         SDL_LockSurface(enemySurface);
-        Uint32* pixels = (Uint32*)enemySurface->pixels;
         
-        // Colors for the demon
-        Uint32 darkRed = SDL_MapRGBA(enemySurface->format, 139, 0, 0, 255);      // Dark red for body
-        Uint32 lightRed = SDL_MapRGBA(enemySurface->format, 220, 20, 20, 255);   // Lighter red for highlights
-        Uint32 brown = SDL_MapRGBA(enemySurface->format, 139, 69, 19, 255);      // Brown for horns
-        Uint32 yellow = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);     // Yellow for eyes
-        Uint32 black = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);          // Black for details
-        
-        // Fill with transparent color first
-        Uint32 transparent = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
-        for (int i = 0; i < 32 * 64; i++) {
-            pixels[i] = transparent;
-        }
-        
-        // Draw humanoid shape (narrower body)
-        for (int y = 15; y < 60; y++) {
-            int width = 12;  // Base body width
-            // Wider at shoulders (y=20), narrower at waist (y=40)
-            if (y < 25) width = 16;  // Shoulders
-            else if (y > 40) width = 14;  // Legs
-            
-            int startX = (32 - width) / 2;
-            for (int x = startX; x < startX + width; x++) {
-                pixels[y * 32 + x] = darkRed;
-            }
-        }
-        
-        // Draw horns (smaller and more pointed)
-        for (int y = 0; y < 15; y++) {
-            for (int x = 8; x < 13; x++) {
-                if (x - 8 <= y/2) pixels[y * 32 + x] = brown;
-            }
-            for (int x = 19; x < 24; x++) {
-                if (24 - x <= y/2) pixels[y * 32 + x] = brown;
-            }
-        }
-        
-        // Draw eyes (yellow circles with black centers)
-        for (int y = 18; y < 28; y++) {
-            for (int x = 8; x < 15; x++) {
-                int dx = x - 11;
-                int dy = y - 23;
-                if (dx*dx + dy*dy < 9) {
-                    pixels[y * 32 + x] = yellow;
-                    if (dx*dx + dy*dy < 4) {
-                        pixels[y * 32 + x] = black;
-                    }
-                }
-            }
-            for (int x = 17; x < 24; x++) {
-                int dx = x - 20;
-                int dy = y - 23;
-                if (dx*dx + dy*dy < 9) {
-                    pixels[y * 32 + x] = yellow;
-                    if (dx*dx + dy*dy < 4) {
-                        pixels[y * 32 + x] = black;
-                    }
-                }
-            }
-        }
-        
-        // Draw mouth (smaller and more defined)
-        for (int y = 30; y < 38; y++) {
-            for (int x = 10; x < 22; x++) {
-                // Main mouth line
-                if (y == 34) pixels[y * 32 + x] = black;
+        // Create a basic enemy texture (red with eyes)
+        Uint32* pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (dark red)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
                 
-                // Teeth
-                if (y > 34 && y < 37 && (x % 4 < 2)) {
-                    pixels[y * 32 + x] = lightRed;
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
+                    // Eyes (yellow)
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
                 }
-            }
-        }
-        
-        // Add muscle definition with lighter red
-        for (int y = 15; y < 60; y++) {
-            int width = 12;
-            if (y < 25) width = 16;
-            else if (y > 40) width = 14;
-            
-            int startX = (32 - width) / 2;
-            for (int x = startX; x < startX + width; x++) {
-                if ((x + y) % 6 == 0 && pixels[y * 32 + x] == darkRed) {
-                    pixels[y * 32 + x] = lightRed;
+                else if (x >= 20 && x <= 44 && y >= 40 && y <= 45) {
+                    // Mouth (black)
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
                 }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
             }
         }
         
         SDL_UnlockSurface(enemySurface);
-        m_enemyTexture = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create the first frame
+        m_enemyTextureFrames[0] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create frame 2 (slightly different - eyes narrowed)
+        SDL_LockSurface(enemySurface);
+        pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (dark red)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 18 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 18 && y <= 25)) {
+                    // Eyes (yellow) - narrowed
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                }
+                else if (x >= 20 && x <= 44 && y >= 40 && y <= 45) {
+                    // Mouth (black)
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
+            }
+        }
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTextureFrames[1] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create frame 3 (mouth open)
+        SDL_LockSurface(enemySurface);
+        pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (dark red)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
+                    // Eyes (yellow)
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                }
+                else if (x >= 20 && x <= 44 && y >= 38 && y <= 48) {
+                    // Mouth (black) - open wider
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
+            }
+        }
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTextureFrames[2] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create frame 4 (attacking)
+        SDL_LockSurface(enemySurface);
+        pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (bright red - angry)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 255, 0, 0);
+                
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
+                    // Eyes (bright yellow)
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                }
+                else if (x >= 15 && x <= 49 && y >= 35 && y <= 50) {
+                    // Mouth (black) - wide open with teeth
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                    
+                    // Add teeth
+                    if ((y == 35 || y == 36) && 
+                        ((x >= 20 && x <= 25) || (x >= 30 && x <= 35) || (x >= 40 && x <= 45))) {
+                        color = SDL_MapRGB(enemySurface->format, 255, 255, 255);
+                    }
+                }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
+            }
+        }
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTextureFrames[3] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Free the surface
         SDL_FreeSurface(enemySurface);
+        
+        // Set the main enemy texture to the first frame
+        m_enemyTexture = m_enemyTextureFrames[0];
     } else {
+        // Fallback to a simple solid texture if surface creation fails
         m_enemyTexture = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
+        m_enemyTextureFrames.push_back(m_enemyTexture);
     }
     std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
     
@@ -1403,7 +1537,23 @@ void Engine::createSpritesFromMap() {
                 // Create an enemy sprite
                 double size = 0.8; // Standard enemy size
                 int textureId = m_enemyTexture; // Use the enemy texture
-                m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                
+                // Set up animation for the enemy
+                if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
+                    Sprite* enemy = m_spriteManager->getSprite(spriteId);
+                    if (enemy) {
+                        // Set up animation with 4 frames at 2 frames per second
+                        enemy->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
+                        
+                        // Set movement properties
+                        enemy->setMoveSpeed(1.5); // Units per second
+                        enemy->setTurnSpeed(2.0); // Radians per second
+                        
+                        // Set health
+                        enemy->setHealth(100.0);
+                    }
+                }
                 
                 // Clear the cell so we don't have both a cell and a sprite
                 m_map.setCell(x, y, CellType::Empty);
@@ -1456,6 +1606,65 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_F2, InputAction::ToggleMinimap);
     m_inputHandler.bindKey(SDL_SCANCODE_F3, InputAction::ToggleWeapon);
     
+    // Audio control keys
+    m_inputHandler.bindKey(SDL_SCANCODE_M, InputAction::ToggleMusic);
+    m_inputHandler.bindKey(SDL_SCANCODE_PAGEUP, InputAction::IncreaseMusicVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_PAGEDOWN, InputAction::DecreaseMusicVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_HOME, InputAction::IncreaseSfxVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_END, InputAction::DecreaseSfxVolume);
+    
     // Enable mouse capture for looking around
     m_inputHandler.setMouseCapture(true);
+}
+
+void Engine::toggleMusic() {
+    if (!m_audioSystem) return;
+    
+    m_musicEnabled = !m_musicEnabled;
+    
+    if (m_musicEnabled) {
+        m_audioSystem->resumeMusic();
+    } else {
+        m_audioSystem->pauseMusic();
+    }
+    
+    // Show notification
+    std::string message = m_musicEnabled ? "Music: On" : "Music: Off";
+    showNotification(message, 2.0);
+}
+
+void Engine::setMusicVolume(int volume) {
+    if (!m_audioSystem) return;
+    
+    m_audioSystem->setMusicVolume(volume);
+    
+    // Show notification
+    std::string message = "Music Volume: " + std::to_string(volume * 100 / MIX_MAX_VOLUME) + "%";
+    showNotification(message, 2.0);
+}
+
+void Engine::setSfxVolume(int volume) {
+    if (!m_audioSystem) return;
+    
+    m_audioSystem->setSfxVolume(volume);
+    
+    // Show notification
+    std::string message = "SFX Volume: " + std::to_string(volume * 100 / MIX_MAX_VOLUME) + "%";
+    showNotification(message, 2.0);
+}
+
+bool Engine::isMusicPlaying() const {
+    if (!m_audioSystem) return false;
+    return m_audioSystem->isMusicPlaying();
+}
+
+void Engine::showNotification(const std::string& text, double duration) {
+    m_notificationText = text;
+    m_notificationTimer = duration;
+    
+    // Clean up any existing notification texture
+    if (m_notificationTexture) {
+        SDL_DestroyTexture(m_notificationTexture);
+        m_notificationTexture = nullptr;
+    }
 } 

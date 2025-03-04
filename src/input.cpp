@@ -17,24 +17,36 @@ InputHandler::~InputHandler() {
 }
 
 void InputHandler::init() {
-    // Set up default key bindings
-    bindKey(SDL_SCANCODE_W, InputAction::MoveForward);
-    bindKey(SDL_SCANCODE_S, InputAction::MoveBackward);
-    bindKey(SDL_SCANCODE_D, InputAction::StrafeLeft);
-    bindKey(SDL_SCANCODE_A, InputAction::StrafeRight);
-    bindKey(SDL_SCANCODE_LEFT, InputAction::RotateLeft);
-    bindKey(SDL_SCANCODE_RIGHT, InputAction::RotateRight);
-    bindKey(SDL_SCANCODE_SPACE, InputAction::Fire);
-    bindKey(SDL_SCANCODE_R, InputAction::Reload);
-    bindKey(SDL_SCANCODE_E, InputAction::Use);
-    bindKey(SDL_SCANCODE_LCTRL, InputAction::Crouch);
-    bindKey(SDL_SCANCODE_ESCAPE, InputAction::Menu);
-    bindKey(SDL_SCANCODE_Q, InputAction::Quit);
+    // Clear any existing bindings
+    m_keyBindings.clear();
+    
+    // We'll let the Engine class set up the key bindings
 }
 
 void InputHandler::update() {
     // Store current key states as previous states
     m_prevKeyStates = m_keyStates;
+    
+    // Get current keyboard state directly from SDL
+    int numKeys;
+    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
+    
+    // Update our key state map
+    for (auto& binding : m_keyBindings) {
+        SDL_Scancode scancode = binding.first;
+        if (scancode < numKeys) {
+            bool wasDown = m_keyStates[scancode];
+            bool isDown = keyboardState[scancode] ? true : false;
+            m_keyStates[scancode] = isDown;
+            
+            // Debug output for key state changes
+            if (isDown && !wasDown) {
+                std::cout << "Key pressed (direct): " << SDL_GetScancodeName(scancode) << " (scancode: " << scancode << ")" << std::endl;
+            } else if (!isDown && wasDown) {
+                std::cout << "Key released (direct): " << SDL_GetScancodeName(scancode) << " (scancode: " << scancode << ")" << std::endl;
+            }
+        }
+    }
     
     // Reset mouse motion
     m_mouseRelX = 0;
@@ -44,10 +56,12 @@ void InputHandler::update() {
 bool InputHandler::processEvent(const SDL_Event& event) {
     switch (event.type) {
         case SDL_KEYDOWN:
+            std::cout << "Key pressed: " << SDL_GetScancodeName(event.key.keysym.scancode) << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
             m_keyStates[event.key.keysym.scancode] = true;
             return true;
             
         case SDL_KEYUP:
+            std::cout << "Key released: " << SDL_GetScancodeName(event.key.keysym.scancode) << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
             m_keyStates[event.key.keysym.scancode] = false;
             return true;
             
@@ -122,6 +136,7 @@ bool InputHandler::isActionActive(InputAction action) const {
     // Find all keys bound to this action
     for (const auto& binding : m_keyBindings) {
         if (binding.second == action && isKeyDown(binding.first)) {
+            std::cout << "Action active: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
             return true;
         }
     }
@@ -133,6 +148,7 @@ bool InputHandler::isActionJustPressed(InputAction action) const {
     // Find all keys bound to this action
     for (const auto& binding : m_keyBindings) {
         if (binding.second == action && isKeyPressed(binding.first)) {
+            std::cout << "Action just pressed: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
             return true;
         }
     }
@@ -153,6 +169,7 @@ bool InputHandler::isActionJustReleased(InputAction action) const {
 
 void InputHandler::bindKey(SDL_Scancode key, InputAction action) {
     m_keyBindings[key] = action;
+    std::cout << "Bound key: " << SDL_GetScancodeName(key) << " (scancode: " << key << ") to action: " << static_cast<int>(action) << std::endl;
 }
 
 void InputHandler::unbindKey(SDL_Scancode key) {

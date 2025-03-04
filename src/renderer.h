@@ -46,6 +46,7 @@ private:
     TextureManager* m_textureManager;
     SpriteManager* m_spriteManager;
     ProjectileManager* m_projectileManager;
+    const Engine* m_engine;  // Reference to the engine for texture frames
     LightingSystem m_lightingSystem;  // New lighting system
     
     // Rendering options
@@ -100,6 +101,7 @@ public:
     void setTextureManager(TextureManager* textureManager) { m_textureManager = textureManager; }
     void setSpriteManager(SpriteManager* spriteManager) { m_spriteManager = spriteManager; }
     void setProjectileManager(ProjectileManager* projectileManager) { m_projectileManager = projectileManager; }
+    void setEngine(const Engine* engine) { m_engine = engine; }
     
     // Get managers
     TextureManager* getTextureManager() const { return m_textureManager; }

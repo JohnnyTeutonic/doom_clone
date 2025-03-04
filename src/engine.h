@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
 // Forward declarations
 class Renderer;
@@ -16,6 +17,7 @@ class ProjectileManager;
 class InputHandler;
 class Map;
 class Player;
+class AudioSystem;
 
 #include "renderer.h"
 #include "map.h"
@@ -25,6 +27,7 @@ class Player;
 #include "projectile.h"
 #include "input.h"
 #include "utils.h"
+#include "audio.h"
 
 // Game states
 enum class GameState {
@@ -65,11 +68,25 @@ public:
     double getWeaponRecoil() const { return m_weaponRecoil; }
     double getFlashIntensity() const { return m_flashIntensity; }
     
-    // Getter for weapon texture
+    // Texture getters
+    int getWallTexture() const { return m_wallTexture; }
+    int getFloorTexture() const { return m_floorTexture; }
+    int getCeilingTexture() const { return m_ceilingTexture; }
+    int getEnemyTexture() const { return m_enemyTexture; }
+    const std::vector<int>& getEnemyTextureFrames() const { return m_enemyTextureFrames; }
     int getWeaponTexture() const { return m_weaponTexture; }
     
     // Create sprites from map cells
     void createSpritesFromMap();
+    
+    // Audio control
+    void toggleMusic();
+    void setMusicVolume(int volume);
+    void setSfxVolume(int volume);
+    bool isMusicPlaying() const;
+    
+    // Notification system
+    void showNotification(const std::string& text, double duration);
     
 private:
     void processInput();
@@ -119,6 +136,7 @@ private:
     int m_floorTexture;
     int m_ceilingTexture;
     int m_enemyTexture;
+    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
     int m_weaponTexture;
     int m_bulletTexture;
     int m_machineGunTexture;
@@ -133,6 +151,13 @@ private:
     TTF_Font* m_font;
     SDL_Texture* m_notificationTexture;
     SDL_Rect m_notificationRect;
+    
+    // Audio system
+    AudioSystem* m_audioSystem;
+    bool m_musicEnabled;
+    
+    // Keyboard state tracking for WSL2 compatibility
+    std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
     
     // Private methods
     void setupMap();

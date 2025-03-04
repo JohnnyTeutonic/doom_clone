@@ -129,6 +129,30 @@ doom_clone/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/build
 .PHONY : doom_clone/fast
 
+src/audio.o: src/audio.cpp.o
+.PHONY : src/audio.o
+
+# target to build an object file
+src/audio.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.o
+.PHONY : src/audio.cpp.o
+
+src/audio.i: src/audio.cpp.i
+.PHONY : src/audio.i
+
+# target to preprocess a source file
+src/audio.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.i
+.PHONY : src/audio.cpp.i
+
+src/audio.s: src/audio.cpp.s
+.PHONY : src/audio.s
+
+# target to generate assembly for a file
+src/audio.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.s
+.PHONY : src/audio.cpp.s
+
 src/engine.o: src/engine.cpp.o
 .PHONY : src/engine.o
 
@@ -378,6 +402,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... doom_clone"
+	@echo "... src/audio.o"
+	@echo "... src/audio.i"
+	@echo "... src/audio.s"
 	@echo "... src/engine.o"
 	@echo "... src/engine.i"
 	@echo "... src/engine.s"

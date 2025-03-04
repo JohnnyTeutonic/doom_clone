@@ -57,30 +57,105 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
     // Update movement timer
     m_moveTimer += deltaTime;
     
-    // Change direction periodically or when blocked
-    if (m_moveTimer >= m_moveDuration) {
-        changeDirection(map);
-        m_moveTimer = 0.0;
-    }
-
     // Calculate distance to player
     Vec2 toPlayer = playerPos - m_position;
     double distToPlayer = toPlayer.length();
-
-    // If player is within range (8 units), move towards them
-    if (distToPlayer < 8.0) {
-        m_direction = toPlayer.normalized();
-    }
-
-    // Try to move in current direction
-    Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
     
-    // Check if we can move there
-    if (canMoveTo(newPos, map)) {
-        m_position = newPos;
+    // Different behavior states based on distance to player
+    enum class EnemyState { Idle, Patrol, Chase, Attack };
+    
+    // Determine the current state
+    EnemyState state;
+    if (distToPlayer < 1.5) {
+        state = EnemyState::Attack;  // Very close - attack
+    } else if (distToPlayer < 8.0) {
+        state = EnemyState::Chase;   // Within range - chase
+    } else if (m_moveTimer < m_moveDuration) {
+        state = EnemyState::Patrol;  // Normal patrolling
     } else {
-        // If blocked, try to change direction
-        changeDirection(map);
+        state = EnemyState::Idle;    // Idle, about to change direction
+    }
+    
+    // Handle behavior based on state
+    switch (state) {
+        case EnemyState::Idle:
+            // Just stand still briefly, then switch to patrol
+            if (m_moveTimer >= m_moveDuration + 1.0) {
+                changeDirection(map);
+                m_moveTimer = 0.0;
+            }
+            
+            // Use first animation frame for idle
+            if (m_isAnimated && m_frameCount > 0) {
+                m_currentFrame = 0;
+            }
+            break;
+            
+        case EnemyState::Patrol:
+            // Move in current direction at normal speed
+            {
+                Vec2 newPos = m_position + m_direction * m_moveSpeed * 0.5 * deltaTime;
+                if (canMoveTo(newPos, map)) {
+                    m_position = newPos;
+                } else {
+                    // If blocked, change direction
+                    changeDirection(map);
+                }
+                
+                // Use first and second animation frames for patrol
+                if (m_isAnimated && m_frameCount > 1) {
+                    m_currentFrame = (m_currentFrame < 2) ? m_currentFrame : 0;
+                }
+            }
+            break;
+            
+        case EnemyState::Chase:
+            // Move towards player at increased speed
+            {
+                // Update direction to face player
+                m_direction = toPlayer.normalized();
+                
+                // Move towards player
+                Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
+                if (canMoveTo(newPos, map)) {
+                    m_position = newPos;
+                } else {
+                    // If blocked, try to find a path around obstacles
+                    // Try moving laterally
+                    Vec2 lateralDir(-m_direction.y, m_direction.x);
+                    Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                    
+                    if (canMoveTo(lateralPos, map)) {
+                        m_position = lateralPos;
+                    } else {
+                        // Try the other lateral direction
+                        lateralDir = Vec2(m_direction.y, -m_direction.x);
+                        lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                        
+                        if (canMoveTo(lateralPos, map)) {
+                            m_position = lateralPos;
+                        }
+                    }
+                }
+                
+                // Use second and third animation frames for chase
+                if (m_isAnimated && m_frameCount > 2) {
+                    m_currentFrame = 1 + (m_currentFrame % 2);
+                }
+            }
+            break;
+            
+        case EnemyState::Attack:
+            // Attack the player
+            // In a real game, this would deal damage to the player
+            // For now, just face the player and use the attack animation
+            m_direction = toPlayer.normalized();
+            
+            // Use the fourth animation frame (attack) if available
+            if (m_isAnimated && m_frameCount > 3) {
+                m_currentFrame = 3;
+            }
+            break;
     }
 }
 

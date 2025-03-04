@@ -41,9 +41,10 @@ else()
     if(PKG_CONFIG_FOUND)
         pkg_check_modules(SDL2_IMAGE REQUIRED SDL2_image)
         pkg_check_modules(SDL2_TTF REQUIRED SDL2_ttf)
+        pkg_check_modules(SDL2_MIXER REQUIRED SDL2_mixer)
     else()
         # Fallback for systems without pkg-config
-        message(STATUS "pkg-config not found, using direct library linking for SDL2_image and SDL2_ttf")
+        message(STATUS "pkg-config not found, using direct library linking for SDL2_image, SDL2_ttf, and SDL2_mixer")
     endif()
 endif()
 
@@ -59,6 +60,7 @@ set(SOURCES
     src/projectile.cpp
     src/input.cpp
     src/utils.cpp
+    src/audio.cpp
 )
 
 # Header files
@@ -73,6 +75,7 @@ set(HEADERS
     src/input.h
     src/utils.h
     src/lighting.h
+    src/audio.h
 )
 
 # Define executable
@@ -82,10 +85,10 @@ add_executable(doom_clone ${SOURCES} ${HEADERS})
 if(PLATFORM_WINDOWS)
     target_compile_definitions(doom_clone PRIVATE PLATFORM_WINDOWS)
     # Direct linking for MinGW/Windows
-    target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf)
+    target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer)
 else()
     target_compile_definitions(doom_clone PRIVATE PLATFORM_UNIX)
-    target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2main m)
+    target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m)
 endif()
 
 # Copy assets to build directory

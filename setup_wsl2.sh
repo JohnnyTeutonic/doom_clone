@@ -16,7 +16,10 @@ sudo apt install -y \
     libsdl2-image-dev \
     libsdl2-ttf-dev \
     libsdl2-mixer-dev \
-    pkg-config
+    pkg-config \
+    pulseaudio \
+    libsdl2-mixer-2.0-0 \
+    libsdl2-mixer-dev
 
 echo "All required packages installed."
 echo "To build the game:"
