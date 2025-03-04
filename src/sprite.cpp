@@ -5,11 +5,16 @@
 // Sprite implementation
 Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
     : m_position(x, y)
+    , m_direction(1, 0)  // Start facing right
     , m_size(size)
     , m_textureId(textureId)
     , m_type(type)
     , m_isVisible(true)
     , m_isActive(true)
+    , m_moveSpeed(2.0)   // Units per second
+    , m_turnSpeed(2.0)   // Radians per second
+    , m_moveTimer(0.0)
+    , m_moveDuration(2.0)  // Change direction every 2 seconds
     , m_isAnimated(false)
     , m_frameCount(1)
     , m_currentFrame(0)
@@ -18,17 +23,78 @@ Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
 {
 }
 
-void Sprite::update(double deltaTime) {
+void Sprite::update(double deltaTime, const Map& map, const Vec2& playerPos) {
+    if (!m_isActive) return;
+
     // Update animation if sprite is animated
     if (m_isAnimated && m_frameCount > 1) {
         m_animationTimer += deltaTime * m_animationSpeed;
         
-        // Advance frame if timer exceeds 1.0
         if (m_animationTimer >= 1.0) {
             m_currentFrame = (m_currentFrame + 1) % m_frameCount;
             m_animationTimer -= 1.0;
         }
     }
+
+    // Update enemy behavior if this is an enemy sprite
+    if (m_type == SpriteType::Enemy) {
+        updateEnemyBehavior(deltaTime, map, playerPos);
+    }
+}
+
+void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& playerPos) {
+    // Update movement timer
+    m_moveTimer += deltaTime;
+    
+    // Change direction periodically or when blocked
+    if (m_moveTimer >= m_moveDuration) {
+        changeDirection(map);
+        m_moveTimer = 0.0;
+    }
+
+    // Calculate distance to player
+    Vec2 toPlayer = playerPos - m_position;
+    double distToPlayer = toPlayer.length();
+
+    // If player is within range (8 units), move towards them
+    if (distToPlayer < 8.0) {
+        m_direction = toPlayer.normalized();
+    }
+
+    // Try to move in current direction
+    Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
+    
+    // Check if we can move there
+    if (canMoveTo(newPos, map)) {
+        m_position = newPos;
+    } else {
+        // If blocked, try to change direction
+        changeDirection(map);
+    }
+}
+
+void Sprite::changeDirection(const Map& map) {
+    // Try several random directions until we find one we can move in
+    for (int i = 0; i < 8; i++) {
+        // Generate random angle between 0 and 2π
+        double angle = (rand() % 628) / 100.0;  // 0 to 2π in radians
+        Vec2 newDir(cos(angle), sin(angle));
+        
+        // Test if we can move in this direction
+        Vec2 testPos = m_position + newDir * m_moveSpeed * 0.5;  // Test half a second ahead
+        if (canMoveTo(testPos, map)) {
+            m_direction = newDir;
+            return;
+        }
+    }
+    
+    // If we couldn't find a valid direction, just stop
+    m_direction = Vec2(0, 0);
+}
+
+bool Sprite::canMoveTo(const Vec2& newPos, const Map& map) const {
+    // Check if the new position is valid (not in a wall)
+    return map.isValidPosition(newPos.x, newPos.y);
 }
 
 void Sprite::setAnimated(bool animated, int frameCount, double animationSpeed) {
@@ -66,10 +132,10 @@ void SpriteManager::removeSprite(int id) {
     m_sprites[id].setVisible(false);
 }
 
-void SpriteManager::update(double deltaTime) {
+void SpriteManager::update(double deltaTime, const Map& map, const Vec2& playerPos) {
     for (auto& sprite : m_sprites) {
         if (sprite.isActive()) {
-            sprite.update(deltaTime);
+            sprite.update(deltaTime, map, playerPos);
         }
     }
 }

@@ -318,8 +318,8 @@ void Engine::processInput() {
 void Engine::update() {
     // Only update game logic if in playing state
     if (m_gameState == GameState::Playing) {
-        // Update sprites
-        m_spriteManager->update(m_deltaTime);
+        // Update sprites with map and player position
+        m_spriteManager->update(m_deltaTime, m_map, m_player.getPosition());
         
         // Update projectiles
         m_projectileManager->update(m_deltaTime, m_map);

@@ -2,6 +2,7 @@
 #define SPRITE_H
 
 #include "utils.h"
+#include "map.h"
 #include <string>
 #include <vector>
 
@@ -19,11 +20,18 @@ enum class SpriteType {
 class Sprite {
 private:
     Vec2 m_position;       // Position in the world
+    Vec2 m_direction;      // Movement direction
     double m_size;         // Size of the sprite
     int m_textureId;       // Texture ID
     SpriteType m_type;     // Type of sprite
     bool m_isVisible;      // Is the sprite visible
     bool m_isActive;       // Is the sprite active/alive
+    
+    // Movement properties
+    double m_moveSpeed;    // Movement speed
+    double m_turnSpeed;    // Turning speed
+    double m_moveTimer;    // Timer for movement changes
+    double m_moveDuration; // How long to move in current direction
     
     // For animated sprites
     bool m_isAnimated;
@@ -36,10 +44,11 @@ public:
     Sprite(double x, double y, double size, int textureId, SpriteType type);
     
     // Update sprite state
-    void update(double deltaTime);
+    void update(double deltaTime, const Map& map, const Vec2& playerPos);
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
+    const Vec2& getDirection() const { return m_direction; }
     double getSize() const { return m_size; }
     int getTextureId() const { return m_textureId; }
     SpriteType getType() const { return m_type; }
@@ -49,14 +58,23 @@ public:
     // Setters
     void setPosition(const Vec2& position) { m_position = position; }
     void setPosition(double x, double y) { m_position = Vec2(x, y); }
+    void setDirection(const Vec2& direction) { m_direction = direction; }
     void setSize(double size) { m_size = size; }
     void setTextureId(int textureId) { m_textureId = textureId; }
     void setVisible(bool visible) { m_isVisible = visible; }
     void setActive(bool active) { m_isActive = active; }
+    void setMoveSpeed(double speed) { m_moveSpeed = speed; }
+    void setTurnSpeed(double speed) { m_turnSpeed = speed; }
     
     // Animation methods
     void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);
     int getCurrentFrame() const { return m_currentFrame; }
+    
+private:
+    // AI methods
+    void updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
+    void changeDirection(const Map& map);
+    bool canMoveTo(const Vec2& newPos, const Map& map) const;
 };
 
 class SpriteManager {
@@ -74,7 +92,7 @@ public:
     void removeSprite(int id);
     
     // Update all sprites
-    void update(double deltaTime);
+    void update(double deltaTime, const Map& map, const Vec2& playerPos);
     
     // Get a sprite by ID
     Sprite* getSprite(int id);
