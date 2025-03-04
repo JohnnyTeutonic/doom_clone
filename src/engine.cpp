@@ -1900,17 +1900,25 @@ void Engine::createSpritesFromMap() {
 }
 
 void Engine::setupPlayer() {
-    std::cout << "Setting up player..." << std::endl;
+    // Set player starting position
+    m_player.init(m_map.getWidth() / 4, m_map.getHeight() / 4, 1.0, 0.0);
     
-    // Initialize player in the middle of the map, facing east
-    m_player.init(m_map.getWidth() / 2.0, m_map.getHeight() / 2.0, 1.0, 0.0);
-    m_player.setMoveSpeed(3.0);
-    m_player.setRotSpeed(3.0);
+    // Set up player references
+    m_player.setProjectileManager(m_projectileManager);
+    m_player.setSpriteManager(m_spriteManager);
+    
+    // Set player stats
     m_player.setHealth(100.0);
     m_player.setAmmo(50);
+    m_player.setGrenades(3);
     
-    // Connect player to projectile manager
-    m_player.setProjectileManager(m_projectileManager);
+    // Set player movement speeds
+    m_player.setMoveSpeed(5.0);
+    m_player.setRotSpeed(3.0);
+    m_player.setVerticalLookSpeed(2.0);
+    
+    // Set initial weapon
+    m_player.setCurrentWeapon(WeaponType::Pistol);
 }
 
 void Engine::setupInput() {

@@ -16,6 +16,7 @@ Player::Player()
     , m_verticalLookSpeed(2.0)
     , m_maxVerticalAngle(M_PI / 4.0)  // 45 degrees up/down
     , m_projectileManager(nullptr)
+    , m_spriteManager(nullptr)
     , m_currentWeapon(WeaponType::Pistol)
     , m_weaponDamage(25.0)
     , m_weaponCooldown(0.2)
@@ -531,22 +532,16 @@ void Player::setCurrentWeapon(WeaponType weapon) {
 
 bool Player::fire() {
     if (!m_projectileManager) {
-        std::cerr << "[FIRE ERROR] Player has no projectile manager!" << std::endl;
-        return false;
-    }
-    
-    // Special case for grenade launcher
-    if (m_currentWeapon == WeaponType::GrenadeLauncher) {
-        return throwGrenade();
-    }
-    
-    if (m_ammo <= 0) {
-        std::cout << "[FIRE] No ammo left!" << std::endl;
+        std::cerr << "No projectile manager in Player::fire!" << std::endl;
         return false;
     }
     
     if (m_timeSinceLastShot < m_weaponCooldown) {
-        std::cout << "[FIRE] Weapon still cooling down!" << std::endl;
+        return false;
+    }
+    
+    if (m_ammo <= 0) {
+        std::cout << "Out of ammo!" << std::endl;
         return false;
     }
     
@@ -560,17 +555,94 @@ bool Player::fire() {
     m_ammo--;
     m_timeSinceLastShot = 0.0;  // Reset cooldown
     
-    // Starting position directly in front of player
+    // Get nearby sprites for close-range hit detection
+    std::vector<Sprite*> sprites;
+    if (m_spriteManager) {
+        sprites = m_spriteManager->getActiveSprites();
+    }
+    
+    // Check for close-range hits first (hitscan for very close enemies)
+    bool hitCloseEnemy = false;
+    const double CLOSE_RANGE = 1.5; // Maximum distance for close-range detection
+    
+    // Sort sprites by distance to player (closest first)
+    std::sort(sprites.begin(), sprites.end(), [this](Sprite* a, Sprite* b) {
+        double distA = (a->getPosition() - m_position).length();
+        double distB = (b->getPosition() - m_position).length();
+        return distA < distB;
+    });
+    
+    // Check for close enemies in front of the player
+    for (Sprite* sprite : sprites) {
+        if (!sprite || sprite->isDying() || !sprite->isActive()) continue;
+        
+        // Calculate vector from player to sprite
+        Vec2 toSprite = sprite->getPosition() - m_position;
+        double distToSprite = toSprite.length();
+        
+        // Skip if too far away
+        if (distToSprite > CLOSE_RANGE) continue;
+        
+        // Calculate dot product to check if sprite is in front of player
+        // This gives the cosine of the angle between the direction and toSprite
+        double dotProduct = m_direction.x * toSprite.x + m_direction.y * toSprite.y;
+        
+        // Normalize by the length of toSprite to get the actual cosine
+        double cosAngle = dotProduct / distToSprite;
+        
+        // Check if sprite is within a 60-degree cone in front of player (cos(30°) ≈ 0.866)
+        if (cosAngle > 0.866) {
+            // Hit the close enemy directly!
+            double damage = m_weaponDamage;
+            
+            // Apply weapon-specific damage
+            if (m_currentWeapon == WeaponType::Shotgun) {
+                // Shotguns do more damage at close range
+                damage *= 1.5;
+            }
+            
+            sprite->takeDamage(damage);
+            std::cout << "Direct hit on close enemy! Damage: " << damage << std::endl;
+            hitCloseEnemy = true;
+            
+            // For shotgun, we might hit multiple enemies, so don't break
+            if (m_currentWeapon != WeaponType::Shotgun) {
+                break;
+            }
+        }
+    }
+    
+    // Starting position for projectiles
     Vec2 bulletPos = m_position;
     
-    // Offset bullet start position significantly forward for visibility
-    double offsetDistance = 1.0; // Increased from 0.5 to ensure bullets aren't inside walls
+    // Adjust bullet start position based on closest enemy
+    double offsetDistance = 0.5; // Default offset
+    
+    // If there's a close enemy, reduce the offset to avoid shooting through them
+    if (!sprites.empty()) {
+        Sprite* closestSprite = sprites[0];
+        double closestDist = (closestSprite->getPosition() - m_position).length();
+        
+        if (closestDist < 1.0) {
+            // Reduce offset for very close enemies
+            offsetDistance = std::min(offsetDistance, closestDist * 0.5);
+        }
+    }
+    
+    // Apply the offset
     bulletPos.x += m_direction.x * offsetDistance;
     bulletPos.y += m_direction.y * offsetDistance;
     
     std::cout << "  Bullet start position: (" << bulletPos.x << ", " << bulletPos.y << ")" << std::endl;
     
     bool success = false;
+    
+    // For close-range hits, we might not need to create projectiles
+    // But we'll still create them for visual effect unless it's a shotgun
+    if (hitCloseEnemy && m_currentWeapon == WeaponType::Shotgun) {
+        // For shotgun, we'll skip creating projectiles if we hit something at close range
+        return true;
+    }
     
     // Handle different weapon types
     switch (m_currentWeapon) {
@@ -648,43 +720,33 @@ bool Player::fire() {
         
         case WeaponType::PlasmaGun:
         {
-            // Rapid fire plasma bolts with slight spread
-            double spreadAmount = 0.05;
+            // Rapid fire plasma bolts
+            double spreadAmount = 0.05; // Slight spread
             
-            // Center plasma bolt
-            bool centerSuccess = m_projectileManager->createProjectile(
+            // Add a small random spread
+            Vec2 spreadDir = m_direction;
+            double randomAngle = (rand() % 100 - 50) / 500.0; // -0.1 to 0.1
+            spreadDir.rotate(randomAngle);
+            
+            success = m_projectileManager->createProjectile(
                 bulletPos,
-                m_direction,
+                spreadDir,
                 ProjectileType::Plasma,
-                18.0,
+                25.0,
                 m_weaponDamage
             ) >= 0;
-            success |= centerSuccess;
-            
-            // Slight spread for visual effect
-            Vec2 leftDir = m_direction;
-            leftDir.rotate(-spreadAmount);
-            bool leftSuccess = m_projectileManager->createProjectile(
-                bulletPos,
-                leftDir,
-                ProjectileType::Plasma,
-                18.0,
-                m_weaponDamage * 0.5
-            ) >= 0;
-            success |= leftSuccess;
-            
+            break;
+        }
+        
+        case WeaponType::GrenadeLauncher:
+        {
+            // This should be handled by throwGrenade(), but just in case
+            success = throwGrenade();
             break;
         }
         
         default:
-            // Fallback to basic bullet
-            success = m_projectileManager->createProjectile(
-                bulletPos,
-                m_direction,
-                ProjectileType::Bullet,
-                15.0,
-                m_weaponDamage
-            ) >= 0;
+            std::cerr << "Unknown weapon type: " << static_cast<int>(m_currentWeapon) << std::endl;
             break;
     }
     

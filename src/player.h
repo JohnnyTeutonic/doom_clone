@@ -6,6 +6,7 @@
 
 // Forward declarations
 class ProjectileManager;
+class SpriteManager;
 
 // Different types of weapons
 enum class WeaponType {
@@ -41,8 +42,9 @@ private:
     int m_grenades;       // Grenade count
     double m_throwPower;  // How hard grenades are thrown
     
-    // Reference to projectile manager (not owned)
+    // Reference to managers (not owned)
     ProjectileManager* m_projectileManager;
+    SpriteManager* m_spriteManager;
     
 public:
     Player();
@@ -53,21 +55,21 @@ public:
     // Update player state
     void update(double deltaTime, const Map& map);
     
-    // Movement
+    // Movement methods
     void moveForward(double deltaTime, const Map& map);
     void moveBackward(double deltaTime, const Map& map);
     void strafeLeft(double deltaTime, const Map& map);
     void strafeRight(double deltaTime, const Map& map);
     
-    // Rotation
+    // Rotation methods
     void rotateLeft(double deltaTime);
     void rotateRight(double deltaTime);
     
-    // Vertical looking
+    // Look up/down methods
     void lookUp(double deltaTime);
     void lookDown(double deltaTime);
     
-    // Weapon/combat
+    // Weapon methods
     bool fire();
     bool throwGrenade();  // New method for throwing grenades
     void reload();
@@ -90,7 +92,6 @@ public:
     double getVerticalAngle() const { return m_verticalAngle; }
     double getHealth() const { return m_health; }
     int getAmmo() const { return m_ammo; }
-    ProjectileManager* getProjectileManager() const { return m_projectileManager; }
     
     // Setters
     void setPosition(const Vec2& position) { m_position = position; }
@@ -102,8 +103,9 @@ public:
     void setHealth(double health) { m_health = health; }
     void setAmmo(int ammo) { m_ammo = ammo; }
     void setProjectileManager(ProjectileManager* manager) { m_projectileManager = manager; }
+    void setSpriteManager(SpriteManager* manager) { m_spriteManager = manager; }
     
-    // Teleport player to a new position (e.g., for level changes)
+    // Teleport player to a new position
     void teleport(double x, double y);
 };
 
