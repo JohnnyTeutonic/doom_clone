@@ -10,39 +10,37 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_map(20, 20)
     , m_gameState(GameState::MainMenu)
     , m_running(false)
     , m_screenWidth(screenWidth)
     , m_screenHeight(screenHeight)
+    , m_lastFrameTime(0)
+    , m_deltaTime(0.0)
+    , m_weaponRecoil(0.0)
+    , m_flashIntensity(0.0)
+    , m_weaponRecoilRecovery(5.0)
+    , m_flashDecay(3.0)
     , m_fullscreen(false)
     , m_targetFPS(60)
     , m_frameTime(1.0 / 60.0)
-    , m_deltaTime(0.0)
     , m_wallTexture(-1)
     , m_floorTexture(-1)
     , m_ceilingTexture(-1)
     , m_enemyTexture(-1)
+    , m_impTexture(-1)
     , m_weaponTexture(-1)
     , m_bulletTexture(-1)
     , m_machineGunTexture(-1)
     , m_currentWeaponTexture(-1)
-    , m_notificationText("")
     , m_notificationTimer(0.0)
-    , m_weaponRecoil(0.0)
-    , m_weaponRecoilRecovery(5.0)
-    , m_flashIntensity(0.0)
-    , m_flashDecay(5.0)
-    , m_lastFrameTime(0)
     , m_font(nullptr)
     , m_notificationTexture(nullptr)
-    , m_notificationRect{}
     , m_audioSystem(nullptr)
     , m_musicEnabled(true)
-    , m_prevKeyboardState{}
     , m_prevMouseLeftDown(false)
 {
-    std::cout << "Engine created with resolution " << screenWidth << "x" << screenHeight << std::endl;
+    // Initialize random seed
+    srand(static_cast<unsigned int>(time(nullptr)));
 }
 
 Engine::~Engine() {
@@ -732,6 +730,7 @@ bool Engine::loadAssets() {
     m_ceilingTexture = -1;
     m_bulletTexture = -1;
     m_enemyTexture = -1;
+    m_impTexture = -1;
     m_weaponTexture = -1;
     m_machineGunTexture = -1;
     
@@ -1203,6 +1202,221 @@ bool Engine::loadAssets() {
     }
     
     std::cout << "All textures loaded successfully" << std::endl;
+    
+    // Create Imp texture (based on the Doom Imp)
+    std::cout << "Creating Imp texture..." << std::endl;
+    
+    // Create an array of Imp textures for animation frames
+    const int impFrameCount = 4;
+    m_impTextureFrames.resize(impFrameCount);
+    
+    // Create a surface for the Imp sprite sheet
+    SDL_Surface* impSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0, 0, 0, 0);
+    if (impSurface) {
+        SDL_LockSurface(impSurface);
+        
+        // Create the Imp texture (brownish with spikes)
+        Uint32* pixels = static_cast<Uint32*>(impSurface->pixels);
+        for (int y = 0; y < impSurface->h; y++) {
+            for (int x = 0; x < impSurface->w; x++) {
+                // Default color (brown body)
+                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                
+                // Add eyes (yellow)
+                if ((y >= 15 && y <= 20) && 
+                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                    color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                }
+                
+                // Add mouth (dark red)
+                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                    color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                }
+                
+                // Add spikes on head (lighter brown)
+                if (y < 15 && (x % 8 < 4) && y > 5) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Add spikes on shoulders
+                if ((y >= 20 && y <= 25) && 
+                    ((x <= 15) || (x >= 49))) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                pixels[y * impSurface->w + x] = color;
+            }
+        }
+        
+        SDL_UnlockSurface(impSurface);
+        
+        // First frame - standing
+        m_impTextureFrames[0] = m_textureManager->createTextureFromSurface(impSurface);
+        
+        // Second frame - walking 1
+        SDL_LockSurface(impSurface);
+        pixels = static_cast<Uint32*>(impSurface->pixels);
+        for (int y = 0; y < impSurface->h; y++) {
+            for (int x = 0; x < impSurface->w; x++) {
+                // Default color (brown body)
+                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                
+                // Add eyes (yellow)
+                if ((y >= 15 && y <= 20) && 
+                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                    color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                }
+                
+                // Add mouth (dark red)
+                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                    color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                }
+                
+                // Add spikes on head (lighter brown)
+                if (y < 15 && (x % 8 < 4) && y > 5) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Add spikes on shoulders
+                if ((y >= 20 && y <= 25) && 
+                    ((x <= 15) || (x >= 49))) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Modify legs for walking animation
+                if (y >= 45) {
+                    if (x < 32) {
+                        // Left leg forward
+                        if (x >= 20 && x <= 30 && y >= 50) {
+                            color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                        } else {
+                            color = SDL_MapRGB(impSurface->format, 0, 0, 0);
+                        }
+                    }
+                }
+                
+                pixels[y * impSurface->w + x] = color;
+            }
+        }
+        
+        SDL_UnlockSurface(impSurface);
+        m_impTextureFrames[1] = m_textureManager->createTextureFromSurface(impSurface);
+        
+        // Third frame - walking 2
+        SDL_LockSurface(impSurface);
+        pixels = static_cast<Uint32*>(impSurface->pixels);
+        for (int y = 0; y < impSurface->h; y++) {
+            for (int x = 0; x < impSurface->w; x++) {
+                // Default color (brown body)
+                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                
+                // Add eyes (yellow)
+                if ((y >= 15 && y <= 20) && 
+                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                    color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                }
+                
+                // Add mouth (dark red)
+                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                    color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                }
+                
+                // Add spikes on head (lighter brown)
+                if (y < 15 && (x % 8 < 4) && y > 5) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Add spikes on shoulders
+                if ((y >= 20 && y <= 25) && 
+                    ((x <= 15) || (x >= 49))) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Modify legs for walking animation
+                if (y >= 45) {
+                    if (x >= 32) {
+                        // Right leg forward
+                        if (x >= 33 && x <= 43 && y >= 50) {
+                            color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                        } else {
+                            color = SDL_MapRGB(impSurface->format, 0, 0, 0);
+                        }
+                    }
+                }
+                
+                pixels[y * impSurface->w + x] = color;
+            }
+        }
+        
+        SDL_UnlockSurface(impSurface);
+        m_impTextureFrames[2] = m_textureManager->createTextureFromSurface(impSurface);
+        
+        // Fourth frame - attack
+        SDL_LockSurface(impSurface);
+        pixels = static_cast<Uint32*>(impSurface->pixels);
+        for (int y = 0; y < impSurface->h; y++) {
+            for (int x = 0; x < impSurface->w; x++) {
+                // Default color (brown body)
+                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                
+                // Add eyes (red for attack)
+                if ((y >= 15 && y <= 20) && 
+                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                    color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                }
+                
+                // Add mouth (bright red for attack)
+                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                    color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                }
+                
+                // Add spikes on head (lighter brown)
+                if (y < 15 && (x % 8 < 4) && y > 5) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Add spikes on shoulders
+                if ((y >= 20 && y <= 25) && 
+                    ((x <= 15) || (x >= 49))) {
+                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                }
+                
+                // Add fireball effect
+                if ((y >= 25 && y <= 40) && (x >= 15 && x <= 48)) {
+                    // Calculate distance from center of fireball
+                    int centerX = 32;
+                    int centerY = 32;
+                    double dist = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                    
+                    if (dist < 10) {
+                        // Inner fireball (bright orange)
+                        color = SDL_MapRGB(impSurface->format, 255, 165, 0);
+                    } else if (dist < 15) {
+                        // Outer fireball (red)
+                        color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                    }
+                }
+                
+                pixels[y * impSurface->w + x] = color;
+            }
+        }
+        
+        SDL_UnlockSurface(impSurface);
+        m_impTextureFrames[3] = m_textureManager->createTextureFromSurface(impSurface);
+        
+        // Free the surface
+        SDL_FreeSurface(impSurface);
+        
+        // Set the main Imp texture to the first frame
+        m_impTexture = m_impTextureFrames[0];
+    } else {
+        // Fallback to a simple solid texture if surface creation fails
+        m_impTexture = m_textureManager->createSolidTexture(32, 64, Color(139, 69, 19));
+        m_impTextureFrames.push_back(m_impTexture);
+    }
+    
+    std::cout << "Imp texture ID: " << m_impTexture << std::endl;
+    
     return true;
 }
 

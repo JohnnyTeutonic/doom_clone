@@ -488,6 +488,17 @@ void Renderer::renderSprites(const Player& player) {
                     textureId = enemyTextureFrames[currentFrame];
                 }
             }
+        } else if (sprite->getType() == SpriteType::ImpEnemy) {
+            // Get the current animation frame for Imp
+            int currentFrame = sprite->getCurrentFrame();
+            
+            // Use the engine reference to get Imp texture frames
+            if (m_engine && currentFrame >= 0) {
+                const std::vector<int>& impTextureFrames = m_engine->getImpTextureFrames();
+                if (!impTextureFrames.empty() && currentFrame < static_cast<int>(impTextureFrames.size())) {
+                    textureId = impTextureFrames[currentFrame];
+                }
+            }
         }
         
         // Get the texture

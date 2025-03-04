@@ -74,6 +74,8 @@ public:
     int getCeilingTexture() const { return m_ceilingTexture; }
     int getEnemyTexture() const { return m_enemyTexture; }
     const std::vector<int>& getEnemyTextureFrames() const { return m_enemyTextureFrames; }
+    int getImpTexture() const { return m_impTexture; }
+    const std::vector<int>& getImpTextureFrames() const { return m_impTextureFrames; }
     int getWeaponTexture() const { return m_weaponTexture; }
     
     // Create sprites from map cells
@@ -137,6 +139,8 @@ private:
     int m_ceilingTexture;
     int m_enemyTexture;
     std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
+    int m_impTexture;                       // Texture for Imp enemy
+    std::vector<int> m_impTextureFrames;    // Animation frames for Imp
     int m_weaponTexture;
     int m_bulletTexture;
     int m_machineGunTexture;

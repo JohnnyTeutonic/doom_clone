@@ -14,7 +14,15 @@ enum class SpriteType {
     Enemy,
     Item,
     Decoration,
-    Projectile
+    Projectile,
+    ImpEnemy  // New Imp enemy type from Doom
+};
+
+// Different movement types for the Imp enemy
+enum class ImpMovementType {
+    Zigzag,    // Moves in a zigzag pattern
+    Teleport,  // Occasionally teleports short distances
+    Charge     // Charges directly at the player when in range
 };
 
 class Sprite {
@@ -45,6 +53,12 @@ private:
     int m_currentFrame;
     double m_animationSpeed;
     double m_animationTimer;
+    
+    // Imp-specific properties
+    ImpMovementType m_impMovementType;  // Movement type for Imp enemies
+    double m_specialMoveTimer;          // Timer for special movement actions
+    double m_specialMoveCooldown;       // Cooldown between special moves
+    Vec2 m_lastPlayerPos;               // Last known player position for tracking
     
 public:
     Sprite(double x, double y, double size, int textureId, SpriteType type);
@@ -86,12 +100,22 @@ public:
     void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);
     int getCurrentFrame() const { return m_currentFrame; }
     
+    // Imp-specific methods
+    void setImpMovementType(ImpMovementType type) { m_impMovementType = type; }
+    ImpMovementType getImpMovementType() const { return m_impMovementType; }
+    
 private:
     // AI methods
     void updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
+    void updateImpBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
     void changeDirection(const Map& map);
     bool canMoveTo(const Vec2& newPos, const Map& map) const;
     void updateDeathAnimation(double deltaTime);
+    
+    // Imp movement pattern implementations
+    void moveZigzag(double deltaTime, const Map& map, const Vec2& playerPos);
+    void moveTeleport(double deltaTime, const Map& map, const Vec2& playerPos);
+    void moveCharge(double deltaTime, const Map& map, const Vec2& playerPos);
 };
 
 class SpriteManager {

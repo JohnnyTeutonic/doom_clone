@@ -25,6 +25,10 @@ Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
     , m_currentFrame(0)
     , m_animationSpeed(1.0)
     , m_animationTimer(0.0)
+    , m_impMovementType(ImpMovementType::Zigzag)  // Default movement type
+    , m_specialMoveTimer(0.0)
+    , m_specialMoveCooldown(3.0)  // 3 seconds between special moves
+    , m_lastPlayerPos(0, 0)
 {
 }
 
@@ -47,9 +51,11 @@ void Sprite::update(double deltaTime, const Map& map, const Vec2& playerPos) {
         }
     }
 
-    // Update enemy behavior if this is an enemy sprite
+    // Update behavior based on sprite type
     if (m_type == SpriteType::Enemy) {
         updateEnemyBehavior(deltaTime, map, playerPos);
+    } else if (m_type == SpriteType::ImpEnemy) {
+        updateImpBehavior(deltaTime, map, playerPos);
     }
 }
 
@@ -282,6 +288,310 @@ void Sprite::updateDeathAnimation(double deltaTime) {
         m_isActive = false;
         m_isVisible = false;
         std::cout << "Sprite death animation complete" << std::endl;
+    }
+}
+
+void Sprite::updateImpBehavior(double deltaTime, const Map& map, const Vec2& playerPos) {
+    // Update movement timer
+    m_moveTimer += deltaTime;
+    m_specialMoveTimer += deltaTime;
+    
+    // Store the player's position for tracking
+    m_lastPlayerPos = playerPos;
+    
+    // Calculate distance to player
+    Vec2 toPlayer = playerPos - m_position;
+    double distToPlayer = toPlayer.length();
+    
+    // Different behavior based on the Imp's movement type
+    switch (m_impMovementType) {
+        case ImpMovementType::Zigzag:
+            moveZigzag(deltaTime, map, playerPos);
+            break;
+            
+        case ImpMovementType::Teleport:
+            moveTeleport(deltaTime, map, playerPos);
+            break;
+            
+        case ImpMovementType::Charge:
+            moveCharge(deltaTime, map, playerPos);
+            break;
+    }
+    
+    // Attack behavior when close to player
+    const double ATTACK_DISTANCE = 1.5;
+    if (distToPlayer < ATTACK_DISTANCE) {
+        // Face the player
+        m_direction = toPlayer.normalized();
+        
+        // Use the attack animation frame if available
+        if (m_isAnimated && m_frameCount > 3) {
+            m_currentFrame = 3;
+        }
+    }
+}
+
+void Sprite::moveZigzag(double deltaTime, const Map& map, const Vec2& playerPos) {
+    // Calculate distance to player
+    Vec2 toPlayer = playerPos - m_position;
+    double distToPlayer = toPlayer.length();
+    
+    // Define distance thresholds
+    const double CHASE_DISTANCE = 10.0;
+    
+    if (distToPlayer < CHASE_DISTANCE) {
+        // In chase range - use zigzag pattern
+        
+        // Base direction is towards player
+        Vec2 baseDirection = toPlayer.normalized();
+        
+        // Add a perpendicular component that oscillates
+        Vec2 perpDirection(-baseDirection.y, baseDirection.x);
+        
+        // Oscillate between -1 and 1 with period of about 2 seconds
+        double oscillation = sin(m_moveTimer * 3.0);
+        
+        // Combine the base direction with the perpendicular component
+        Vec2 zigzagDir = baseDirection + perpDirection * oscillation * 0.7;
+        zigzagDir = zigzagDir.normalized();
+        
+        // Set the direction
+        m_direction = zigzagDir;
+        
+        // Move in the zigzag direction
+        Vec2 newPos = m_position + m_direction * m_moveSpeed * 1.2 * deltaTime;
+        if (canMoveTo(newPos, map)) {
+            m_position = newPos;
+        } else {
+            // If blocked, try moving directly towards player
+            newPos = m_position + baseDirection * m_moveSpeed * deltaTime;
+            if (canMoveTo(newPos, map)) {
+                m_position = newPos;
+            }
+        }
+        
+        // Use animation frames 0-2 for movement
+        if (m_isAnimated && m_frameCount > 2) {
+            m_currentFrame = (m_currentFrame % 3);
+        }
+    } else {
+        // Outside chase range - patrol normally
+        if (m_moveTimer >= m_moveDuration) {
+            changeDirection(map);
+            m_moveTimer = 0.0;
+        }
+        
+        // Move in current direction
+        Vec2 newPos = m_position + m_direction * m_moveSpeed * 0.7 * deltaTime;
+        if (canMoveTo(newPos, map)) {
+            m_position = newPos;
+        } else {
+            changeDirection(map);
+        }
+        
+        // Use first animation frame for patrolling
+        if (m_isAnimated && m_frameCount > 0) {
+            m_currentFrame = 0;
+        }
+    }
+}
+
+void Sprite::moveTeleport(double deltaTime, const Map& map, const Vec2& playerPos) {
+    // Calculate distance to player
+    Vec2 toPlayer = playerPos - m_position;
+    double distToPlayer = toPlayer.length();
+    
+    // Define distance thresholds
+    const double CHASE_DISTANCE = 12.0;
+    const double TELEPORT_DISTANCE = 8.0;
+    const double MIN_TELEPORT_DISTANCE = 2.0;
+    
+    if (distToPlayer < CHASE_DISTANCE) {
+        // In chase range
+        
+        // Check if it's time to teleport
+        if (distToPlayer < TELEPORT_DISTANCE && 
+            distToPlayer > MIN_TELEPORT_DISTANCE && 
+            m_specialMoveTimer >= m_specialMoveCooldown) {
+            
+            // Try to teleport closer to player
+            const int MAX_ATTEMPTS = 10;
+            bool teleported = false;
+            
+            for (int i = 0; i < MAX_ATTEMPTS; i++) {
+                // Calculate a random position around the player
+                double angle = (rand() % 628) / 100.0; // Random angle 0-2π
+                double distance = MIN_TELEPORT_DISTANCE + (rand() % 100) / 100.0 * 2.0; // 2-4 units
+                
+                Vec2 offset(cos(angle) * distance, sin(angle) * distance);
+                Vec2 teleportPos = playerPos + offset;
+                
+                // Check if we can teleport there
+                if (canMoveTo(teleportPos, map)) {
+                    // Teleport!
+                    m_position = teleportPos;
+                    teleported = true;
+                    
+                    // Face the player after teleporting
+                    m_direction = (playerPos - m_position).normalized();
+                    
+                    // Reset the special move timer
+                    m_specialMoveTimer = 0.0;
+                    
+                    // Use the attack animation frame for teleport
+                    if (m_isAnimated && m_frameCount > 3) {
+                        m_currentFrame = 3;
+                    }
+                    
+                    break;
+                }
+            }
+            
+            // If teleport failed, just move normally
+            if (!teleported) {
+                // Move towards player
+                m_direction = toPlayer.normalized();
+                Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
+                if (canMoveTo(newPos, map)) {
+                    m_position = newPos;
+                }
+            }
+        } else {
+            // Not teleporting, move towards player
+            m_direction = toPlayer.normalized();
+            Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
+            if (canMoveTo(newPos, map)) {
+                m_position = newPos;
+            } else {
+                // If blocked, try to find a path around obstacles
+                Vec2 lateralDir(-m_direction.y, m_direction.x);
+                Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                
+                if (canMoveTo(lateralPos, map)) {
+                    m_position = lateralPos;
+                } else {
+                    // Try the other lateral direction
+                    lateralDir = Vec2(m_direction.y, -m_direction.x);
+                    lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                    
+                    if (canMoveTo(lateralPos, map)) {
+                        m_position = lateralPos;
+                    }
+                }
+            }
+            
+            // Use animation frames 0-2 for movement
+            if (m_isAnimated && m_frameCount > 2) {
+                m_currentFrame = (m_currentFrame % 3);
+            }
+        }
+    } else {
+        // Outside chase range - patrol normally
+        if (m_moveTimer >= m_moveDuration) {
+            changeDirection(map);
+            m_moveTimer = 0.0;
+        }
+        
+        // Move in current direction
+        Vec2 newPos = m_position + m_direction * m_moveSpeed * 0.7 * deltaTime;
+        if (canMoveTo(newPos, map)) {
+            m_position = newPos;
+        } else {
+            changeDirection(map);
+        }
+        
+        // Use first animation frame for patrolling
+        if (m_isAnimated && m_frameCount > 0) {
+            m_currentFrame = 0;
+        }
+    }
+}
+
+void Sprite::moveCharge(double deltaTime, const Map& map, const Vec2& playerPos) {
+    // Calculate distance to player
+    Vec2 toPlayer = playerPos - m_position;
+    double distToPlayer = toPlayer.length();
+    
+    // Define distance thresholds
+    const double CHASE_DISTANCE = 10.0;
+    const double CHARGE_DISTANCE = 6.0;
+    const double CHARGE_DURATION = 1.0; // seconds
+    
+    if (distToPlayer < CHASE_DISTANCE) {
+        // In chase range
+        
+        // Check if it's time to charge
+        if (distToPlayer < CHARGE_DISTANCE && m_specialMoveTimer >= m_specialMoveCooldown) {
+            // Start a charge attack
+            m_direction = toPlayer.normalized();
+            
+            // Move at 3x speed during charge
+            Vec2 newPos = m_position + m_direction * m_moveSpeed * 3.0 * deltaTime;
+            if (canMoveTo(newPos, map)) {
+                m_position = newPos;
+            }
+            
+            // Use the attack animation frame for charging
+            if (m_isAnimated && m_frameCount > 3) {
+                m_currentFrame = 3;
+            }
+            
+            // Decrement the charge timer
+            m_specialMoveCooldown -= deltaTime;
+            
+            // If charge is complete, reset the timer
+            if (m_specialMoveCooldown <= 0.0) {
+                m_specialMoveTimer = 0.0;
+                m_specialMoveCooldown = 5.0; // Longer cooldown after a charge
+            }
+        } else {
+            // Not charging, move towards player at normal speed
+            m_direction = toPlayer.normalized();
+            Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
+            if (canMoveTo(newPos, map)) {
+                m_position = newPos;
+            } else {
+                // If blocked, try to find a path around obstacles
+                Vec2 lateralDir(-m_direction.y, m_direction.x);
+                Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                
+                if (canMoveTo(lateralPos, map)) {
+                    m_position = lateralPos;
+                } else {
+                    // Try the other lateral direction
+                    lateralDir = Vec2(m_direction.y, -m_direction.x);
+                    lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                    
+                    if (canMoveTo(lateralPos, map)) {
+                        m_position = lateralPos;
+                    }
+                }
+            }
+            
+            // Use animation frames 0-2 for movement
+            if (m_isAnimated && m_frameCount > 2) {
+                m_currentFrame = (m_currentFrame % 3);
+            }
+        }
+    } else {
+        // Outside chase range - patrol normally
+        if (m_moveTimer >= m_moveDuration) {
+            changeDirection(map);
+            m_moveTimer = 0.0;
+        }
+        
+        // Move in current direction
+        Vec2 newPos = m_position + m_direction * m_moveSpeed * 0.7 * deltaTime;
+        if (canMoveTo(newPos, map)) {
+            m_position = newPos;
+        } else {
+            changeDirection(map);
+        }
+        
+        // Use first animation frame for patrolling
+        if (m_isAnimated && m_frameCount > 0) {
+            m_currentFrame = 0;
+        }
     }
 }
 
