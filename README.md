@@ -23,7 +23,7 @@ This project requires the following libraries:
 
 ### Quick setup
 
-We've provided a setup script for WSL2 users:
+I've provided a setup script for WSL2 users:
 
 ```bash
 # Make the script executable
@@ -82,7 +82,7 @@ cmake -DSDL2_DIR=path/to/SDL2/cmake -DSDL2_IMAGE_DIR=path/to/SDL2_image/cmake -D
 ## Controls
 
 - WASD or Arrow keys: Move and turn
-- Mouse: Look around
+- Up/Down: Look around
 - Space: Fire weapon
 - R: Reload
 - ESC: Quit or pause game
