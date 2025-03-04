@@ -106,7 +106,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_renderer->setTextureManager(m_textureManager);
     std::cout << "Renderer initialized: " << m_renderer << std::endl;
     
-    // Initialize sprite manager
+    // Create sprite manager
     m_spriteManager = new SpriteManager(m_textureManager);
     std::cout << "Sprite manager created: " << m_spriteManager << std::endl;
     
@@ -114,13 +114,17 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_renderer->setSpriteManager(m_spriteManager);
     std::cout << "Connected sprite manager to renderer" << std::endl;
     
-    // Initialize projectile manager
+    // Create projectile manager
     m_projectileManager = new ProjectileManager();
     std::cout << "Projectile manager created: " << m_projectileManager << std::endl;
     
     // Connect projectile manager to renderer
     m_renderer->setProjectileManager(m_projectileManager);
     std::cout << "Connected projectile manager to renderer" << std::endl;
+    
+    // Connect sprite manager to projectile manager for collision detection
+    m_projectileManager->setSpriteManager(m_spriteManager);
+    std::cout << "Connected sprite manager to projectile manager" << std::endl;
     
     // Load all game assets
     if (!loadAssets()) {
@@ -269,8 +273,8 @@ void Engine::processInput() {
                         int bulletId = m_projectileManager->createProjectile(
                             bulletPos, 
                             bulletDir, 
-                            ProjectileType::Bullet, 
-                            15.0,  // Fast bullet
+                            ProjectileType::Bullet,
+                            15.0,  // Speed
                             30.0   // Damage
                         );
                         

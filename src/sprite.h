@@ -27,6 +27,12 @@ private:
     bool m_isVisible;      // Is the sprite visible
     bool m_isActive;       // Is the sprite active/alive
     
+    // Health and damage
+    double m_health;       // Current health
+    double m_maxHealth;    // Maximum health
+    bool m_isDying;        // Is the sprite in death animation
+    double m_deathTimer;   // Timer for death animation
+    
     // Movement properties
     double m_moveSpeed;    // Movement speed
     double m_turnSpeed;    // Turning speed
@@ -45,6 +51,13 @@ public:
     
     // Update sprite state
     void update(double deltaTime, const Map& map, const Vec2& playerPos);
+    
+    // Damage handling
+    void takeDamage(double damage);
+    bool isDead() const { return m_health <= 0 && !m_isDying; }
+    bool isDying() const { return m_isDying; }
+    double getHealth() const { return m_health; }
+    double getMaxHealth() const { return m_maxHealth; }
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
@@ -75,6 +88,7 @@ private:
     void updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
     void changeDirection(const Map& map);
     bool canMoveTo(const Vec2& newPos, const Map& map) const;
+    void updateDeathAnimation(double deltaTime);
 };
 
 class SpriteManager {

@@ -1,6 +1,7 @@
 #include "sprite.h"
 #include "texture.h"
 #include <algorithm>
+#include <iostream>
 
 // Sprite implementation
 Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
@@ -11,6 +12,10 @@ Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
     , m_type(type)
     , m_isVisible(true)
     , m_isActive(true)
+    , m_health(100.0)    // Default health
+    , m_maxHealth(100.0)
+    , m_isDying(false)
+    , m_deathTimer(0.0)
     , m_moveSpeed(2.0)   // Units per second
     , m_turnSpeed(2.0)   // Radians per second
     , m_moveTimer(0.0)
@@ -25,6 +30,12 @@ Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
 
 void Sprite::update(double deltaTime, const Map& map, const Vec2& playerPos) {
     if (!m_isActive) return;
+
+    // Handle death animation if dying
+    if (m_isDying) {
+        updateDeathAnimation(deltaTime);
+        return;
+    }
 
     // Update animation if sprite is animated
     if (m_isAnimated && m_frameCount > 1) {
@@ -103,6 +114,35 @@ void Sprite::setAnimated(bool animated, int frameCount, double animationSpeed) {
     m_animationSpeed = animationSpeed;
     m_currentFrame = 0;
     m_animationTimer = 0.0;
+}
+
+void Sprite::takeDamage(double damage) {
+    if (m_isDying || !m_isActive) return;
+    
+    m_health -= damage;
+    std::cout << "Sprite took " << damage << " damage. Health: " << m_health << "/" << m_maxHealth << std::endl;
+    
+    if (m_health <= 0) {
+        m_health = 0;
+        m_isDying = true;
+        m_deathTimer = 1.0; // 1 second death animation
+        std::cout << "Sprite is dying!" << std::endl;
+    }
+}
+
+void Sprite::updateDeathAnimation(double deltaTime) {
+    if (!m_isDying) return;
+    
+    m_deathTimer -= deltaTime;
+    
+    // Fade out by adjusting size
+    m_size = m_size * (m_deathTimer);
+    
+    if (m_deathTimer <= 0) {
+        m_isActive = false;
+        m_isVisible = false;
+        std::cout << "Sprite death animation complete" << std::endl;
+    }
 }
 
 // SpriteManager implementation

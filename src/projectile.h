@@ -1,8 +1,9 @@
-#ifndef PROJECTILE_H
-#define PROJECTILE_H
+#pragma once
 
 #include <vector>
 #include "utils.h"
+#include "map.h"
+#include "sprite.h"
 // Forward declare Map to avoid circular dependency
 class Map;
 class TextureManager;
@@ -16,34 +17,21 @@ enum class ProjectileType {
 
 class Projectile {
 public:
-    Projectile();
-    Projectile(double x, double y, double dirX, double dirY, double speed,
-               double damage, double maxLifetime, int textureId, ProjectileType type);
-    
-    void init(double x, double y, double dirX, double dirY, double speed,
-              double damage, double maxLifetime, int textureId, ProjectileType type);
+    Projectile(int id, const Vec2& position, const Vec2& direction, double speed, double damage);
     
     void update(double deltaTime, const Map& map);
-    
-    bool checkMapCollision(const Map& map);
-    
-    // Getters
+    bool isActive() const { return m_active; }
+    bool hasCollided() const { return m_hasCollided; }
     const Vec2& getPosition() const { return m_position; }
     const Vec2& getDirection() const { return m_direction; }
-    double getSpeed() const { return m_speed; }
     double getDamage() const { return m_damage; }
+    double getLifetime() const { return m_lifetime; }
+    int getId() const { return m_id; }
     int getTextureId() const { return m_textureId; }
-    ProjectileType getType() const;
-    bool isActive() const;
-    double getLifetime() const;
-    bool hasCollided() const;
-    
-    // Setters
-    void setTextureId(int textureId) { m_textureId = textureId; }
-    
+    ProjectileType getType() const { return m_type; }
+
 private:
-    friend class ProjectileManager;  // Allow ProjectileManager to access private members
-    
+    int m_id;
     Vec2 m_position;
     Vec2 m_direction;
     double m_speed;
@@ -53,8 +41,9 @@ private:
     bool m_active;
     bool m_hasCollided;
     int m_textureId;
-    int m_id;
     ProjectileType m_type;
+
+    friend class ProjectileManager;
 };
 
 // ProjectileManager to handle all projectiles
@@ -64,36 +53,24 @@ public:
     ~ProjectileManager();
     
     void update(double deltaTime, const Map& map);
+    void setSpriteManager(SpriteManager* spriteManager);
     
-    // Create a projectile with the given parameters
-    int createProjectile(const Vec2& position, const Vec2& direction, 
-                          ProjectileType type, double speed, double damage);
-    
-    // Set texture IDs for different projectile types
+    int createProjectile(const Vec2& position, const Vec2& direction, ProjectileType type, double speed, double damage);
     void setBulletTexture(int textureId) { m_bulletTextureId = textureId; }
     void setRocketTexture(int textureId) { m_rocketTextureId = textureId; }
     void setPlasmaTexture(int textureId) { m_plasmaTextureId = textureId; }
     void setDefaultBulletTexture(int textureId) { m_defaultBulletTexture = textureId; }
     
-    // Get active projectiles
-    std::vector<Projectile*> getActiveProjectiles() const { return m_activeProjectiles; }
-    
-    // Get a projectile by its index
+    const std::vector<Projectile*>& getActiveProjectiles() const { return m_activeProjectiles; }
     Projectile* getProjectile(size_t index);
-    
-    // Get the number of active projectiles
     int getActiveCount() const;
-    
+
 private:
-    std::vector<Projectile*> m_activeProjectiles;
-    std::vector<Projectile> m_projectiles;  // Keep for compatibility with existing code
     int m_nextId;
-    
-    // Texture IDs for different projectile types
     int m_bulletTextureId;
     int m_rocketTextureId;
     int m_plasmaTextureId;
-    int m_defaultBulletTexture;  // Keep for compatibility
+    int m_defaultBulletTexture;
+    SpriteManager* m_spriteManager;
+    std::vector<Projectile*> m_activeProjectiles;
 };
-
-#endif // PROJECTILE_H 
