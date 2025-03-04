@@ -105,6 +105,9 @@ public:
     // Remove a sprite by ID
     void removeSprite(int id);
     
+    // Clear all sprites
+    void clearSprites() { m_sprites.clear(); }
+    
     // Update all sprites
     void update(double deltaTime, const Map& map, const Vec2& playerPos);
     

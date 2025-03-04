@@ -68,6 +68,9 @@ public:
     // Getter for weapon texture
     int getWeaponTexture() const { return m_weaponTexture; }
     
+    // Create sprites from map cells
+    void createSpritesFromMap();
+    
 private:
     void processInput();
     void update();

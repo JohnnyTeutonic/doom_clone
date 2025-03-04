@@ -1382,6 +1382,43 @@ void Engine::setupMap() {
     
     // Set player starting position
     m_player.init(m_map.getWidth() / 4, m_map.getHeight() / 4, 1.0, 0.0);
+    
+    // Create sprites from map cells
+    createSpritesFromMap();
+}
+
+// Create sprite objects from map cells marked as Enemy or Item
+void Engine::createSpritesFromMap() {
+    if (!m_spriteManager) return;
+    
+    // Clear existing sprites first
+    m_spriteManager->clearSprites();
+    
+    // Iterate through the map
+    for (int x = 0; x < m_map.getWidth(); x++) {
+        for (int y = 0; y < m_map.getHeight(); y++) {
+            CellType cellType = m_map.getCell(x, y);
+            
+            if (cellType == CellType::Enemy) {
+                // Create an enemy sprite
+                double size = 0.8; // Standard enemy size
+                int textureId = m_enemyTexture; // Use the enemy texture
+                m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                
+                // Clear the cell so we don't have both a cell and a sprite
+                m_map.setCell(x, y, CellType::Empty);
+            }
+            else if (cellType == CellType::Item) {
+                // Create an item sprite
+                double size = 0.5; // Items are smaller
+                int textureId = 3; // Use item texture (adjust as needed)
+                m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Item);
+                
+                // Clear the cell so we don't have both a cell and a sprite
+                m_map.setCell(x, y, CellType::Empty);
+            }
+        }
+    }
 }
 
 void Engine::setupPlayer() {
