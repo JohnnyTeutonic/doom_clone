@@ -81,7 +81,7 @@ public:
     void renderHUD(const Player& player);
     
     // Render the weapon
-    void renderWeapon(const Player& player, double recoil = 0.0, double flashIntensity = 0.0);
+    void renderWeapon(const Player& player, double recoil = 0.0, double flashIntensity = 0.0, int weaponTextureId = 5);
     
     // Render muzzle flash
     void renderMuzzleFlash(double intensity);
@@ -93,6 +93,7 @@ public:
     void toggleFPS() { m_showFPS = !m_showFPS; }
     void toggleMinimap() { m_showMinimap = !m_showMinimap; }
     void toggleWeapon() { m_showWeapon = !m_showWeapon; }
+    bool getShowWeapon() const { return m_showWeapon; }
     
     // Get the SDL renderer
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }

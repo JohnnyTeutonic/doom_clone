@@ -64,73 +64,35 @@ void Renderer::cleanup() {
 }
 
 void Renderer::render(const Map& map, const Player& player, double deltaTime, double recoil, double flashIntensity) {
-    std::cout << "\n=== Starting render frame ===" << std::endl;
-    
     // Clear screen
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_renderer);
     
-    std::cout << "Screen cleared with SDL renderer: " << m_renderer << std::endl;
-    
     // Ensure zBuffer is the right size
     if (m_zBuffer.size() != m_screenWidth) {
         m_zBuffer.resize(m_screenWidth, 10.0);  // Initialize with far distance
-        std::cout << "Resized zBuffer to " << m_screenWidth << " elements" << std::endl;
     }
-    
-    std::cout << "Rendering 3D view..." << std::endl;
-    std::cout << "Player position: (" << player.getPosition().x << ", " << player.getPosition().y << ")" << std::endl;
-    std::cout << "Player direction: (" << player.getDirection().x << ", " << player.getDirection().y << ")" << std::endl;
     
     // Render the 3D view
     renderView(map, player);
     
-    std::cout << "3D view rendered, rendering sprites..." << std::endl;
-    
     // Render sprites if we have a sprite manager
     if (m_spriteManager) {
         renderSprites(player);
-        std::cout << "Sprites rendered successfully" << std::endl;
-    } else {
-        std::cerr << "No sprite manager available for rendering!" << std::endl;
     }
-    
-    std::cout << "Sprites rendered, checking projectiles..." << std::endl;
     
     // Render projectiles if we have a projectile manager
     if (m_projectileManager) {
-        std::vector<Projectile*> projectiles = m_projectileManager->getActiveProjectiles();
-        std::cout << "Active projectiles before rendering: " << projectiles.size() << std::endl;
-        
-        for (const Projectile* proj : projectiles) {
-            if (proj) {
-                std::cout << "Projectile at (" << proj->getPosition().x << ", " << proj->getPosition().y 
-                          << "), texture ID: " << proj->getTextureId() << std::endl;
-            }
-        }
         renderProjectiles(player);
-    } else {
-        std::cerr << "No projectile manager available for rendering!" << std::endl;
     }
-    
-    std::cout << "Projectiles rendered, rendering minimap..." << std::endl;
     
     // Render minimap if enabled
     if (m_showMinimap) {
         renderMinimap(map, player);
     }
     
-    std::cout << "Minimap rendered, rendering HUD..." << std::endl;
-    
     // Render HUD
     renderHUD(player);
-    
-    std::cout << "HUD rendered, rendering weapon..." << std::endl;
-    
-    // Render weapon if enabled
-    if (m_showWeapon) {
-        renderWeapon(player, recoil, flashIntensity);
-    }
     
     // Update FPS counter
     m_frameCount++;
@@ -147,13 +109,6 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
         ss << "FPS: " << static_cast<int>(m_fps);
         renderText(ss.str(), 10, 10, Color::White());
     }
-    
-    std::cout << "Presenting frame..." << std::endl;
-    
-    // Present the rendered frame
-    SDL_RenderPresent(m_renderer);
-    
-    std::cout << "=== Frame rendered successfully ===" << std::endl;
 }
 
 void Renderer::renderView(const Map& map, const Player& player) {
@@ -518,19 +473,19 @@ void Renderer::renderHUD(const Player& player) {
     renderText(ss.str(), healthBarX + healthBarWidth + 20, healthBarY + 3, Color::White());
 }
 
-void Renderer::renderWeapon(const Player& player, double recoil, double flashIntensity) {
+void Renderer::renderWeapon(const Player& player, double recoil, double flashIntensity, int weaponTextureId) {
     // Check if we have a texture manager
     if (!m_textureManager) {
         std::cout << "No texture manager available for weapon rendering" << std::endl;
         return;
     }
     
-    // Get the weapon texture (ID 5 is the shotgun texture)
-    const Texture* weaponTexture = m_textureManager->getTexture(5);
+    // Get the weapon texture using the passed texture ID
+    const Texture* weaponTexture = m_textureManager->getTexture(weaponTextureId);
     
     // If we couldn't find the texture, fall back to the simple rectangle method
     if (!weaponTexture) {
-        std::cout << "No weapon texture found (ID 5), using fallback rectangle" << std::endl;
+        std::cout << "No weapon texture found (ID " << weaponTextureId << "), using fallback rectangle" << std::endl;
         // Simple weapon rendering - just a placeholder
         int weaponWidth = 100;
         int weaponHeight = 150;
@@ -561,36 +516,37 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         
         SDL_SetRenderDrawColor(m_renderer, 80, 80, 80, 255);
         SDL_RenderFillRect(m_renderer, &barrelRect);
-    } else {
-        // Render the weapon texture
-        std::cout << "Rendering weapon texture (ID 5)" << std::endl;
-        
-        // Calculate the weapon size (maintain aspect ratio)
-        float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
-        int weaponHeight = m_screenHeight / 2;  // Take up half the screen height
-        int weaponWidth = static_cast<int>(weaponHeight * aspectRatio);
-        
-        // Center the weapon at the bottom of the screen
-        int weaponX = (m_screenWidth - weaponWidth) / 2;
-        int weaponY = m_screenHeight - weaponHeight;
-        
-        // Apply recoil effect
-        int recoilY = static_cast<int>(recoil * 20);  // Scale recoil to pixels
-        
-        // Create a destination rectangle for the weapon
-        SDL_Rect destRect = {
-            weaponX,
-            weaponY + recoilY,
-            weaponWidth,
-            weaponHeight
-        };
-        
-        // Get the SDL texture from the Texture object
-        SDL_Texture* sdlTexture = weaponTexture->getSDLTexture();
-        if (sdlTexture) {
-            // Draw the texture
-            SDL_RenderCopy(m_renderer, sdlTexture, NULL, &destRect);
-        }
+        return;
+    }
+    
+    // Render the weapon texture
+    std::cout << "Rendering weapon texture (ID " << weaponTextureId << ")" << std::endl;
+    
+    // Calculate the weapon size (maintain aspect ratio)
+    float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
+    int weaponHeight = m_screenHeight / 2;  // Take up half the screen height
+    int weaponWidth = static_cast<int>(weaponHeight * aspectRatio);
+    
+    // Center the weapon at the bottom of the screen
+    int weaponX = (m_screenWidth - weaponWidth) / 2;
+    int weaponY = m_screenHeight - weaponHeight;
+    
+    // Apply recoil effect
+    int recoilY = static_cast<int>(recoil * 20);  // Scale recoil to pixels
+    
+    // Create a destination rectangle for the weapon
+    SDL_Rect destRect = {
+        weaponX,
+        weaponY + recoilY,
+        weaponWidth,
+        weaponHeight
+    };
+    
+    // Get the SDL texture from the Texture object
+    SDL_Texture* sdlTexture = weaponTexture->getSDLTexture();
+    if (sdlTexture) {
+        // Draw the texture
+        SDL_RenderCopy(m_renderer, sdlTexture, NULL, &destRect);
     }
     
     // Render muzzle flash if needed

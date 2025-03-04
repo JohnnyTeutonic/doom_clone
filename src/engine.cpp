@@ -482,6 +482,11 @@ void Engine::render() {
             // Render the 3D view
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
             
+            // Render weapon if enabled
+            if (m_renderer->getShowWeapon()) {
+                m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+            }
+            
             // Render notification if active
             renderNotification();
             
@@ -498,12 +503,18 @@ void Engine::render() {
         case GameState::GameOver:
             // Render the 3D view (darkened)
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
+            if (m_renderer->getShowWeapon()) {
+                m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+            }
             // TODO: Render game over overlay
             break;
             
         case GameState::Victory:
             // Render the 3D view
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
+            if (m_renderer->getShowWeapon()) {
+                m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+            }
             // TODO: Render victory overlay
             break;
     }
