@@ -144,6 +144,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_renderer->init(m_screenWidth, m_screenHeight, m_fullscreen);
     m_renderer->setSDLRenderer(m_sdlRenderer);
     m_renderer->setTextureManager(m_textureManager);
+    m_renderer->setEngine(this);  // Set the engine reference
     std::cout << "Renderer initialized: " << m_renderer << std::endl;
     
     // Create sprite manager
@@ -956,103 +957,138 @@ bool Engine::loadAssets() {
     
     // Create enemy texture
     std::cout << "Creating enemy texture..." << std::endl;
-    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 32, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    
+    // Create an array of enemy textures for animation frames
+    const int enemyFrameCount = 4;
+    m_enemyTextureFrames.resize(enemyFrameCount);
+    
+    // Create a surface for the enemy sprite sheet
+    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0, 0, 0, 0);
     if (enemySurface) {
+        // Lock surface for direct pixel access
         SDL_LockSurface(enemySurface);
-        Uint32* pixels = (Uint32*)enemySurface->pixels;
         
-        // Colors for the demon
-        Uint32 darkRed = SDL_MapRGBA(enemySurface->format, 139, 0, 0, 255);      // Dark red for body
-        Uint32 lightRed = SDL_MapRGBA(enemySurface->format, 220, 20, 20, 255);   // Lighter red for highlights
-        Uint32 brown = SDL_MapRGBA(enemySurface->format, 139, 69, 19, 255);      // Brown for horns
-        Uint32 yellow = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);     // Yellow for eyes
-        Uint32 black = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);          // Black for details
-        
-        // Fill with transparent color first
-        Uint32 transparent = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
-        for (int i = 0; i < 32 * 64; i++) {
-            pixels[i] = transparent;
-        }
-        
-        // Draw humanoid shape (narrower body)
-        for (int y = 15; y < 60; y++) {
-            int width = 12;  // Base body width
-            // Wider at shoulders (y=20), narrower at waist (y=40)
-            if (y < 25) width = 16;  // Shoulders
-            else if (y > 40) width = 14;  // Legs
-            
-            int startX = (32 - width) / 2;
-            for (int x = startX; x < startX + width; x++) {
-                pixels[y * 32 + x] = darkRed;
-            }
-        }
-        
-        // Draw horns (smaller and more pointed)
-        for (int y = 0; y < 15; y++) {
-            for (int x = 8; x < 13; x++) {
-                if (x - 8 <= y/2) pixels[y * 32 + x] = brown;
-            }
-            for (int x = 19; x < 24; x++) {
-                if (24 - x <= y/2) pixels[y * 32 + x] = brown;
-            }
-        }
-        
-        // Draw eyes (yellow circles with black centers)
-        for (int y = 18; y < 28; y++) {
-            for (int x = 8; x < 15; x++) {
-                int dx = x - 11;
-                int dy = y - 23;
-                if (dx*dx + dy*dy < 9) {
-                    pixels[y * 32 + x] = yellow;
-                    if (dx*dx + dy*dy < 4) {
-                        pixels[y * 32 + x] = black;
-                    }
-                }
-            }
-            for (int x = 17; x < 24; x++) {
-                int dx = x - 20;
-                int dy = y - 23;
-                if (dx*dx + dy*dy < 9) {
-                    pixels[y * 32 + x] = yellow;
-                    if (dx*dx + dy*dy < 4) {
-                        pixels[y * 32 + x] = black;
-                    }
-                }
-            }
-        }
-        
-        // Draw mouth (smaller and more defined)
-        for (int y = 30; y < 38; y++) {
-            for (int x = 10; x < 22; x++) {
-                // Main mouth line
-                if (y == 34) pixels[y * 32 + x] = black;
+        // Create a basic enemy texture (red with eyes)
+        Uint32* pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (dark red)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
                 
-                // Teeth
-                if (y > 34 && y < 37 && (x % 4 < 2)) {
-                    pixels[y * 32 + x] = lightRed;
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
+                    // Eyes (yellow)
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
                 }
-            }
-        }
-        
-        // Add muscle definition with lighter red
-        for (int y = 15; y < 60; y++) {
-            int width = 12;
-            if (y < 25) width = 16;
-            else if (y > 40) width = 14;
-            
-            int startX = (32 - width) / 2;
-            for (int x = startX; x < startX + width; x++) {
-                if ((x + y) % 6 == 0 && pixels[y * 32 + x] == darkRed) {
-                    pixels[y * 32 + x] = lightRed;
+                else if (x >= 20 && x <= 44 && y >= 40 && y <= 45) {
+                    // Mouth (black)
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
                 }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
             }
         }
         
         SDL_UnlockSurface(enemySurface);
-        m_enemyTexture = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create the first frame
+        m_enemyTextureFrames[0] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create frame 2 (slightly different - eyes narrowed)
+        SDL_LockSurface(enemySurface);
+        pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (dark red)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 18 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 18 && y <= 25)) {
+                    // Eyes (yellow) - narrowed
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                }
+                else if (x >= 20 && x <= 44 && y >= 40 && y <= 45) {
+                    // Mouth (black)
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
+            }
+        }
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTextureFrames[1] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create frame 3 (mouth open)
+        SDL_LockSurface(enemySurface);
+        pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (dark red)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
+                    // Eyes (yellow)
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                }
+                else if (x >= 20 && x <= 44 && y >= 38 && y <= 48) {
+                    // Mouth (black) - open wider
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
+            }
+        }
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTextureFrames[2] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Create frame 4 (attacking)
+        SDL_LockSurface(enemySurface);
+        pixels = static_cast<Uint32*>(enemySurface->pixels);
+        for (int y = 0; y < enemySurface->h; y++) {
+            for (int x = 0; x < enemySurface->w; x++) {
+                // Base color (bright red - angry)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 255, 0, 0);
+                
+                // Add some details (eyes, mouth)
+                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
+                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
+                    // Eyes (bright yellow)
+                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                }
+                else if (x >= 15 && x <= 49 && y >= 35 && y <= 50) {
+                    // Mouth (black) - wide open with teeth
+                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                    
+                    // Add teeth
+                    if ((y == 35 || y == 36) && 
+                        ((x >= 20 && x <= 25) || (x >= 30 && x <= 35) || (x >= 40 && x <= 45))) {
+                        color = SDL_MapRGB(enemySurface->format, 255, 255, 255);
+                    }
+                }
+                
+                // Set the pixel
+                pixels[y * enemySurface->w + x] = color;
+            }
+        }
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTextureFrames[3] = m_textureManager->createTextureFromSurface(enemySurface);
+        
+        // Free the surface
         SDL_FreeSurface(enemySurface);
+        
+        // Set the main enemy texture to the first frame
+        m_enemyTexture = m_enemyTextureFrames[0];
     } else {
+        // Fallback to a simple solid texture if surface creation fails
         m_enemyTexture = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
+        m_enemyTextureFrames.push_back(m_enemyTexture);
     }
     std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
     
@@ -1501,7 +1537,23 @@ void Engine::createSpritesFromMap() {
                 // Create an enemy sprite
                 double size = 0.8; // Standard enemy size
                 int textureId = m_enemyTexture; // Use the enemy texture
-                m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                
+                // Set up animation for the enemy
+                if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
+                    Sprite* enemy = m_spriteManager->getSprite(spriteId);
+                    if (enemy) {
+                        // Set up animation with 4 frames at 2 frames per second
+                        enemy->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
+                        
+                        // Set movement properties
+                        enemy->setMoveSpeed(1.5); // Units per second
+                        enemy->setTurnSpeed(2.0); // Radians per second
+                        
+                        // Set health
+                        enemy->setHealth(100.0);
+                    }
+                }
                 
                 // Clear the cell so we don't have both a cell and a sprite
                 m_map.setCell(x, y, CellType::Empty);

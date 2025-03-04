@@ -68,7 +68,12 @@ public:
     double getWeaponRecoil() const { return m_weaponRecoil; }
     double getFlashIntensity() const { return m_flashIntensity; }
     
-    // Getter for weapon texture
+    // Texture getters
+    int getWallTexture() const { return m_wallTexture; }
+    int getFloorTexture() const { return m_floorTexture; }
+    int getCeilingTexture() const { return m_ceilingTexture; }
+    int getEnemyTexture() const { return m_enemyTexture; }
+    const std::vector<int>& getEnemyTextureFrames() const { return m_enemyTextureFrames; }
     int getWeaponTexture() const { return m_weaponTexture; }
     
     // Create sprites from map cells
@@ -131,6 +136,7 @@ private:
     int m_floorTexture;
     int m_ceilingTexture;
     int m_enemyTexture;
+    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
     int m_weaponTexture;
     int m_bulletTexture;
     int m_machineGunTexture;

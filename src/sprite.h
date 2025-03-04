@@ -58,6 +58,8 @@ public:
     bool isDying() const { return m_isDying; }
     double getHealth() const { return m_health; }
     double getMaxHealth() const { return m_maxHealth; }
+
+
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
@@ -78,6 +80,7 @@ public:
     void setActive(bool active) { m_isActive = active; }
     void setMoveSpeed(double speed) { m_moveSpeed = speed; }
     void setTurnSpeed(double speed) { m_turnSpeed = speed; }
+    void setHealth(double health) { m_health = health; }
     
     // Animation methods
     void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);

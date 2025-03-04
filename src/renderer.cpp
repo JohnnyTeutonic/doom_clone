@@ -10,18 +10,22 @@ Renderer::Renderer()
     , m_renderer(nullptr)
     , m_screenWidth(800)
     , m_screenHeight(600)
+    , m_fullscreen(false)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_showFPS(true)
+    , m_engine(nullptr)
+    , m_showFPS(false)
     , m_showMinimap(true)
     , m_showWeapon(true)
-    , m_performanceLevel(PerformanceLevel::Medium)
     , m_lightingEnabled(true)
+    , m_performanceLevel(PerformanceLevel::High)
     , m_frameCount(0)
-    , m_fpsTimer(0.0)
     , m_fps(0.0)
+    , m_fpsTimer(0.0)
 {
+    // Initialize lighting system
+    m_lightingSystem.setEnabled(m_lightingEnabled);
 }
 
 Renderer::~Renderer() {
@@ -469,8 +473,25 @@ void Renderer::renderSprites(const Player& player) {
         int drawEndX = spriteWidth / 2 + spriteScreenX;
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
-        // Get the sprite texture
-        const Texture* texture = m_textureManager->getTexture(sprite->getTextureId());
+        // Get the sprite texture based on animation frame
+        int textureId = sprite->getTextureId();
+        
+        // For enemy sprites, check if we need to use a different texture based on animation frame
+        if (sprite->getType() == SpriteType::Enemy) {
+            // Get the current animation frame
+            int currentFrame = sprite->getCurrentFrame();
+            
+            // Use the engine reference to get texture frames
+            if (m_engine && currentFrame >= 0) {
+                const std::vector<int>& enemyTextureFrames = m_engine->getEnemyTextureFrames();
+                if (!enemyTextureFrames.empty() && currentFrame < static_cast<int>(enemyTextureFrames.size())) {
+                    textureId = enemyTextureFrames[currentFrame];
+                }
+            }
+        }
+        
+        // Get the texture
+        const Texture* texture = m_textureManager->getTexture(textureId);
         if (!texture) continue;
         
         // Optimization: Pre-calculate lighting based on distance (fake lighting for sprites)
