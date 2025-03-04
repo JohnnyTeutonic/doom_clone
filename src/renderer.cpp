@@ -250,7 +250,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
         
         if (isStairStep) {
             // For stair steps, use the step height to create a smooth transition
-            float relativeHeight = stepHeight - playerStepHeight;
+            float relativeHeight = map.getStepHeight(mapPos.x, mapPos.y) - playerStepHeight;
             heightOffset = static_cast<int>(relativeHeight * m_screenHeight / 3);
         }
         else if (isElevatedWall && playerElevation == 0) {
@@ -268,126 +268,143 @@ void Renderer::renderView(const Map& map, const Player& player) {
         int drawEnd = lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
         if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
 
-        // Get wall texture
-        int texNum;
+        // Get wall texture or render special stair graphics
         if (isStairs || isStairStep) {
-            // Skip texture lookup and directly render in white
-            // Draw the wall strip as bright white
-            SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
-            SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
-            
-            // Add a pattern to indicate it's a stair
+            // Handle stair rendering
             if (isStairStep) {
-                // Calculate step spacing based on wall height
+                // Get step height from map for proper visualization
+                float stepHeight = map.getStepHeight(mapPos.x, mapPos.y);
+                
+                // Use different colors based on height to create a 3D effect
+                int baseR = 210 + static_cast<int>(stepHeight * 45);  // More red as steps go up
+                int baseG = 210 + static_cast<int>((1.0f - stepHeight) * 45); // More green as steps go down
+                int baseB = 255;  // Keep blue constant
+                
+                // Create 3D stair effect with two colors
+                int midPoint = drawStart + (drawEnd - drawStart) / 2;
+                
+                // Draw top half of the step (horizontal surface)
+                SDL_SetRenderDrawColor(m_renderer, baseR, baseG, baseB, 255);
+                SDL_RenderDrawLine(m_renderer, x, drawStart, x, midPoint);
+                
+                // Draw bottom half of the step (vertical riser) in slightly darker color
+                SDL_SetRenderDrawColor(m_renderer, baseR * 0.8, baseG * 0.8, baseB * 0.8, 255);
+                SDL_RenderDrawLine(m_renderer, x, midPoint+1, x, drawEnd);
+                
+                // Add horizontal lines to show step edges
                 int stepSpacing = (drawEnd - drawStart) / 8;
                 if (stepSpacing < 3) stepSpacing = 3;
                 
-                // Draw horizontal lines to show stair steps
-                for (int y = drawStart; y < drawEnd; y += stepSpacing) {
-                    // Draw a thicker blue line for each step
-                    for (int thickness = 0; thickness < 3; thickness++) {
-                        int lineY = y + thickness;
-                        if (lineY < drawEnd) {
-                            SDL_SetRenderDrawColor(m_renderer, 100, 100, 255, 255); // Brighter blue
-                            SDL_RenderDrawLine(m_renderer, x, lineY, x, lineY);
-                        }
-                    }
+                for (int y = drawStart; y < midPoint; y += stepSpacing) {
+                    // Add horizontal line for the step edge
+                    SDL_SetRenderDrawColor(m_renderer, 50, 50, 150, 255); // Dark blue edge
+                    SDL_RenderDrawLine(m_renderer, x, y, x, y+1);
                 }
                 
-                // Add diagonal stripes to make it look more like stairs
-                for (int y = drawStart; y < drawEnd; y++) {
-                    // Create diagonal pattern based on x and y
-                    if ((x + y) % 10 < 5) {
-                        SDL_SetRenderDrawColor(m_renderer, 255, 200, 100, 255); // Orange-ish
-                        SDL_RenderDrawPoint(m_renderer, x, y);
-                    }
-                }
+                // Add a shadow at the edge between horizontal and vertical parts
+                SDL_SetRenderDrawColor(m_renderer, 50, 50, 100, 255); // Dark shadow
+                SDL_RenderDrawLine(m_renderer, x, midPoint-1, x, midPoint+1);
             }
             else if (isStairs) {
-                // For stair entry points, draw a distinct pattern
-                SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 255); // Bright yellow
-                
-                // Draw a checkerboard pattern to make it stand out
+                // For stair entry/exit points, create a distinct pattern
+                // Render the entry/exit point with a fancy pattern
+                // Create a chevron/arrow pattern pointing up/down
                 for (int y = drawStart; y < drawEnd; y++) {
-                    if ((x + y) % 4 < 2) {
-                        SDL_RenderDrawPoint(m_renderer, x, y);
+                    // Calculate normalized position in the stair (0.0 to 1.0)
+                    float relY = (y - drawStart) / static_cast<float>(drawEnd - drawStart);
+                    
+                    // Create an arrow/chevron pattern
+                    int patternValue = static_cast<int>((relY * 10)) % 10;
+                    int patternX = abs(patternValue - 5); // Creates a zigzag from 5->0->5
+                    
+                    // Arrow pattern is wider in the middle, narrower at ends
+                    if (x % 5 <= patternX) {
+                        // Golden/yellow for entry points
+                        SDL_SetRenderDrawColor(m_renderer, 255, 215, 0, 255);
+                    } else {
+                        // Dark brown for the background
+                        SDL_SetRenderDrawColor(m_renderer, 139, 69, 19, 255);
                     }
+                    
+                    SDL_RenderDrawPoint(m_renderer, x, y);
                 }
             }
             
-            continue; // Skip the regular texture rendering
-        } else {
-            texNum = map.getWallTexture(mapPos.x, mapPos.y);
-        }
-        const Texture* wallTexture = m_textureManager->getTexture(texNum);
-        
-        if (!wallTexture) {
-            // Fallback to solid color if texture not found
-            SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
-            SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
-            continue;
-        }
-        
-        // Calculate texture coordinates
-        double wallX;  // Where exactly the wall was hit
-        if (!side) {
-            wallX = pos.y + perpWallDist * rayDir.y;
-        } else {
-            wallX = pos.x + perpWallDist * rayDir.x;
-        }
-        wallX -= floor(wallX);  // Normalize to [0,1]
-        
-        // Calculate surface normal for lighting
-        Vec2 normal = calculateSurfaceNormal(side, rayDir);
-        
-        // Calculate world position of the wall hit
-        Vec2 wallPos = pos + rayDir * perpWallDist;
-        
-        // Performance optimization: only calculate lighting once per wall segment
-        // if the distance is large enough (reduces calculation per pixel)
-        Color lighting;
-        if (perpWallDist > 4.0) {
-            // For distant walls, calculate lighting once per column
-            lighting = m_lightingSystem.calculateLighting(wallPos, normal, pos);
-            
-            // Draw the textured wall column with single lighting value
-            for (int y = drawStart; y < drawEnd; y++) {
-                // Calculate texture Y coordinate
-                double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
-                
-                // Get pixel color from texture
-                Color color = wallTexture->getPixelNormalized(wallX, texY);
-                
-                // Apply lighting to the color
-                color = color * lighting;
-                
-                // Draw the pixel
-                SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                SDL_RenderDrawPoint(m_renderer, x, y);
-            }
+            continue; // Skip regular texture rendering
         }
         else {
-            // For nearby walls, calculate lighting at intervals to maintain quality
-            const int lightingInterval = 8; // Calculate lighting every N pixels
+            // Regular wall texture rendering
+            int texNum = map.getWallTexture(mapPos.x, mapPos.y);
+            const Texture* wallTexture = m_textureManager->getTexture(texNum);
             
-            for (int y = drawStart; y < drawEnd; y++) {
-                // Calculate texture Y coordinate
-                double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+            if (!wallTexture) {
+                // Fallback to solid color if texture not found
+                SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
+                SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
+                continue;
+            }
                 
-                // Get pixel color from texture
-                Color color = wallTexture->getPixelNormalized(wallX, texY);
+            // Calculate texture coordinates
+            double wallX;  // Where exactly the wall was hit
+            if (!side) {
+                wallX = pos.y + perpWallDist * rayDir.y;
+            } else {
+                wallX = pos.x + perpWallDist * rayDir.x;
+            }
+            wallX -= floor(wallX);  // Normalize to [0,1]
+            
+            // Calculate surface normal for lighting
+            Vec2 normal = calculateSurfaceNormal(side, rayDir);
+            
+            // Calculate world position of the wall hit
+            Vec2 wallPos = pos + rayDir * perpWallDist;
+            
+            // Performance optimization: only calculate lighting once per wall segment
+            // if the distance is large enough (reduces calculation per pixel)
+            Color lighting;
+            if (perpWallDist > 4.0) {
+                // For distant walls, calculate lighting once per column
+                lighting = m_lightingSystem.calculateLighting(wallPos, normal, pos);
                 
-                // Calculate lighting only at intervals to improve performance
-                if (y % lightingInterval == 0 || y == drawStart) {
-                    lighting = m_lightingSystem.calculateLighting(wallPos, normal, pos);
+                // Draw the textured wall column with single lighting value
+                for (int y = drawStart; y < drawEnd; y++) {
+                    // Calculate texture Y coordinate
+                    double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+                    
+                    // Get pixel color from texture
+                    Color color = wallTexture->getPixelNormalized(wallX, texY);
+                    
+                    // Apply lighting to the color
+                    color = color * lighting;
+                    
+                    // Draw the pixel
+                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                    SDL_RenderDrawPoint(m_renderer, x, y);
                 }
+            }
+            else {
+                // For nearby walls, calculate lighting at intervals to maintain quality
+                const int lightingInterval = 8; // Calculate lighting every N pixels
                 
-                // Apply lighting to the color
-                color = color * lighting;
-                
-                // Draw the pixel
-                SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                SDL_RenderDrawPoint(m_renderer, x, y);
+                for (int y = drawStart; y < drawEnd; y++) {
+                    // Calculate texture Y coordinate
+                    double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+                    
+                    // Get pixel color from texture
+                    Color color = wallTexture->getPixelNormalized(wallX, texY);
+                    
+                    // Calculate lighting only at intervals to improve performance
+                    if (y % lightingInterval == 0 || y == drawStart) {
+                        lighting = m_lightingSystem.calculateLighting(wallPos, normal, pos);
+                    }
+                    
+                    // Apply lighting to the color
+                    color = color * lighting;
+                    
+                    // Draw the pixel
+                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                    SDL_RenderDrawPoint(m_renderer, x, y);
+                }
             }
         }
     }
@@ -523,6 +540,16 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
     int mapY = 10;
     int cellSize = mapSize / std::max(map.getWidth(), map.getHeight());
     
+    // Get player's current elevation level to determine which floor to display
+    int playerX = static_cast<int>(player.getPosition().x);
+    int playerY = static_cast<int>(player.getPosition().y);
+    int playerElevation = map.getCellElevation(playerX, playerY);
+    
+    // Add minimap title to show current level
+    std::string levelText = (playerElevation == 0) ? "Ground Level" : "Level 2";
+    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
+    renderText(levelText, mapX, mapY - 20, Color::White());
+    
     // Draw background
     SDL_Rect mapRect = { mapX, mapY, mapSize, mapSize };
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 192);
@@ -532,7 +559,7 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
     SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
     SDL_RenderDrawRect(m_renderer, &mapRect);
     
-    // Draw map cells
+    // First pass: draw the base cells
     for (int y = 0; y < map.getHeight(); y++) {
         for (int x = 0; x < map.getWidth(); x++) {
             SDL_Rect cellRect = { 
@@ -545,16 +572,29 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
             CellType cell = map.getCell(x, y);
             int elevation = map.getCellElevation(x, y);
             
+            // Only show cells that are on the player's current elevation level
+            // Exception: Always show stairs that connect to the current level
+            if (elevation != playerElevation && 
+                !((cell == CellType::Stairs || cell == CellType::StairStep1 || 
+                   cell == CellType::StairStep2 || cell == CellType::StairStep3) && 
+                  (elevation == playerElevation || elevation == 1-playerElevation))) {
+                continue; // Skip cells not on current level
+            }
+            
             // Use different colors based on cell type and elevation
+            int stepIntensity = 180; // Move declaration outside of switch statement
             switch (cell) {
                 case CellType::Wall:
+                    // Only show walls on the current level
                     SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
                     SDL_RenderFillRect(m_renderer, &cellRect);
                     break;
                 case CellType::ElevatedWall:
-                    // Brighter color for elevated walls
-                    SDL_SetRenderDrawColor(m_renderer, 200, 200, 200, 255);
-                    SDL_RenderFillRect(m_renderer, &cellRect);
+                    // Only show elevated walls on level 2
+                    if (playerElevation == 1) {
+                        SDL_SetRenderDrawColor(m_renderer, 200, 200, 200, 255);
+                        SDL_RenderFillRect(m_renderer, &cellRect);
+                    }
                     break;
                 case CellType::Door:
                     SDL_SetRenderDrawColor(m_renderer, 139, 69, 19, 255);
@@ -569,54 +609,33 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
                     SDL_RenderFillRect(m_renderer, &cellRect);
                     break;
                 case CellType::Stairs:
-                    // Bright white color for stairs (entry point)
-                    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
+                    // Always show stair entry/exit points with bright color
+                    SDL_SetRenderDrawColor(m_renderer, 255, 200, 0, 255);
                     SDL_RenderFillRect(m_renderer, &cellRect);
                     break;
                 case CellType::StairStep1:
                 case CellType::StairStep2:
                 case CellType::StairStep3:
-                    // Bright white with a pattern for stair steps
-                    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
-                    SDL_RenderFillRect(m_renderer, &cellRect);
+                    // Blue-white gradient for stair steps
+                    if (cell == CellType::StairStep1) stepIntensity = 180;
+                    if (cell == CellType::StairStep2) stepIntensity = 210;
+                    if (cell == CellType::StairStep3) stepIntensity = 240;
                     
-                    // Add a pattern to distinguish different step levels
-                    if (cell == CellType::StairStep1) {
-                        SDL_SetRenderDrawColor(m_renderer, 200, 200, 255, 255); // Light blue tint
-                        SDL_Rect innerRect = { 
-                            cellRect.x + cellSize/4, 
-                            cellRect.y + cellSize/4, 
-                            cellSize/2, 
-                            cellSize/2 
-                        };
-                        SDL_RenderFillRect(m_renderer, &innerRect);
-                    }
-                    else if (cell == CellType::StairStep2) {
-                        SDL_SetRenderDrawColor(m_renderer, 255, 200, 200, 255); // Light red tint
-                        SDL_Rect innerRect = { 
-                            cellRect.x + cellSize/4, 
-                            cellRect.y + cellSize/4, 
-                            cellSize/2, 
-                            cellSize/2 
-                        };
-                        SDL_RenderFillRect(m_renderer, &innerRect);
-                    }
-                    else if (cell == CellType::StairStep3) {
-                        SDL_SetRenderDrawColor(m_renderer, 200, 255, 200, 255); // Light green tint
-                        SDL_Rect innerRect = { 
-                            cellRect.x + cellSize/4, 
-                            cellRect.y + cellSize/4, 
-                            cellSize/2, 
-                            cellSize/2 
-                        };
-                        SDL_RenderFillRect(m_renderer, &innerRect);
-                    }
+                    SDL_SetRenderDrawColor(m_renderer, stepIntensity, stepIntensity, 255, 255);
+                    SDL_RenderFillRect(m_renderer, &cellRect);
                     break;
                 case CellType::Empty:
-                    if (elevation > 0) {
-                        // Light blue for elevated empty spaces
-                        SDL_SetRenderDrawColor(m_renderer, 100, 149, 237, 255);
-                        SDL_RenderFillRect(m_renderer, &cellRect);
+                    // Show empty cells on current level with different colors
+                    if (elevation == playerElevation) {
+                        if (elevation > 0) {
+                            // Different floor color for level 2
+                            SDL_SetRenderDrawColor(m_renderer, 100, 149, 237, 255);
+                            SDL_RenderFillRect(m_renderer, &cellRect);
+                        } else {
+                            // Very dark gray for ground level floor (just to show boundaries)
+                            SDL_SetRenderDrawColor(m_renderer, 40, 40, 50, 255);
+                            SDL_RenderFillRect(m_renderer, &cellRect);
+                        }
                     }
                     break;
                 default:
@@ -625,14 +644,101 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
         }
     }
     
+    // Second pass: add stair direction indicators to show connected staircases
+    for (int y = 0; y < map.getHeight(); y++) {
+        for (int x = 0; x < map.getWidth(); x++) {
+            // Only process cells on this level or stairs connecting to this level
+            CellType cell = map.getCell(x, y);
+            int elevation = map.getCellElevation(x, y);
+            
+            if (elevation != playerElevation && 
+                !((cell == CellType::Stairs || cell == CellType::StairStep1 || 
+                   cell == CellType::StairStep2 || cell == CellType::StairStep3) && 
+                  (elevation == playerElevation || elevation == 1-playerElevation))) {
+                continue; // Skip cells not on current level
+            }
+            
+            SDL_Rect cellRect = { 
+                mapX + x * cellSize, 
+                mapY + y * cellSize, 
+                cellSize, 
+                cellSize 
+            };
+            
+            // Add directional markers for stairs
+            if (cell == CellType::Stairs || 
+                cell == CellType::StairStep1 || 
+                cell == CellType::StairStep2 || 
+                cell == CellType::StairStep3) {
+                
+                // Determine direction by checking neighboring cells
+                bool northIsStair = (y > 0 && (map.isStairs(x, y-1) || map.isStairStep(x, y-1)));
+                bool southIsStair = (y < map.getHeight()-1 && (map.isStairs(x, y+1) || map.isStairStep(x, y+1)));
+                bool eastIsStair = (x < map.getWidth()-1 && (map.isStairs(x+1, y) || map.isStairStep(x+1, y)));
+                bool westIsStair = (x > 0 && (map.isStairs(x-1, y) || map.isStairStep(x-1, y)));
+                
+                // Draw direction indicator (small arrow or line)
+                SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255); // Black for contrast
+                
+                if (northIsStair && southIsStair) {
+                    // Vertical staircase
+                    int midX = cellRect.x + cellRect.w / 2;
+                    SDL_RenderDrawLine(m_renderer, midX, cellRect.y, midX, cellRect.y + cellRect.h);
+                }
+                else if (eastIsStair && westIsStair) {
+                    // Horizontal staircase
+                    int midY = cellRect.y + cellRect.h / 2;
+                    SDL_RenderDrawLine(m_renderer, cellRect.x, midY, cellRect.x + cellRect.w, midY);
+                }
+                else if (northIsStair) {
+                    // Draw north arrow
+                    DrawArrow(cellRect, 0);
+                }
+                else if (eastIsStair) {
+                    // Draw east arrow
+                    DrawArrow(cellRect, 1);
+                }
+                else if (southIsStair) {
+                    // Draw south arrow
+                    DrawArrow(cellRect, 2);
+                }
+                else if (westIsStair) {
+                    // Draw west arrow
+                    DrawArrow(cellRect, 3);
+                }
+                
+                // Draw elevation marker to show whether stairs go up or down
+                float stepHeight = map.getStepHeight(x, y);
+                if (stepHeight > 0.0f) {
+                    // Draw level indicator to show this stair connects levels
+                    SDL_Rect indicatorRect = {
+                        cellRect.x + cellRect.w / 4,
+                        cellRect.y + cellRect.h / 4,
+                        cellRect.w / 2,
+                        cellRect.h / 2
+                    };
+                    
+                    // If player is on ground level, stairs go up (red)
+                    // If player is on level 2, stairs go down (blue)
+                    if (playerElevation == 0) {
+                        SDL_SetRenderDrawColor(m_renderer, 255, 100, 100, 255); // Red = up
+                    } else {
+                        SDL_SetRenderDrawColor(m_renderer, 100, 100, 255, 255); // Blue = down
+                    }
+                    SDL_RenderFillRect(m_renderer, &indicatorRect);
+                }
+            }
+        }
+    }
+    
     // Draw player
-    int playerX = mapX + static_cast<int>(player.getPosition().x * cellSize);
-    int playerY = mapY + static_cast<int>(player.getPosition().y * cellSize);
+    int playerPosX = mapX + static_cast<int>(player.getPosition().x * cellSize);
+    int playerPosY = mapY + static_cast<int>(player.getPosition().y * cellSize);
     int playerSize = cellSize / 2;
     
     SDL_Rect playerRect = { 
-        playerX - playerSize / 2, 
-        playerY - playerSize / 2, 
+        playerPosX - playerSize / 2, 
+        playerPosY - playerSize / 2, 
         playerSize, 
         playerSize 
     };
@@ -641,11 +747,11 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
     SDL_RenderFillRect(m_renderer, &playerRect);
     
     // Draw player direction
-    int dirX = playerX + static_cast<int>(player.getDirection().x * cellSize * 2);
-    int dirY = playerY + static_cast<int>(player.getDirection().y * cellSize * 2);
+    int dirX = playerPosX + static_cast<int>(player.getDirection().x * cellSize * 2);
+    int dirY = playerPosY + static_cast<int>(player.getDirection().y * cellSize * 2);
     
     SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 255);
-    SDL_RenderDrawLine(m_renderer, playerX, playerY, dirX, dirY);
+    SDL_RenderDrawLine(m_renderer, playerPosX, playerPosY, dirX, dirY);
     
     // Draw projectiles on minimap
     if (m_projectileManager) {
@@ -654,19 +760,26 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
         for (const Projectile* projectile : projectiles) {
             if (!projectile) continue;
             
+            // Only show projectiles on the current level
+            int projX = static_cast<int>(projectile->getPosition().x);
+            int projY = static_cast<int>(projectile->getPosition().y);
+            int projElevation = map.getCellElevation(projX, projY);
+            
+            if (projElevation != playerElevation) continue;
+            
             // Calculate projectile position on minimap
-            int projX = mapX + static_cast<int>(projectile->getPosition().x * cellSize);
-            int projY = mapY + static_cast<int>(projectile->getPosition().y * cellSize);
+            int projMapX = mapX + static_cast<int>(projectile->getPosition().x * cellSize);
+            int projMapY = mapY + static_cast<int>(projectile->getPosition().y * cellSize);
             
             // Draw projectile (bright yellow dot)
             SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 255);
-            SDL_Rect projRect = { projX - 2, projY - 2, 4, 4 };
+            SDL_Rect projRect = { projMapX - 2, projMapY - 2, 4, 4 };
             SDL_RenderFillRect(m_renderer, &projRect);
             
             // Draw projectile direction
-            int projDirX = projX + static_cast<int>(projectile->getDirection().x * cellSize);
-            int projDirY = projY + static_cast<int>(projectile->getDirection().y * cellSize);
-            SDL_RenderDrawLine(m_renderer, projX, projY, projDirX, projDirY);
+            int projDirX = projMapX + static_cast<int>(projectile->getDirection().x * cellSize);
+            int projDirY = projMapY + static_cast<int>(projectile->getDirection().y * cellSize);
+            SDL_RenderDrawLine(m_renderer, projMapX, projMapY, projDirX, projDirY);
         }
     }
 }
@@ -1123,5 +1236,37 @@ void Renderer::renderMuzzleFlash(double intensity) {
                 SDL_RenderDrawPoint(m_renderer, screenX, screenY);
             }
         }
+    }
+}
+
+void Renderer::DrawArrow(const SDL_Rect& rect, int direction) {
+    // Calculate center and size
+    int centerX = rect.x + rect.w / 2;
+    int centerY = rect.y + rect.h / 2;
+    int size = std::min(rect.w, rect.h) / 2;
+    
+    // Define arrow points based on direction
+    // 0=North, 1=East, 2=South, 3=West
+    switch (direction) {
+        case 0: // North
+            SDL_RenderDrawLine(m_renderer, centerX, centerY - size, centerX - size/2, centerY + size/2);
+            SDL_RenderDrawLine(m_renderer, centerX, centerY - size, centerX + size/2, centerY + size/2);
+            SDL_RenderDrawLine(m_renderer, centerX, centerY - size, centerX, centerY + size/2);
+            break;
+        case 1: // East
+            SDL_RenderDrawLine(m_renderer, centerX + size, centerY, centerX - size/2, centerY - size/2);
+            SDL_RenderDrawLine(m_renderer, centerX + size, centerY, centerX - size/2, centerY + size/2);
+            SDL_RenderDrawLine(m_renderer, centerX + size, centerY, centerX - size/2, centerY);
+            break;
+        case 2: // South
+            SDL_RenderDrawLine(m_renderer, centerX, centerY + size, centerX - size/2, centerY - size/2);
+            SDL_RenderDrawLine(m_renderer, centerX, centerY + size, centerX + size/2, centerY - size/2);
+            SDL_RenderDrawLine(m_renderer, centerX, centerY + size, centerX, centerY - size/2);
+            break;
+        case 3: // West
+            SDL_RenderDrawLine(m_renderer, centerX - size, centerY, centerX + size/2, centerY - size/2);
+            SDL_RenderDrawLine(m_renderer, centerX - size, centerY, centerX + size/2, centerY + size/2);
+            SDL_RenderDrawLine(m_renderer, centerX - size, centerY, centerX + size/2, centerY);
+            break;
     }
 } 

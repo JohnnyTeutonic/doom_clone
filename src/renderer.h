@@ -80,6 +80,9 @@ private:
         }
     }
     
+    // Private helper methods
+    void DrawArrow(const SDL_Rect& rect, int direction); // 0=N, 1=E, 2=S, 3=W
+    
 public:
     Renderer();
     ~Renderer();

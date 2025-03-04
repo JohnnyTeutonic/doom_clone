@@ -64,30 +64,46 @@ void Player::moveForward(double deltaTime, const Map& map) {
     int currentY = static_cast<int>(m_position.y);
     CellType currentCell = map.getCell(currentX, currentY);
     
-    // Handle stairs and stair steps
-    if (map.isStairs(currentX, currentY) || map.isStairStep(currentX, currentY)) {
+    // Detect level transitions based on cell type
+    if (currentCell == CellType::Stairs) {
+        // Check if we're at the entrance or exit of a staircase
+        // The exit is typically marked with an elevation of 0 or 1
+        int newElevation = map.getCellElevation(currentX, currentY);
+        
+        // Look ahead to determine if we're going up or down
+        int lookAheadX = static_cast<int>(m_position.x + m_direction.x);
+        int lookAheadY = static_cast<int>(m_position.y + m_direction.y);
+        int lookAheadElevation = map.getCellElevation(lookAheadX, lookAheadY);
+        
+        // Update the vertical angle to indicate level change
+        if (lookAheadElevation > newElevation) {
+            // Going up
+            m_verticalAngle = m_maxVerticalAngle * 0.5;
+        } else if (lookAheadElevation < newElevation) {
+            // Going down
+            m_verticalAngle = -m_maxVerticalAngle * 0.5;
+        }
+    }
+    else if (map.isStairStep(currentX, currentY)) {
+        // On a stair step - update vertical angle based on step height
         float currentStepHeight = map.getStepHeight(currentX, currentY);
         
-        // Look ahead to see if we should change vertical angle
+        // Look ahead to see which direction we're going
         int lookAheadX = static_cast<int>(m_position.x + m_direction.x * 0.5);
         int lookAheadY = static_cast<int>(m_position.y + m_direction.y * 0.5);
-        CellType lookAheadCell = map.getCell(lookAheadX, lookAheadY);
         
-        // Only adjust vertical angle when moving between different step heights
-        if (map.isStairStep(lookAheadX, lookAheadY) || map.isStairs(lookAheadX, lookAheadY)) {
+        if (map.isStairStep(lookAheadX, lookAheadY)) {
             float lookAheadStepHeight = map.getStepHeight(lookAheadX, lookAheadY);
             
-            // Calculate a smooth vertical angle based on step height difference
-            if (lookAheadStepHeight > currentStepHeight) {
-                // Going up
-                m_verticalAngle = (lookAheadStepHeight - currentStepHeight) * m_maxVerticalAngle * 0.6;
-            } else if (lookAheadStepHeight < currentStepHeight) {
-                // Going down
-                m_verticalAngle = (lookAheadStepHeight - currentStepHeight) * m_maxVerticalAngle * 0.6;
+            // Smoothly transition based on step height difference
+            if (fabs(lookAheadStepHeight - currentStepHeight) > 0.01) {
+                float angleFactor = (lookAheadStepHeight - currentStepHeight) * 2.0;
+                m_verticalAngle = angleFactor * m_maxVerticalAngle;
             }
         }
-    } else {
-        // When not on stairs, gradually return vertical angle to zero
+    }
+    else {
+        // When not on stairs, gradually return vertical angle to neutral
         if (m_verticalAngle > 0.01) {
             m_verticalAngle -= m_verticalLookSpeed * deltaTime * 2.0;
             if (m_verticalAngle < 0) m_verticalAngle = 0;
@@ -116,30 +132,45 @@ void Player::moveBackward(double deltaTime, const Map& map) {
     int currentY = static_cast<int>(m_position.y);
     CellType currentCell = map.getCell(currentX, currentY);
     
-    // Handle stairs and stair steps (going backward)
-    if (map.isStairs(currentX, currentY) || map.isStairStep(currentX, currentY)) {
+    // Detect level transitions based on cell type
+    if (currentCell == CellType::Stairs) {
+        // Check if we're at the entrance or exit of a staircase
+        int newElevation = map.getCellElevation(currentX, currentY);
+        
+        // Look behind to determine if we're going up or down (since we're moving backward)
+        int lookBehindX = static_cast<int>(m_position.x - m_direction.x);
+        int lookBehindY = static_cast<int>(m_position.y - m_direction.y);
+        int lookBehindElevation = map.getCellElevation(lookBehindX, lookBehindY);
+        
+        // Update the vertical angle to indicate level change (reversed since moving backward)
+        if (lookBehindElevation > newElevation) {
+            // Going down (when walking backward)
+            m_verticalAngle = -m_maxVerticalAngle * 0.5;
+        } else if (lookBehindElevation < newElevation) {
+            // Going up (when walking backward)
+            m_verticalAngle = m_maxVerticalAngle * 0.5;
+        }
+    }
+    else if (map.isStairStep(currentX, currentY)) {
+        // On a stair step - update vertical angle based on step height
         float currentStepHeight = map.getStepHeight(currentX, currentY);
         
-        // Look behind to see if we should change vertical angle
+        // Look behind to determine direction
         int lookBehindX = static_cast<int>(m_position.x - m_direction.x * 0.5);
         int lookBehindY = static_cast<int>(m_position.y - m_direction.y * 0.5);
-        CellType lookBehindCell = map.getCell(lookBehindX, lookBehindY);
         
-        // Only adjust vertical angle when moving between different step heights
-        if (map.isStairStep(lookBehindX, lookBehindY) || map.isStairs(lookBehindX, lookBehindY)) {
+        if (map.isStairStep(lookBehindX, lookBehindY)) {
             float lookBehindStepHeight = map.getStepHeight(lookBehindX, lookBehindY);
             
-            // Calculate a smooth vertical angle based on step height difference (reversed since going backward)
-            if (lookBehindStepHeight > currentStepHeight) {
-                // Going down (when moving backward)
-                m_verticalAngle = (currentStepHeight - lookBehindStepHeight) * m_maxVerticalAngle * 0.6;
-            } else if (lookBehindStepHeight < currentStepHeight) {
-                // Going up (when moving backward)
-                m_verticalAngle = (currentStepHeight - lookBehindStepHeight) * m_maxVerticalAngle * 0.6;
+            // Reversed angle calculation since going backward
+            if (fabs(lookBehindStepHeight - currentStepHeight) > 0.01) {
+                float angleFactor = (currentStepHeight - lookBehindStepHeight) * 2.0;
+                m_verticalAngle = angleFactor * m_maxVerticalAngle;
             }
         }
-    } else {
-        // When not on stairs, gradually return vertical angle to zero
+    }
+    else {
+        // When not on stairs, gradually return vertical angle to neutral
         if (m_verticalAngle > 0.01) {
             m_verticalAngle -= m_verticalLookSpeed * deltaTime * 2.0;
             if (m_verticalAngle < 0) m_verticalAngle = 0;
