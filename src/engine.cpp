@@ -409,6 +409,43 @@ void Engine::update() {
             if (m_flashIntensity < 0) m_flashIntensity = 0;
         }
         
+        // Update flickering lights
+        if (m_renderer) {
+            LightingSystem& lighting = m_renderer->getLightingSystem();
+            static float flickerTimer = 0.0f;
+            flickerTimer += m_deltaTime;
+            
+            // Update each light's intensity
+            for (size_t i = 0; i < lighting.getLightCount(); ++i) {
+                Light& light = lighting.getLightAt(i);  // Assuming this method exists to get a modifiable light
+                
+                if (light.type == LightType::Point) {
+                    // Different flicker patterns based on light position
+                    float xOffset = light.position.x * 1.23f; // Use position to create varied patterns
+                    float yOffset = light.position.y * 0.87f;
+                    
+                    // Combine multiple sine waves for more organic flickering
+                    float fastFlicker = sin(flickerTimer * 15.0f + xOffset) * 0.2f;
+                    float mediumFlicker = sin(flickerTimer * 7.0f + yOffset) * 0.15f;
+                    float slowFlicker = sin(flickerTimer * 3.0f + xOffset + yOffset) * 0.1f;
+                    
+                    // Add some random noise for more chaotic effect
+                    float noise = (rand() % 100) / 500.0f - 0.1f;
+                    
+                    // Combine all effects
+                    float flickerAmount = fastFlicker + mediumFlicker + slowFlicker + noise;
+                    
+                    // Apply the flicker effect to the light's base intensity
+                    float baseIntensity = light.intensity;
+                    light.intensity = std::max(0.1f, std::min(1.0f, baseIntensity + flickerAmount));
+                    
+                    // Also slightly vary the light's radius
+                    float radiusVariation = sin(flickerTimer * 5.0f + xOffset * yOffset) * 0.5f;
+                    light.radius = std::max(1.0f, static_cast<float>(light.radius + radiusVariation));
+                }
+            }
+        }
+        
         // Check game over condition
         if (m_player.getHealth() <= 0) {
             setState(GameState::GameOver);
@@ -780,13 +817,13 @@ void Engine::setupMap() {
                                 SpriteType::Enemy
                             );
                             
-                            // Add a point light for the enemy
+                            // Add a pulsing red light for the enemy
                             if (spriteId >= 0 && m_renderer) {
                                 Light enemyLight = Light::createPointLight(
                                     Vec2(x + 0.5, y + 0.5),  // Position
                                     Color(255, 0, 0),        // Red light
-                                    0.5,                     // Intensity
-                                    3.0                      // Radius
+                                    0.7,                     // Higher intensity
+                                    4.0                      // Larger radius
                                 );
                                 m_renderer->getLightingSystem().addLight(enemyLight);
                             }
@@ -801,54 +838,108 @@ void Engine::setupMap() {
     if (m_renderer) {
         LightingSystem& lighting = m_renderer->getLightingSystem();
         
-        // Set ambient lighting (dark, bluish tone for DOOM atmosphere)
-        lighting.setAmbientColor(Color(64, 64, 96));
-        lighting.setAmbientIntensity(0.2);
+        // Set darker ambient lighting for more dramatic effect
+        lighting.setAmbientColor(Color(32, 32, 48));  // Darker bluish tone
+        lighting.setAmbientIntensity(0.15);           // Lower ambient intensity
         
-        // Add main directional light (like moonlight)
+        // Add main directional light (moonlight)
         Light moonlight = Light::createDirectionalLight(
             Vec2(-0.5, -0.7),           // Direction
-            Color(150, 150, 200),       // Bluish white
-            0.5                         // Intensity
+            Color(120, 120, 180),       // Cool bluish tone
+            0.4                         // Moderate intensity
         );
         lighting.addLight(moonlight);
         
-        // Add some atmospheric point lights
-        // Corners
-        Light cornerLight1 = Light::createPointLight(
-            Vec2(2.0, 2.0),
-            Color(255, 100, 0),  // Orange
-            0.7,
-            5.0
-        );
-        lighting.addLight(cornerLight1);
+        // Add flickering lights throughout the map
+        std::vector<Light> flickeringLights;
         
-        Light cornerLight2 = Light::createPointLight(
-            Vec2(m_map.getWidth() - 2.0, 2.0),
-            Color(0, 100, 255),  // Blue
-            0.7,
-            5.0
-        );
-        lighting.addLight(cornerLight2);
+        // Add torch-like lights along the walls
+        for (int y = 2; y < m_map.getHeight() - 2; y += 4) {
+            for (int x = 2; x < m_map.getWidth() - 2; x += 4) {
+                // Only place lights near walls
+                bool nearWall = false;
+                for (int dy = -1; dy <= 1 && !nearWall; dy++) {
+                    for (int dx = -1; dx <= 1 && !nearWall; dx++) {
+                        if (m_map.getCell(x + dx, y + dy) == CellType::Wall) {
+                            nearWall = true;
+                        }
+                    }
+                }
+                
+                if (nearWall && rand() % 2 == 0) {
+                    // Create a flickering light with random color variation
+                    Color baseColor;
+                    switch (rand() % 3) {
+                        case 0: // Warm orange
+                            baseColor = Color(255, 147, 41);
+                            break;
+                        case 1: // Cool blue
+                            baseColor = Color(41, 169, 255);
+                            break;
+                        case 2: // Eerie green
+                            baseColor = Color(41, 255, 147);
+                            break;
+                    }
+                    
+                    Light flickeringLight = Light::createPointLight(
+                        Vec2(x + 0.5, y + 0.5),
+                        baseColor,
+                        0.8 + (rand() % 20) / 100.0,  // Random base intensity
+                        6.0 + (rand() % 20) / 10.0    // Random radius
+                    );
+                    lighting.addLight(flickeringLight);
+                }
+            }
+        }
         
-        Light cornerLight3 = Light::createPointLight(
-            Vec2(2.0, m_map.getHeight() - 2.0),
-            Color(100, 255, 0),  // Green
-            0.7,
-            5.0
-        );
-        lighting.addLight(cornerLight3);
+        // Add some larger area lights at key positions
+        std::vector<Vec2> keyPositions = {
+            Vec2(m_map.getWidth() / 4, m_map.getHeight() / 4),
+            Vec2(3 * m_map.getWidth() / 4, m_map.getHeight() / 4),
+            Vec2(m_map.getWidth() / 4, 3 * m_map.getHeight() / 4),
+            Vec2(3 * m_map.getWidth() / 4, 3 * m_map.getHeight() / 4),
+            Vec2(m_map.getWidth() / 2, m_map.getHeight() / 2)
+        };
         
-        Light cornerLight4 = Light::createPointLight(
-            Vec2(m_map.getWidth() - 2.0, m_map.getHeight() - 2.0),
-            Color(255, 0, 100),  // Pink
-            0.7,
-            5.0
-        );
-        lighting.addLight(cornerLight4);
+        for (const Vec2& pos : keyPositions) {
+            // Create a large, intense light with a unique color
+            Color lightColor(
+                128 + rand() % 128,
+                128 + rand() % 128,
+                128 + rand() % 128
+            );
+            
+            Light areaLight = Light::createPointLight(
+                pos,
+                lightColor,
+                1.0,    // Full intensity
+                10.0    // Large radius
+            );
+            lighting.addLight(areaLight);
+        }
+        
+        // Add some small, subtle accent lights
+        for (int i = 0; i < 10; i++) {
+            int x = 2 + rand() % (m_map.getWidth() - 4);
+            int y = 2 + rand() % (m_map.getHeight() - 4);
+            
+            if (m_map.getCell(x, y) == CellType::Empty) {
+                Light accentLight = Light::createPointLight(
+                    Vec2(x + 0.5, y + 0.5),
+                    Color(
+                        50 + rand() % 50,
+                        50 + rand() % 50,
+                        50 + rand() % 50
+                    ),
+                    0.3 + (rand() % 20) / 100.0,  // Low intensity
+                    3.0 + (rand() % 20) / 10.0    // Small radius
+                );
+                lighting.addLight(accentLight);
+            }
+        }
     }
     
-    std::cout << "Map setup complete" << std::endl;
+    std::cout << "Map setup complete with enhanced lighting" << std::endl;
 }
 
 void Engine::setupPlayer() {

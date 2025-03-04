@@ -123,6 +123,12 @@ public:
         }
         return nullptr;
     }
+
+    // Get number of lights
+    size_t getLightCount() const { return m_lights.size(); }
+
+    // Get modifiable reference to light at index
+    Light& getLightAt(size_t index) { return m_lights[index]; }
 };
 
 #endif // LIGHTING_H 
