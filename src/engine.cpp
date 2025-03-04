@@ -39,6 +39,7 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_notificationRect{}
     , m_audioSystem(nullptr)
     , m_musicEnabled(true)
+    , m_prevKeyboardState{}
 {
     std::cout << "Engine created with resolution " << screenWidth << "x" << screenHeight << std::endl;
 }
@@ -77,8 +78,8 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_targetFPS = targetFPS;
     m_frameTime = 1.0 / targetFPS;
     
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
+    // Initialize SDL with explicit keyboard support
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS) != 0) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
         return false;
     }
@@ -315,29 +316,33 @@ void Engine::processInput() {
         m_inputHandler.processEvent(event);
     }
     
+    // WSL2 workaround: Get keyboard state directly
+    int numKeys;
+    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
+    
     // Process input actions
     if (m_gameState == GameState::Playing) {
-        // Movement
-        if (m_inputHandler.isActionActive(InputAction::MoveForward)) {
+        // Movement - use direct keyboard state for better compatibility with WSL2
+        if (keyboardState[SDL_SCANCODE_W]) {
             m_player.moveForward(m_deltaTime, m_map);
         }
-        if (m_inputHandler.isActionActive(InputAction::MoveBackward)) {
+        if (keyboardState[SDL_SCANCODE_S]) {
             m_player.moveBackward(m_deltaTime, m_map);
         }
-        if (m_inputHandler.isActionActive(InputAction::StrafeLeft)) {
+        if (keyboardState[SDL_SCANCODE_A]) {
             m_player.strafeLeft(m_deltaTime, m_map);
         }
-        if (m_inputHandler.isActionActive(InputAction::StrafeRight)) {
+        if (keyboardState[SDL_SCANCODE_D]) {
             m_player.strafeRight(m_deltaTime, m_map);
         }
-        if (m_inputHandler.isActionActive(InputAction::RotateLeft)) {
+        if (keyboardState[SDL_SCANCODE_LEFT]) {
             m_player.rotateLeft(m_deltaTime);
         }
-        if (m_inputHandler.isActionActive(InputAction::RotateRight)) {
+        if (keyboardState[SDL_SCANCODE_RIGHT]) {
             m_player.rotateRight(m_deltaTime);
         }
         
-        // Actions
+        // Use the input handler for other actions
         if (m_inputHandler.isActionJustPressed(InputAction::Fire)) {
             if (m_player.fire()) {
                 // Apply recoil effect
@@ -362,46 +367,52 @@ void Engine::processInput() {
             m_renderer->toggleWeapon();
         }
         
-        // Audio controls
-        if (m_inputHandler.isActionJustPressed(InputAction::ToggleMusic)) {
+        // Audio controls - use direct keyboard state for better compatibility with WSL2
+        if (keyboardState[SDL_SCANCODE_M] && !m_prevKeyboardState[SDL_SCANCODE_M]) {
             toggleMusic();
+            m_prevKeyboardState[SDL_SCANCODE_M] = true;
+        } else if (!keyboardState[SDL_SCANCODE_M]) {
+            m_prevKeyboardState[SDL_SCANCODE_M] = false;
         }
-        if (m_inputHandler.isActionJustPressed(InputAction::IncreaseMusicVolume)) {
+        
+        if (keyboardState[SDL_SCANCODE_PAGEUP] && !m_prevKeyboardState[SDL_SCANCODE_PAGEUP]) {
             if (m_audioSystem) {
                 int currentVolume = m_audioSystem->getMusicVolume();
                 setMusicVolume(currentVolume + 8); // Increase by ~6% (8/128)
             }
+            m_prevKeyboardState[SDL_SCANCODE_PAGEUP] = true;
+        } else if (!keyboardState[SDL_SCANCODE_PAGEUP]) {
+            m_prevKeyboardState[SDL_SCANCODE_PAGEUP] = false;
         }
-        if (m_inputHandler.isActionJustPressed(InputAction::DecreaseMusicVolume)) {
+        
+        if (keyboardState[SDL_SCANCODE_PAGEDOWN] && !m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN]) {
             if (m_audioSystem) {
                 int currentVolume = m_audioSystem->getMusicVolume();
                 setMusicVolume(currentVolume - 8); // Decrease by ~6% (8/128)
             }
-        }
-        if (m_inputHandler.isActionJustPressed(InputAction::IncreaseSfxVolume)) {
-            if (m_audioSystem) {
-                int currentVolume = m_audioSystem->getSfxVolume();
-                setSfxVolume(currentVolume + 8); // Increase by ~6% (8/128)
-            }
-        }
-        if (m_inputHandler.isActionJustPressed(InputAction::DecreaseSfxVolume)) {
-            if (m_audioSystem) {
-                int currentVolume = m_audioSystem->getSfxVolume();
-                setSfxVolume(currentVolume - 8); // Decrease by ~6% (8/128)
-            }
+            m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = true;
+        } else if (!keyboardState[SDL_SCANCODE_PAGEDOWN]) {
+            m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = false;
         }
     }
     
     // Global actions (work in any state)
-    if (m_inputHandler.isActionJustPressed(InputAction::Menu)) {
+    if (keyboardState[SDL_SCANCODE_ESCAPE] && !m_prevKeyboardState[SDL_SCANCODE_ESCAPE]) {
         if (m_gameState == GameState::Playing) {
             setState(GameState::Paused);
         } else if (m_gameState == GameState::Paused) {
             setState(GameState::Playing);
         }
+        m_prevKeyboardState[SDL_SCANCODE_ESCAPE] = true;
+    } else if (!keyboardState[SDL_SCANCODE_ESCAPE]) {
+        m_prevKeyboardState[SDL_SCANCODE_ESCAPE] = false;
     }
-    if (m_inputHandler.isActionJustPressed(InputAction::Quit)) {
+    
+    if (keyboardState[SDL_SCANCODE_Q] && !m_prevKeyboardState[SDL_SCANCODE_Q]) {
         m_running = false;
+        m_prevKeyboardState[SDL_SCANCODE_Q] = true;
+    } else if (!keyboardState[SDL_SCANCODE_Q]) {
+        m_prevKeyboardState[SDL_SCANCODE_Q] = false;
     }
     
     // Process mouse movement for camera rotation
@@ -478,6 +489,9 @@ void Engine::update() {
             setState(GameState::Paused);
         }
     }
+    
+    // Update input handler at the end of the frame
+    m_inputHandler.update();
 }
 
 void Engine::renderNotification() {

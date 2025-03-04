@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
 // Forward declarations
 class Renderer;
@@ -148,6 +149,9 @@ private:
     // Audio system
     AudioSystem* m_audioSystem;
     bool m_musicEnabled;
+    
+    // Keyboard state tracking for WSL2 compatibility
+    std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
     
     // Private methods
     void setupMap();

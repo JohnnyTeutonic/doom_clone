@@ -906,9 +906,6 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         return;
     }
     
-    // Render the weapon texture
-    std::cout << "Rendering weapon texture (ID " << weaponTextureId << ")" << std::endl;
-    
     // Calculate the weapon size (maintain aspect ratio)
     float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
     int weaponHeight = m_screenHeight / 2;  // Take up half the screen height
@@ -970,10 +967,7 @@ void Renderer::renderProjectiles(const Player& player) {
     
     // Get active projectiles
     std::vector<Projectile*> projectiles = m_projectileManager->getActiveProjectiles();
-    
-    // Debug output
-    std::cout << "Rendering " << projectiles.size() << " active projectiles" << std::endl;
-    
+        
     // Render each projectile
     for (const Projectile* projectile : projectiles) {
         if (!projectile) {
