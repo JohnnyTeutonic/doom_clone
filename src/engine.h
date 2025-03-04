@@ -6,6 +6,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <string>
 #include <memory>
+#include <vector>
 
 // Forward declarations
 class Renderer;
@@ -119,6 +120,7 @@ private:
     int m_bulletTexture;
     int m_machineGunTexture;
     int m_currentWeaponTexture;
+    std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
     
     // Notification system
     std::string m_notificationText;

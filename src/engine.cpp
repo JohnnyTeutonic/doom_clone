@@ -583,90 +583,189 @@ bool Engine::loadAssets() {
     m_bulletTexture = -1;
     m_enemyTexture = -1;
     m_weaponTexture = -1;
+    m_machineGunTexture = -1;
     
-    // Set up textures for walls, floor, ceiling
     std::string assetsPath = "assets/textures/";
     
-    // Create wall texture (ID 0)
-    std::cout << "Creating DOOM-style wall texture..." << std::endl;
-    SDL_Surface* wallSurface = createDoomWallTexture(64, 64);
-    if (wallSurface) {
-        m_wallTexture = m_textureManager->createTextureFromSurface(wallSurface);
-        SDL_FreeSurface(wallSurface);
-    } else {
-        std::cout << "Failed to create wall texture, falling back to solid color" << std::endl;
-        m_wallTexture = m_textureManager->createSolidTexture(64, 64, Color(128, 128, 128));
-    }
-    std::cout << "Wall texture ID: " << m_wallTexture << std::endl;
+    // Create wall textures
+    std::cout << "Creating DOOM-style wall textures..." << std::endl;
     
-    // Create floor texture (ID 1)
+    // Bloody stone texture (ID 0)
+    SDL_Surface* bloodyWallSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (bloodyWallSurface) {
+        SDL_LockSurface(bloodyWallSurface);
+        Uint32* pixels = (Uint32*)bloodyWallSurface->pixels;
+        
+        // Base stone pattern
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 30) - 15;
+                int baseGray = 100 + noise;
+                
+                if ((x + y) % 8 == 0 || (x - y) % 8 == 0) {
+                    baseGray = 60;
+                }
+                
+                if (rand() % 10 == 0) {
+                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format, 
+                        120 + rand() % 40, 20 + rand() % 20, 20 + rand() % 20);
+                } else {
+                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format, 
+                        baseGray, baseGray, baseGray);
+                }
+            }
+        }
+        SDL_UnlockSurface(bloodyWallSurface);
+        m_wallTexture = m_textureManager->createTextureFromSurface(bloodyWallSurface);
+        SDL_FreeSurface(bloodyWallSurface);
+        std::cout << "Created bloody stone texture (ID " << m_wallTexture << ")" << std::endl;
+    }
+    
+    // Demonic runes texture
+    SDL_Surface* runeWallSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    int runeTextureId = -1;
+    if (runeWallSurface) {
+        SDL_LockSurface(runeWallSurface);
+        Uint32* pixels = (Uint32*)runeWallSurface->pixels;
+        
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 20) - 10;
+                int baseGray = 40 + noise;
+                
+                bool isRune = false;
+                if ((x + y) % 16 < 2 || (x - y) % 16 < 2) {
+                    if (rand() % 3 == 0) isRune = true;
+                }
+                
+                if (isRune) {
+                    pixels[y * 64 + x] = SDL_MapRGB(runeWallSurface->format,
+                        200 + rand() % 55, 50 + rand() % 30, 0);
+                } else {
+                    pixels[y * 64 + x] = SDL_MapRGB(runeWallSurface->format,
+                        baseGray, baseGray, baseGray);
+                }
+            }
+        }
+        SDL_UnlockSurface(runeWallSurface);
+        runeTextureId = m_textureManager->createTextureFromSurface(runeWallSurface);
+        SDL_FreeSurface(runeWallSurface);
+        std::cout << "Created rune texture (ID " << runeTextureId << ")" << std::endl;
+    }
+    
+    // Flesh wall texture
+    SDL_Surface* fleshWallSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    int fleshTextureId = -1;
+    if (fleshWallSurface) {
+        SDL_LockSurface(fleshWallSurface);
+        Uint32* pixels = (Uint32*)fleshWallSurface->pixels;
+        
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 40) - 20;
+                
+                bool isVein = false;
+                if (((x * x + y * y) % 32 < 4) || ((x - 32) * (x - 32) + (y - 32) * (y - 32)) % 24 < 3) {
+                    isVein = true;
+                }
+                
+                if (isVein) {
+                    pixels[y * 64 + x] = SDL_MapRGB(fleshWallSurface->format,
+                        140 + noise, 20 + noise, 20 + noise);
+                } else {
+                    pixels[y * 64 + x] = SDL_MapRGB(fleshWallSurface->format,
+                        180 + noise, 100 + noise, 100 + noise);
+                }
+            }
+        }
+        SDL_UnlockSurface(fleshWallSurface);
+        fleshTextureId = m_textureManager->createTextureFromSurface(fleshWallSurface);
+        SDL_FreeSurface(fleshWallSurface);
+        std::cout << "Created flesh texture (ID " << fleshTextureId << ")" << std::endl;
+    }
+    
+    // Rusty metal texture
+    SDL_Surface* metalWallSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    int metalTextureId = -1;
+    if (metalWallSurface) {
+        SDL_LockSurface(metalWallSurface);
+        Uint32* pixels = (Uint32*)metalWallSurface->pixels;
+        
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 30) - 15;
+                
+                bool isRust = (rand() % 3 == 0);
+                if ((x + y) % 8 == 0) isRust = true;
+                
+                if (isRust) {
+                    pixels[y * 64 + x] = SDL_MapRGB(metalWallSurface->format,
+                        139 + noise, 69 + noise, 19 + noise);
+                } else {
+                    pixels[y * 64 + x] = SDL_MapRGB(metalWallSurface->format,
+                        160 + noise, 160 + noise, 160 + noise);
+                }
+            }
+        }
+        SDL_UnlockSurface(metalWallSurface);
+        metalTextureId = m_textureManager->createTextureFromSurface(metalWallSurface);
+        SDL_FreeSurface(metalWallSurface);
+        std::cout << "Created metal texture (ID " << metalTextureId << ")" << std::endl;
+    }
+    
+    // Create floor texture
     std::cout << "Creating floor texture..." << std::endl;
-    SDL_Surface* floorSurface = createDoomWallTexture(64, 64);
+    SDL_Surface* floorSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
     if (floorSurface) {
-        // Darken the floor texture
         SDL_LockSurface(floorSurface);
         Uint32* pixels = (Uint32*)floorSurface->pixels;
-        for (int i = 0; i < 64 * 64; i++) {
-            Uint8 r, g, b;
-            SDL_GetRGB(pixels[i], floorSurface->format, &r, &g, &b);
-            r = r * 2 / 3;
-            g = g * 2 / 3;
-            b = b * 2 / 3;
-            pixels[i] = SDL_MapRGB(floorSurface->format, r, g, b);
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 30) - 15;
+                int baseGray = 80 + noise;  // Darker base for floor
+                pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, baseGray, baseGray, baseGray);
+            }
         }
         SDL_UnlockSurface(floorSurface);
-        
         m_floorTexture = m_textureManager->createTextureFromSurface(floorSurface);
         SDL_FreeSurface(floorSurface);
     } else {
-        std::cout << "Failed to create floor texture, falling back to solid color" << std::endl;
         m_floorTexture = m_textureManager->createSolidTexture(64, 64, Color(32, 32, 64));
     }
     std::cout << "Floor texture ID: " << m_floorTexture << std::endl;
     
-    // Create ceiling texture (ID 2)
+    // Create ceiling texture
     std::cout << "Creating ceiling texture..." << std::endl;
-    SDL_Surface* ceilingSurface = createDoomWallTexture(64, 64);
+    SDL_Surface* ceilingSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
     if (ceilingSurface) {
-        // Lighten the ceiling texture
         SDL_LockSurface(ceilingSurface);
         Uint32* pixels = (Uint32*)ceilingSurface->pixels;
-        for (int i = 0; i < 64 * 64; i++) {
-            Uint8 r, g, b;
-            SDL_GetRGB(pixels[i], ceilingSurface->format, &r, &g, &b);
-            r = std::min(255, r * 3 / 2);
-            g = std::min(255, g * 3 / 2);
-            b = std::min(255, b * 3 / 2);
-            pixels[i] = SDL_MapRGB(ceilingSurface->format, r, g, b);
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 30) - 15;
+                int baseGray = 120 + noise;  // Lighter base for ceiling
+                pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, baseGray, baseGray, baseGray);
+            }
         }
         SDL_UnlockSurface(ceilingSurface);
-        
         m_ceilingTexture = m_textureManager->createTextureFromSurface(ceilingSurface);
         SDL_FreeSurface(ceilingSurface);
     } else {
-        std::cout << "Failed to create ceiling texture, falling back to solid color" << std::endl;
         m_ceilingTexture = m_textureManager->createSolidTexture(64, 64, Color(64, 64, 96));
     }
     std::cout << "Ceiling texture ID: " << m_ceilingTexture << std::endl;
     
-    // Create bullet texture (ID 3)
+    // Create bullet texture
     std::cout << "Creating bullet texture..." << std::endl;
     m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
     std::cout << "Bullet texture ID: " << m_bulletTexture << std::endl;
     
-    // Create enemy texture (ID 4)
+    // Create enemy texture
     std::cout << "Creating enemy texture..." << std::endl;
     SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 32, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
     if (enemySurface) {
         SDL_LockSurface(enemySurface);
         Uint32* pixels = (Uint32*)enemySurface->pixels;
-        
-        // Colors for the demon
-        Uint32 darkRed = SDL_MapRGBA(enemySurface->format, 139, 0, 0, 255);      // Dark red for body
-        Uint32 lightRed = SDL_MapRGBA(enemySurface->format, 220, 20, 20, 255);   // Lighter red for highlights
-        Uint32 brown = SDL_MapRGBA(enemySurface->format, 139, 69, 19, 255);      // Brown for horns
-        Uint32 yellow = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);     // Yellow for eyes
-        Uint32 black = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);          // Black for details
         
         // Fill with transparent color first
         Uint32 transparent = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
@@ -674,77 +773,10 @@ bool Engine::loadAssets() {
             pixels[i] = transparent;
         }
         
-        // Draw humanoid shape (narrower body)
-        for (int y = 15; y < 60; y++) {
-            int width = 12;  // Base body width
-            // Wider at shoulders (y=20), narrower at waist (y=40)
-            if (y < 25) width = 16;  // Shoulders
-            else if (y > 40) width = 14;  // Legs
-            
-            int startX = (32 - width) / 2;
-            for (int x = startX; x < startX + width; x++) {
-                pixels[y * 32 + x] = darkRed;
-            }
-        }
-        
-        // Draw horns (smaller and more pointed)
-        for (int y = 0; y < 15; y++) {
-            for (int x = 8; x < 13; x++) {
-                if (x - 8 <= y/2) pixels[y * 32 + x] = brown;
-            }
-            for (int x = 19; x < 24; x++) {
-                if (24 - x <= y/2) pixels[y * 32 + x] = brown;
-            }
-        }
-        
-        // Draw eyes (yellow circles with black centers)
-        for (int y = 18; y < 28; y++) {
-            for (int x = 8; x < 15; x++) {
-                int dx = x - 11;
-                int dy = y - 23;
-                if (dx*dx + dy*dy < 9) {
-                    pixels[y * 32 + x] = yellow;
-                    if (dx*dx + dy*dy < 4) {
-                        pixels[y * 32 + x] = black;
-                    }
-                }
-            }
-            for (int x = 17; x < 24; x++) {
-                int dx = x - 20;
-                int dy = y - 23;
-                if (dx*dx + dy*dy < 9) {
-                    pixels[y * 32 + x] = yellow;
-                    if (dx*dx + dy*dy < 4) {
-                        pixels[y * 32 + x] = black;
-                    }
-                }
-            }
-        }
-        
-        // Draw mouth (smaller and more defined)
-        for (int y = 30; y < 38; y++) {
-            for (int x = 10; x < 22; x++) {
-                // Main mouth line
-                if (y == 34) pixels[y * 32 + x] = black;
-                
-                // Teeth
-                if (y > 34 && y < 37 && (x % 4 < 2)) {
-                    pixels[y * 32 + x] = lightRed;
-                }
-            }
-        }
-        
-        // Add muscle definition with lighter red
-        for (int y = 15; y < 60; y++) {
-            int width = 12;
-            if (y < 25) width = 16;
-            else if (y > 40) width = 14;
-            
-            int startX = (32 - width) / 2;
-            for (int x = startX; x < startX + width; x++) {
-                if ((x + y) % 6 == 0 && pixels[y * 32 + x] == darkRed) {
-                    pixels[y * 32 + x] = lightRed;
-                }
+        // Draw enemy shape (simplified for stability)
+        for (int y = 10; y < 54; y++) {
+            for (int x = 8; x < 24; x++) {
+                pixels[y * 32 + x] = SDL_MapRGBA(enemySurface->format, 200, 0, 0, 255);
             }
         }
         
@@ -752,59 +784,44 @@ bool Engine::loadAssets() {
         m_enemyTexture = m_textureManager->createTextureFromSurface(enemySurface);
         SDL_FreeSurface(enemySurface);
     } else {
-        std::cout << "Failed to create enemy texture surface, falling back to simple texture" << std::endl;
-        m_enemyTexture = m_textureManager->createCheckerboardTexture(32, 64, Color(255, 0, 0), Color(200, 0, 0), 8);
+        m_enemyTexture = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
     }
     std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
     
-    // Load weapon texture (ID 5)
-    std::cout << "Loading weapon texture (shotgun.webp)..." << std::endl;
+    // Load weapon textures with transparency
+    std::cout << "Loading weapon textures..." << std::endl;
+    
+    // Load shotgun
     SDL_Surface* tempSurface = IMG_Load((assetsPath + "shotgun.webp").c_str());
     if (tempSurface) {
-        // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
-        
-        // Create texture from surface
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
-            // Enable alpha blending for the texture
             SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
             m_weaponTexture = m_textureManager->addTexture(texture);
-            SDL_FreeSurface(tempSurface);
-        } else {
-            SDL_FreeSurface(tempSurface);
-            std::cout << "Failed to create weapon texture from surface, creating solid color" << std::endl;
-            m_weaponTexture = m_textureManager->createSolidTexture(256, 256, Color(128, 128, 128));
         }
-    } else {
-        std::cout << "Failed to load weapon texture (shotgun.webp), creating solid color" << std::endl;
+        SDL_FreeSurface(tempSurface);
+    }
+    if (m_weaponTexture < 0) {
         m_weaponTexture = m_textureManager->createSolidTexture(256, 256, Color(128, 128, 128));
     }
     std::cout << "Weapon texture ID: " << m_weaponTexture << std::endl;
     
-    // Load machine gun texture (ID 6) with transparency
-    std::cout << "Loading machine gun texture (machine_gun.png)..." << std::endl;
+    // Load machine gun
     tempSurface = IMG_Load((assetsPath + "machine_gun.png").c_str());
     if (tempSurface) {
-        // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
-        
-        // Create texture from surface
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
-            // Enable alpha blending for the texture
             SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
             m_machineGunTexture = m_textureManager->addTexture(texture);
-            SDL_FreeSurface(tempSurface);
-        } else {
-            SDL_FreeSurface(tempSurface);
-            std::cout << "Failed to create machine gun texture from surface, creating solid color" << std::endl;
-            m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 100));
         }
-    } else {
-        std::cout << "Failed to load machine gun texture, creating solid color" << std::endl;
+        SDL_FreeSurface(tempSurface);
+    }
+    if (m_machineGunTexture < 0) {
         m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 100));
     }
+    std::cout << "Machine gun texture ID: " << m_machineGunTexture << std::endl;
     
     // Set initial weapon texture
     m_currentWeaponTexture = m_weaponTexture;
@@ -815,31 +832,91 @@ bool Engine::loadAssets() {
         std::cout << "Set default bullet texture ID: " << m_bulletTexture << std::endl;
     }
     
-    // Verify all textures were created
-    if (m_wallTexture < 0 || m_floorTexture < 0 || m_ceilingTexture < 0 || 
-        m_bulletTexture < 0 || m_enemyTexture < 0 || m_weaponTexture < 0 || m_machineGunTexture < 0) {
+    // Store texture IDs for wall variations
+    m_wallTextureVariations.clear();
+    if (m_wallTexture >= 0) m_wallTextureVariations.push_back(m_wallTexture);  // Bloody stone
+    if (runeTextureId >= 0) m_wallTextureVariations.push_back(runeTextureId);  // Runes
+    if (fleshTextureId >= 0) m_wallTextureVariations.push_back(fleshTextureId);  // Flesh
+    if (metalTextureId >= 0) m_wallTextureVariations.push_back(metalTextureId);  // Metal
+    
+    // Verify all required textures were created
+    bool success = m_wallTexture >= 0 && m_floorTexture >= 0 && m_ceilingTexture >= 0 && 
+                  m_bulletTexture >= 0 && m_enemyTexture >= 0 && m_weaponTexture >= 0 && 
+                  m_machineGunTexture >= 0 && !m_wallTextureVariations.empty();
+    
+    if (!success) {
         std::cerr << "Failed to create one or more required textures!" << std::endl;
         return false;
     }
     
+    std::cout << "All textures loaded successfully" << std::endl;
     return true;
 }
 
 void Engine::setupMap() {
     std::cout << "Setting up game map..." << std::endl;
     
-    // Create a simple test map
+    // Create a more interesting map with varied wall textures
     for (int y = 0; y < m_map.getHeight(); y++) {
         for (int x = 0; x < m_map.getWidth(); x++) {
             // Create walls around the perimeter
             if (x == 0 || y == 0 || x == m_map.getWidth() - 1 || y == m_map.getHeight() - 1) {
                 m_map.setCell(x, y, CellType::Wall);
-                m_map.setWallTexture(x, y, m_wallTexture);
+                
+                // Use metal texture for perimeter walls (last texture in variations)
+                if (!m_wallTextureVariations.empty()) {
+                    m_map.setWallTexture(x, y, m_wallTextureVariations.back());
+                } else {
+                    m_map.setWallTexture(x, y, m_wallTexture);  // Fallback to default
+                }
             } else {
-                // Add some random walls in the interior
+                // Add some walls in the interior with different patterns
                 if ((x % 5 == 0 || y % 5 == 0) && rand() % 3 == 0) {
                     m_map.setCell(x, y, CellType::Wall);
-                    m_map.setWallTexture(x, y, m_wallTexture);
+                    
+                    // Choose wall texture based on position and randomness
+                    if (!m_wallTextureVariations.empty()) {
+                        int textureChoice = rand() % 100;
+                        int selectedTexture;
+                        
+                        if (x % 7 == 0 && y % 7 == 0) {
+                            // Create "ritual circles" with rune walls (second texture)
+                            selectedTexture = m_wallTextureVariations.size() > 1 ? 
+                                m_wallTextureVariations[1] : m_wallTextureVariations[0];
+                        }
+                        else if (textureChoice < 40) {
+                            // 40% chance for bloody stone (first texture)
+                            selectedTexture = m_wallTextureVariations[0];
+                        }
+                        else if (textureChoice < 70 && m_wallTextureVariations.size() > 2) {
+                            // 30% chance for flesh walls (third texture)
+                            selectedTexture = m_wallTextureVariations[2];
+                        }
+                        else if (textureChoice < 90 && m_wallTextureVariations.size() > 1) {
+                            // 20% chance for rune walls (second texture)
+                            selectedTexture = m_wallTextureVariations[1];
+                        }
+                        else {
+                            // 10% chance for metal walls (last texture) or fallback to first
+                            selectedTexture = m_wallTextureVariations.back();
+                        }
+                        
+                        m_map.setWallTexture(x, y, selectedTexture);
+                        
+                        // Create clusters of similar textures
+                        if (x > 0 && y > 0 && x < m_map.getWidth() - 1 && y < m_map.getHeight() - 1) {
+                            // Check adjacent walls and match textures sometimes
+                            if (m_map.getCell(x-1, y) == CellType::Wall && rand() % 3 == 0) {
+                                m_map.setWallTexture(x, y, m_map.getWallTexture(x-1, y));
+                            }
+                            if (m_map.getCell(x, y-1) == CellType::Wall && rand() % 3 == 0) {
+                                m_map.setWallTexture(x, y, m_map.getWallTexture(x, y-1));
+                            }
+                        }
+                    } else {
+                        // Fallback to default wall texture if no variations available
+                        m_map.setWallTexture(x, y, m_wallTexture);
+                    }
                 } else {
                     m_map.setCell(x, y, CellType::Empty);
                     
@@ -895,9 +972,6 @@ void Engine::setupMap() {
         lighting.addLight(moonlight);
         
         // Add flickering lights throughout the map
-        std::vector<Light> flickeringLights;
-        
-        // Add torch-like lights along the walls
         for (int y = 2; y < m_map.getHeight() - 2; y += 4) {
             for (int x = 2; x < m_map.getWidth() - 2; x += 4) {
                 // Only place lights near walls
