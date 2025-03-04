@@ -475,7 +475,86 @@ bool Engine::loadAssets() {
     
     // Create enemy texture (ID 4)
     std::cout << "Creating enemy texture..." << std::endl;
-    m_enemyTexture = m_textureManager->createCheckerboardTexture(64, 64, Color(255, 0, 0), Color(200, 0, 0), 16);
+    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (enemySurface) {
+        SDL_LockSurface(enemySurface);
+        Uint32* pixels = (Uint32*)enemySurface->pixels;
+        
+        // Colors for the demon
+        Uint32 darkRed = SDL_MapRGBA(enemySurface->format, 139, 0, 0, 255);      // Dark red for body
+        Uint32 lightRed = SDL_MapRGBA(enemySurface->format, 220, 20, 20, 255);   // Lighter red for highlights
+        Uint32 brown = SDL_MapRGBA(enemySurface->format, 139, 69, 19, 255);      // Brown for horns
+        Uint32 yellow = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);     // Yellow for eyes
+        Uint32 black = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);          // Black for details
+        
+        // Fill background with dark red (body)
+        for (int i = 0; i < 64 * 64; i++) {
+            pixels[i] = darkRed;
+        }
+        
+        // Draw horns (brown triangles at top)
+        for (int y = 0; y < 20; y++) {
+            for (int x = 10; x < 25; x++) {
+                if (x - 10 <= y) pixels[y * 64 + x] = brown;
+            }
+            for (int x = 39; x < 54; x++) {
+                if (54 - x <= y) pixels[y * 64 + x] = brown;
+            }
+        }
+        
+        // Draw eyes (yellow circles with black centers)
+        for (int y = 20; y < 35; y++) {
+            for (int x = 15; x < 25; x++) {
+                int dx = x - 20;
+                int dy = y - 27;
+                if (dx*dx + dy*dy < 25) {
+                    pixels[y * 64 + x] = yellow;
+                    if (dx*dx + dy*dy < 9) {
+                        pixels[y * 64 + x] = black;
+                    }
+                }
+            }
+            for (int x = 39; x < 49; x++) {
+                int dx = x - 44;
+                int dy = y - 27;
+                if (dx*dx + dy*dy < 25) {
+                    pixels[y * 64 + x] = yellow;
+                    if (dx*dx + dy*dy < 9) {
+                        pixels[y * 64 + x] = black;
+                    }
+                }
+            }
+        }
+        
+        // Draw mouth (jagged line with teeth)
+        for (int y = 40; y < 55; y++) {
+            for (int x = 15; x < 49; x++) {
+                // Main mouth line
+                if (y == 47) pixels[y * 64 + x] = black;
+                
+                // Teeth
+                if (y > 47 && y < 52 && (x % 8 < 4)) {
+                    pixels[y * 64 + x] = lightRed;
+                }
+            }
+        }
+        
+        // Add some muscle definition with lighter red
+        for (int y = 15; y < 60; y++) {
+            for (int x = 5; x < 59; x++) {
+                if ((x + y) % 8 == 0 && pixels[y * 64 + x] == darkRed) {
+                    pixels[y * 64 + x] = lightRed;
+                }
+            }
+        }
+        
+        SDL_UnlockSurface(enemySurface);
+        m_enemyTexture = m_textureManager->createTextureFromSurface(enemySurface);
+        SDL_FreeSurface(enemySurface);
+    } else {
+        std::cout << "Failed to create enemy texture surface, falling back to simple texture" << std::endl;
+        m_enemyTexture = m_textureManager->createCheckerboardTexture(64, 64, Color(255, 0, 0), Color(200, 0, 0), 16);
+    }
     std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
     
     // Load weapon texture (ID 5)
