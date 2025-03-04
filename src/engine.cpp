@@ -409,39 +409,52 @@ void Engine::update() {
             if (m_flashIntensity < 0) m_flashIntensity = 0;
         }
         
-        // Update flickering lights
+        // Update flickering lights - optimized version
         if (m_renderer) {
-            LightingSystem& lighting = m_renderer->getLightingSystem();
             static float flickerTimer = 0.0f;
             flickerTimer += m_deltaTime;
             
-            // Update each light's intensity
-            for (size_t i = 0; i < lighting.getLightCount(); ++i) {
-                Light& light = lighting.getLightAt(i);  // Assuming this method exists to get a modifiable light
+            // Only update every few frames to reduce CPU usage
+            static int frameSkip = 0;
+            frameSkip = (frameSkip + 1) % 2;  // Update every 2 frames
+            if (frameSkip == 0) {
+                LightingSystem& lighting = m_renderer->getLightingSystem();
                 
-                if (light.type == LightType::Point) {
-                    // Different flicker patterns based on light position
-                    float xOffset = light.position.x * 1.23f; // Use position to create varied patterns
-                    float yOffset = light.position.y * 0.87f;
+                // Pre-calculate common values used by all lights
+                float fastFlickerBase = sin(flickerTimer * 15.0f) * 0.2f;
+                float mediumFlickerBase = sin(flickerTimer * 7.0f) * 0.15f;
+                float slowFlickerBase = sin(flickerTimer * 3.0f) * 0.1f;
+                
+                // Update each point light's intensity
+                for (size_t i = 0; i < lighting.getLightCount(); ++i) {
+                    Light& light = lighting.getLightAt(i);
                     
-                    // Combine multiple sine waves for more organic flickering
-                    float fastFlicker = sin(flickerTimer * 15.0f + xOffset) * 0.2f;
-                    float mediumFlicker = sin(flickerTimer * 7.0f + yOffset) * 0.15f;
-                    float slowFlicker = sin(flickerTimer * 3.0f + xOffset + yOffset) * 0.1f;
-                    
-                    // Add some random noise for more chaotic effect
-                    float noise = (rand() % 100) / 500.0f - 0.1f;
-                    
-                    // Combine all effects
-                    float flickerAmount = fastFlicker + mediumFlicker + slowFlicker + noise;
-                    
-                    // Apply the flicker effect to the light's base intensity
-                    float baseIntensity = light.intensity;
-                    light.intensity = std::max(0.1f, std::min(1.0f, baseIntensity + flickerAmount));
-                    
-                    // Also slightly vary the light's radius
-                    float radiusVariation = sin(flickerTimer * 5.0f + xOffset * yOffset) * 0.5f;
-                    light.radius = std::max(1.0f, static_cast<float>(light.radius + radiusVariation));
+                    if (light.type == LightType::Point) {
+                        // Use light's position to create variation without expensive calculations
+                        float positionOffset = (light.position.x + light.position.y) * 0.1f;
+                        
+                        // Combine pre-calculated flicker values with position offset
+                        float flickerAmount = fastFlickerBase + 
+                                           mediumFlickerBase * cos(positionOffset) + 
+                                           slowFlickerBase * sin(positionOffset);
+                        
+                        // Add slight randomness (less frequently)
+                        static int randomSkip = 0;
+                        if (++randomSkip >= 10) {  // Only add randomness every 10 updates
+                            flickerAmount += (rand() % 10) * 0.01f - 0.05f;
+                            randomSkip = 0;
+                        }
+                        
+                        // Apply the flicker effect
+                        float baseIntensity = light.intensity;
+                        light.intensity = std::max(0.1f, std::min(1.0f, baseIntensity + flickerAmount));
+                        
+                        // Vary radius less frequently and with less intensity
+                        if (randomSkip == 0) {  // Only update radius every 10 updates
+                            float radiusVariation = sin(flickerTimer + positionOffset) * 0.2f;
+                            light.radius = std::max(1.0f, static_cast<float>(light.radius + radiusVariation));
+                        }
+                    }
                 }
             }
         }
