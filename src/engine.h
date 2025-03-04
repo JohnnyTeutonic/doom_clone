@@ -3,6 +3,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <string>
 #include <memory>
 
@@ -116,11 +117,23 @@ private:
     int m_enemyTexture;
     int m_weaponTexture;
     int m_bulletTexture;
+    int m_machineGunTexture;
+    int m_currentWeaponTexture;
+    
+    // Notification system
+    std::string m_notificationText;
+    double m_notificationTimer;
+    
+    // Font handling
+    TTF_Font* m_font;
+    SDL_Texture* m_notificationTexture;
+    SDL_Rect m_notificationRect;
     
     // Private methods
     void setupMap();
     void setupPlayer();
     void setupInput();
+    void renderNotification();
 };
 
 #endif // ENGINE_H 

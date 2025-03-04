@@ -25,11 +25,18 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_enemyTexture(-1)
     , m_weaponTexture(-1)
     , m_bulletTexture(-1)
+    , m_machineGunTexture(-1)
+    , m_currentWeaponTexture(-1)
+    , m_notificationText("")
+    , m_notificationTimer(0.0)
     , m_weaponRecoil(0.0)
     , m_weaponRecoilRecovery(5.0)
     , m_flashIntensity(0.0)
     , m_flashDecay(5.0)
     , m_lastFrameTime(0)
+    , m_font(nullptr)
+    , m_notificationTexture(nullptr)
+    , m_notificationRect{}
 {
     std::cout << "Engine created with resolution " << screenWidth << "x" << screenHeight << std::endl;
 }
@@ -43,9 +50,14 @@ Engine::~Engine() {
     if (m_textureManager) delete m_textureManager;
     if (m_renderer) delete m_renderer;
     
+    // Clean up font resources
+    if (m_notificationTexture) SDL_DestroyTexture(m_notificationTexture);
+    if (m_font) TTF_CloseFont(m_font);
+    
     // Clean up SDL
     if (m_sdlRenderer) SDL_DestroyRenderer(m_sdlRenderer);
     if (m_window) SDL_DestroyWindow(m_window);
+    TTF_Quit();
     IMG_Quit();
     SDL_Quit();
     
@@ -77,6 +89,31 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
         return false;
     }
     std::cout << "SDL_image initialized with WebP support" << std::endl;
+    
+    // Initialize SDL_ttf
+    if (TTF_Init() == -1) {
+        std::cerr << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << std::endl;
+        return false;
+    }
+    std::cout << "SDL_ttf initialized successfully" << std::endl;
+    
+    // Load font with larger size for DOOM-style appearance
+    m_font = TTF_OpenFont("assets/fonts/Doom2016Text-GOlBq.ttf", 36);  // Increased size for better visibility
+    if (!m_font) {
+        std::cerr << "Failed to load DOOM font! SDL_ttf Error: " << TTF_GetError() << std::endl;
+        // Try system fonts as fallback
+        m_font = TTF_OpenFont("C:/Windows/Fonts/arial.ttf", 36);
+        if (!m_font) {
+            std::cerr << "Failed to load fallback font! SDL_ttf Error: " << TTF_GetError() << std::endl;
+            return false;
+        }
+        std::cout << "Using fallback font" << std::endl;
+    }
+    
+    // Set font style for bold, crisp text
+    TTF_SetFontStyle(m_font, TTF_STYLE_BOLD);
+    TTF_SetFontOutline(m_font, 1);  // Add outline for better visibility
+    std::cout << "Font loaded and configured successfully" << std::endl;
     
     // Create window
     m_window = SDL_CreateWindow("Doom Clone", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
@@ -259,6 +296,22 @@ void Engine::processInput() {
                 case SDLK_ESCAPE:
                     m_running = false;
                     break;
+                case SDLK_2:  // Switch to machine gun
+                    if (m_currentWeaponTexture != m_machineGunTexture) {
+                        m_currentWeaponTexture = m_machineGunTexture;
+                        m_notificationText = "Switched to machine gun";
+                        m_notificationTimer = 3.0;  // Show for 3 seconds
+                        std::cout << "Switched to machine gun" << std::endl;
+                    }
+                    break;
+                case SDLK_1:  // Switch back to default weapon
+                    if (m_currentWeaponTexture != m_weaponTexture) {
+                        m_currentWeaponTexture = m_weaponTexture;
+                        m_notificationText = "Switched to shotgun";
+                        m_notificationTimer = 3.0;  // Show for 3 seconds
+                        std::cout << "Switched to shotgun" << std::endl;
+                    }
+                    break;
                 case SDLK_SPACE:
                     // Manual firing test (independent of player state)
                     std::cout << "SPACE key pressed - Manual firing test" << std::endl;
@@ -327,6 +380,15 @@ void Engine::processInput() {
 void Engine::update() {
     // Only update game logic if in playing state
     if (m_gameState == GameState::Playing) {
+        // Update notification timer
+        if (m_notificationTimer > 0) {
+            m_notificationTimer -= m_deltaTime;
+            if (m_notificationTimer < 0) {
+                m_notificationTimer = 0;
+                m_notificationText = "";
+            }
+        }
+        
         // Update sprites with map and player position
         m_spriteManager->update(m_deltaTime, m_map, m_player.getPosition());
         
@@ -360,13 +422,68 @@ void Engine::update() {
     }
 }
 
+void Engine::renderNotification() {
+    if (m_notificationTimer > 0 && !m_notificationText.empty()) {
+        // Create new texture only if text has changed
+        if (m_notificationTexture == nullptr) {
+            // DOOM-style colors: Main color is bright red
+            SDL_Color textColor = {255, 50, 50, static_cast<Uint8>(255 * std::min(1.0, m_notificationTimer))};
+            
+            // First create the main text
+            SDL_Surface* textSurface = TTF_RenderText_Blended(m_font, m_notificationText.c_str(), textColor);
+            if (textSurface) {
+                // Create dark outline effect
+                SDL_Surface* outlineSurface = TTF_RenderText_Blended(m_font, m_notificationText.c_str(), 
+                    SDL_Color{0, 0, 0, static_cast<Uint8>(255 * std::min(1.0, m_notificationTimer))});
+                
+                if (outlineSurface) {
+                    // Combine the surfaces for outline effect
+                    SDL_Rect destRect = { 2, 2, textSurface->w, textSurface->h };
+                    SDL_BlitSurface(textSurface, NULL, outlineSurface, &destRect);
+                    
+                    m_notificationTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, outlineSurface);
+                    m_notificationRect.w = outlineSurface->w;
+                    m_notificationRect.h = outlineSurface->h;
+                    m_notificationRect.x = (m_screenWidth - outlineSurface->w) / 2;  // Center horizontally
+                    m_notificationRect.y = 50;  // Position at top of screen like classic DOOM
+                    
+                    SDL_FreeSurface(outlineSurface);
+                }
+                SDL_FreeSurface(textSurface);
+            }
+        }
+        
+        // Render the notification with fade out
+        if (m_notificationTexture) {
+            // Add pulsing effect
+            float pulse = 0.8f + 0.2f * sin(SDL_GetTicks() * 0.01f);
+            SDL_SetTextureAlphaMod(m_notificationTexture, 
+                static_cast<Uint8>(255 * std::min(1.0, m_notificationTimer) * pulse));
+            SDL_RenderCopy(m_sdlRenderer, m_notificationTexture, NULL, &m_notificationRect);
+        }
+    } else {
+        // Clean up texture if notification is done
+        if (m_notificationTexture) {
+            SDL_DestroyTexture(m_notificationTexture);
+            m_notificationTexture = nullptr;
+        }
+    }
+}
+
 void Engine::render() {
+    // Clear the renderer
+    SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 255);
+    SDL_RenderClear(m_sdlRenderer);
+    
     // Render based on game state
     switch (m_gameState) {
         case GameState::Playing:
         case GameState::Paused:
             // Render the 3D view
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
+            
+            // Render notification if active
+            renderNotification();
             
             // If paused, render pause overlay
             if (m_gameState == GameState::Paused) {
@@ -390,6 +507,9 @@ void Engine::render() {
             // TODO: Render victory overlay
             break;
     }
+    
+    // Present the renderer
+    SDL_RenderPresent(m_sdlRenderer);
 }
 
 bool Engine::loadAssets() {
@@ -585,6 +705,18 @@ bool Engine::loadAssets() {
     }
     std::cout << "Weapon texture ID: " << m_weaponTexture << std::endl;
     
+    // Load machine gun texture (ID 6)
+    std::cout << "Loading machine gun texture (machine_gun.png)..." << std::endl;
+    m_machineGunTexture = m_textureManager->loadTexture(assetsPath + "machine_gun.png");
+    if (m_machineGunTexture < 0) {
+        std::cout << "Failed to load machine gun texture, creating solid color" << std::endl;
+        m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 100));
+    }
+    std::cout << "Machine gun texture ID: " << m_machineGunTexture << std::endl;
+    
+    // Set initial weapon texture
+    m_currentWeaponTexture = m_weaponTexture;
+    
     // Set bullet texture in projectile manager
     if (m_projectileManager && m_bulletTexture >= 0) {
         m_projectileManager->setDefaultBulletTexture(m_bulletTexture);
@@ -593,7 +725,7 @@ bool Engine::loadAssets() {
     
     // Verify all textures were created
     if (m_wallTexture < 0 || m_floorTexture < 0 || m_ceilingTexture < 0 || 
-        m_bulletTexture < 0 || m_enemyTexture < 0 || m_weaponTexture < 0) {
+        m_bulletTexture < 0 || m_enemyTexture < 0 || m_weaponTexture < 0 || m_machineGunTexture < 0) {
         std::cerr << "Failed to create one or more required textures!" << std::endl;
         return false;
     }
