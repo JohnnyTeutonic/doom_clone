@@ -342,8 +342,8 @@ void Engine::processInput() {
             m_player.rotateRight(m_deltaTime);
         }
         
-        // Use the input handler for other actions
-        if (m_inputHandler.isActionJustPressed(InputAction::Fire)) {
+        // Shooting - use direct keyboard state for Space
+        if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
             if (m_player.fire()) {
                 // Apply recoil effect
                 m_weaponRecoil = 0.1;
@@ -351,20 +351,71 @@ void Engine::processInput() {
                 // Apply muzzle flash effect
                 m_flashIntensity = 1.0;
             }
-        }
-        if (m_inputHandler.isActionJustPressed(InputAction::Reload)) {
-            m_player.reload();
+            m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
+        } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
+            m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
         }
         
-        // Toggle displays
-        if (m_inputHandler.isActionJustPressed(InputAction::ToggleFPS)) {
+        // Reload - use direct keyboard state for R
+        if (keyboardState[SDL_SCANCODE_R] && !m_prevKeyboardState[SDL_SCANCODE_R]) {
+            m_player.reload();
+            m_prevKeyboardState[SDL_SCANCODE_R] = true;
+        } else if (!keyboardState[SDL_SCANCODE_R]) {
+            m_prevKeyboardState[SDL_SCANCODE_R] = false;
+        }
+        
+        // Toggle lighting - use direct keyboard state for L
+        if (keyboardState[SDL_SCANCODE_L] && !m_prevKeyboardState[SDL_SCANCODE_L]) {
+            if (m_renderer) {
+                m_renderer->toggleLighting();
+                showNotification("Lighting toggled", 2.0);
+            }
+            m_prevKeyboardState[SDL_SCANCODE_L] = true;
+        } else if (!keyboardState[SDL_SCANCODE_L]) {
+            m_prevKeyboardState[SDL_SCANCODE_L] = false;
+        }
+        
+        // Toggle displays - use direct keyboard state for function keys
+        if (keyboardState[SDL_SCANCODE_F1] && !m_prevKeyboardState[SDL_SCANCODE_F1]) {
             m_renderer->toggleFPS();
+            m_prevKeyboardState[SDL_SCANCODE_F1] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F1]) {
+            m_prevKeyboardState[SDL_SCANCODE_F1] = false;
         }
-        if (m_inputHandler.isActionJustPressed(InputAction::ToggleMinimap)) {
+        
+        if (keyboardState[SDL_SCANCODE_F2] && !m_prevKeyboardState[SDL_SCANCODE_F2]) {
             m_renderer->toggleMinimap();
+            m_prevKeyboardState[SDL_SCANCODE_F2] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F2]) {
+            m_prevKeyboardState[SDL_SCANCODE_F2] = false;
         }
-        if (m_inputHandler.isActionJustPressed(InputAction::ToggleWeapon)) {
+        
+        if (keyboardState[SDL_SCANCODE_F3] && !m_prevKeyboardState[SDL_SCANCODE_F3]) {
             m_renderer->toggleWeapon();
+            m_prevKeyboardState[SDL_SCANCODE_F3] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F3]) {
+            m_prevKeyboardState[SDL_SCANCODE_F3] = false;
+        }
+        
+        // Weapon switching - use direct keyboard state for 1 and 2
+        if (keyboardState[SDL_SCANCODE_1] && !m_prevKeyboardState[SDL_SCANCODE_1]) {
+            if (m_currentWeaponTexture != m_weaponTexture) {
+                m_currentWeaponTexture = m_weaponTexture;
+                showNotification("Switched to shotgun", 2.0);
+            }
+            m_prevKeyboardState[SDL_SCANCODE_1] = true;
+        } else if (!keyboardState[SDL_SCANCODE_1]) {
+            m_prevKeyboardState[SDL_SCANCODE_1] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_2] && !m_prevKeyboardState[SDL_SCANCODE_2]) {
+            if (m_currentWeaponTexture != m_machineGunTexture) {
+                m_currentWeaponTexture = m_machineGunTexture;
+                showNotification("Switched to machine gun", 2.0);
+            }
+            m_prevKeyboardState[SDL_SCANCODE_2] = true;
+        } else if (!keyboardState[SDL_SCANCODE_2]) {
+            m_prevKeyboardState[SDL_SCANCODE_2] = false;
         }
         
         // Audio controls - use direct keyboard state for better compatibility with WSL2
@@ -393,6 +444,26 @@ void Engine::processInput() {
             m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = true;
         } else if (!keyboardState[SDL_SCANCODE_PAGEDOWN]) {
             m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_HOME] && !m_prevKeyboardState[SDL_SCANCODE_HOME]) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getSfxVolume();
+                setSfxVolume(currentVolume + 8); // Increase by ~6% (8/128)
+            }
+            m_prevKeyboardState[SDL_SCANCODE_HOME] = true;
+        } else if (!keyboardState[SDL_SCANCODE_HOME]) {
+            m_prevKeyboardState[SDL_SCANCODE_HOME] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_END] && !m_prevKeyboardState[SDL_SCANCODE_END]) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getSfxVolume();
+                setSfxVolume(currentVolume - 8); // Decrease by ~6% (8/128)
+            }
+            m_prevKeyboardState[SDL_SCANCODE_END] = true;
+        } else if (!keyboardState[SDL_SCANCODE_END]) {
+            m_prevKeyboardState[SDL_SCANCODE_END] = false;
         }
     }
     
