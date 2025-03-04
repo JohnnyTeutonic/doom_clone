@@ -41,12 +41,26 @@ Texture& Texture::operator=(Texture&& other) noexcept {
 }
 
 bool Texture::loadFromFile(const std::string& filename, SDL_Renderer* renderer) {
+    std::cout << "Attempting to load texture from file: " << filename << std::endl;
+    
+    // Check if file exists
+    FILE* file = fopen(filename.c_str(), "rb");
+    if (!file) {
+        std::cerr << "File not found: " << filename << std::endl;
+        return false;
+    }
+    fclose(file);
+    
     // Load image using SDL_image
     SDL_Surface* surface = IMG_Load(filename.c_str());
     if (!surface) {
-        std::cerr << "Failed to load texture: " << filename << ", SDL_Error: " << SDL_GetError() << std::endl;
+        std::cerr << "Failed to load texture: " << filename << std::endl;
+        std::cerr << "SDL_image Error: " << IMG_GetError() << std::endl;
         return false;
     }
+    std::cout << "Successfully loaded surface from " << filename << std::endl;
+    std::cout << "Surface details - Width: " << surface->w << ", Height: " << surface->h 
+              << ", Format: " << SDL_GetPixelFormatName(surface->format->format) << std::endl;
     
     // Convert surface to RGBA format for consistent handling
     SDL_Surface* rgbaSurface = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA8888, 0);
@@ -56,6 +70,7 @@ bool Texture::loadFromFile(const std::string& filename, SDL_Renderer* renderer) 
         std::cerr << "Failed to convert surface to RGBA: " << SDL_GetError() << std::endl;
         return false;
     }
+    std::cout << "Successfully converted surface to RGBA format" << std::endl;
     
     // Create streaming texture
     SDL_Texture* texture = SDL_CreateTexture(
@@ -71,6 +86,7 @@ bool Texture::loadFromFile(const std::string& filename, SDL_Renderer* renderer) 
         SDL_FreeSurface(rgbaSurface);
         return false;
     }
+    std::cout << "Successfully created texture from surface" << std::endl;
     
     // Set blending mode to none (fully opaque)
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_NONE);

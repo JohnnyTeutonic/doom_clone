@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "engine.h"
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -86,12 +87,17 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
     
     std::cout << "3D view rendered, rendering sprites..." << std::endl;
     
-    // Render sprites
-    renderSprites(player);
+    // Render sprites if we have a sprite manager
+    if (m_spriteManager) {
+        renderSprites(player);
+        std::cout << "Sprites rendered successfully" << std::endl;
+    } else {
+        std::cerr << "No sprite manager available for rendering!" << std::endl;
+    }
     
     std::cout << "Sprites rendered, checking projectiles..." << std::endl;
     
-    // Render projectiles - check if any are active
+    // Render projectiles if we have a projectile manager
     if (m_projectileManager) {
         std::vector<Projectile*> projectiles = m_projectileManager->getActiveProjectiles();
         std::cout << "Active projectiles before rendering: " << projectiles.size() << std::endl;
@@ -102,11 +108,10 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
                           << "), texture ID: " << proj->getTextureId() << std::endl;
             }
         }
+        renderProjectiles(player);
     } else {
-        std::cout << "No projectile manager available" << std::endl;
+        std::cerr << "No projectile manager available for rendering!" << std::endl;
     }
-    
-    renderProjectiles(player);
     
     std::cout << "Projectiles rendered, rendering minimap..." << std::endl;
     
@@ -514,25 +519,18 @@ void Renderer::renderHUD(const Player& player) {
 }
 
 void Renderer::renderWeapon(const Player& player, double recoil, double flashIntensity) {
-    // Check if we have a texture manager and a weapon texture
-    if (!m_textureManager) return;
-    
-    // Get the weapon texture
-    const Texture* weaponTexture = nullptr;
-    
-    // Look for the weapon texture (using the texture ID from the engine)
-    // Since we don't have a direct reference to the engine's weaponTexture ID,
-    // we'll just try texture IDs starting from 0
-    for (int i = 0; i < 10; i++) {
-        const Texture* texture = m_textureManager->getTexture(i);
-        if (texture && texture->getWidth() > 100) { // Assume weapon texture is larger
-            weaponTexture = texture;
-            break;
-        }
+    // Check if we have a texture manager
+    if (!m_textureManager) {
+        std::cout << "No texture manager available for weapon rendering" << std::endl;
+        return;
     }
     
-    // If we couldn't find a suitable texture, fall back to the simple rectangle method
+    // Get the weapon texture (ID 5 is the shotgun texture)
+    const Texture* weaponTexture = m_textureManager->getTexture(5);
+    
+    // If we couldn't find the texture, fall back to the simple rectangle method
     if (!weaponTexture) {
+        std::cout << "No weapon texture found (ID 5), using fallback rectangle" << std::endl;
         // Simple weapon rendering - just a placeholder
         int weaponWidth = 100;
         int weaponHeight = 150;
@@ -565,6 +563,7 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         SDL_RenderFillRect(m_renderer, &barrelRect);
     } else {
         // Render the weapon texture
+        std::cout << "Rendering weapon texture (ID 5)" << std::endl;
         
         // Calculate the weapon size (maintain aspect ratio)
         float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
@@ -592,8 +591,6 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
             // Draw the texture
             SDL_RenderCopy(m_renderer, sdlTexture, NULL, &destRect);
         }
-        
-        // The weapon texture should include the barrel, so we don't need to draw it separately
     }
     
     // Render muzzle flash if needed
@@ -664,12 +661,9 @@ void Renderer::renderProjectiles(const Player& player) {
         // Calculate screen position
         int screenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
         
-        // SUPER LARGE bullet size for testing - visible no matter what
-        int size = 100;  // Fixed large size for testing visibility
-        if (transformY > 0.5) {
-            // For more distant bullets, scale by distance but keep them visible
-            size = std::max(30, static_cast<int>(m_screenHeight / transformY * 0.5));
-        }
+        // Calculate bullet size based on distance
+        int size = static_cast<int>(m_screenHeight / transformY * 0.05); // Make bullets smaller but still visible
+        size = std::max(4, std::min(size, 20)); // Clamp size between 4 and 20 pixels
         
         std::cout << "Bullet screen position: x=" << screenX << ", size=" << size 
                  << ", distance=" << transformY << std::endl;
@@ -685,7 +679,7 @@ void Renderer::renderProjectiles(const Player& player) {
         int drawEndX = size / 2 + screenX;
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
-        // Always draw a simple bright circle for maximum visibility - ignoring textures for now
+        // Draw a bright bullet sprite
         for (int x = drawStartX; x < drawEndX; x++) {
             for (int y = drawStartY; y < drawEndY; y++) {
                 // Calculate distance from center (squared)
@@ -699,20 +693,36 @@ void Renderer::renderProjectiles(const Player& player) {
                     
                     // Gradient based on distance from center
                     double gradient = 1.0 - (distance / (size / 2));
+                    gradient = pow(gradient, 0.5); // Make the gradient more pronounced
                     
                     // Different colors based on projectile type
                     switch (projectile->getType()) {
                         case ProjectileType::Bullet:
-                            // Bright yellow bullet
-                            color = Color(255, 255 * gradient, 0, 255);
+                            // Bright yellow-orange bullet with white core
+                            color = Color(
+                                255,                          // Red
+                                255 * gradient,               // Green
+                                gradient > 0.8 ? 255 : 0,    // Blue (white core)
+                                255                          // Alpha
+                            );
                             break;
                         case ProjectileType::Rocket:
-                            // Red-orange rocket
-                            color = Color(255, 100 * gradient, 0, 255);
+                            // Red-orange rocket with bright core
+                            color = Color(
+                                255,                          // Red
+                                100 * gradient,               // Green
+                                gradient > 0.9 ? 200 : 0,    // Blue
+                                255                          // Alpha
+                            );
                             break;
                         case ProjectileType::Plasma:
-                            // Blue plasma
-                            color = Color(0, 150 * gradient, 255, 255);
+                            // Blue-green plasma with bright core
+                            color = Color(
+                                gradient > 0.8 ? 200 : 0,    // Red
+                                200 * gradient,               // Green
+                                255,                         // Blue
+                                255                          // Alpha
+                            );
                             break;
                     }
                     
@@ -723,13 +733,13 @@ void Renderer::renderProjectiles(const Player& player) {
             }
         }
         
-        // Draw an even more visible outer glow
-        SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 128);
+        // Draw an outer glow
+        SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 64);
         SDL_Rect glowRect = { 
-            (drawStartX + drawEndX) / 2 - size / 4, 
-            (drawStartY + drawEndY) / 2 - size / 4, 
-            size / 2, 
-            size / 2 
+            (drawStartX + drawEndX) / 2 - size / 2, 
+            (drawStartY + drawEndY) / 2 - size / 2, 
+            size, 
+            size 
         };
         SDL_RenderDrawRect(m_renderer, &glowRect);
     }

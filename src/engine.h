@@ -2,6 +2,7 @@
 #define ENGINE_H
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include <string>
 #include <memory>
 
@@ -61,6 +62,9 @@ public:
     // Getters for visual effects
     double getWeaponRecoil() const { return m_weaponRecoil; }
     double getFlashIntensity() const { return m_flashIntensity; }
+    
+    // Getter for weapon texture
+    int getWeaponTexture() const { return m_weaponTexture; }
     
 private:
     void processInput();

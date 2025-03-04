@@ -46,6 +46,7 @@ Engine::~Engine() {
     // Clean up SDL
     if (m_sdlRenderer) SDL_DestroyRenderer(m_sdlRenderer);
     if (m_window) SDL_DestroyWindow(m_window);
+    IMG_Quit();
     SDL_Quit();
     
     std::cout << "Engine destroyed" << std::endl;
@@ -68,6 +69,14 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
         return false;
     }
     std::cout << "SDL initialized successfully" << std::endl;
+
+    // Initialize SDL_image with WebP support
+    int imgFlags = IMG_INIT_WEBP;
+    if (!(IMG_Init(imgFlags) & imgFlags)) {
+        std::cerr << "SDL_image could not initialize with WebP support! SDL_image Error: " << IMG_GetError() << std::endl;
+        return false;
+    }
+    std::cout << "SDL_image initialized with WebP support" << std::endl;
     
     // Create window
     m_window = SDL_CreateWindow("Doom Clone", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
@@ -90,13 +99,35 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_textureManager = new TextureManager(m_sdlRenderer);
     std::cout << "Texture manager created: " << m_textureManager << std::endl;
     
+    // Initialize renderer
+    m_renderer = new Renderer();
+    m_renderer->init(m_screenWidth, m_screenHeight, m_fullscreen);
+    m_renderer->setSDLRenderer(m_sdlRenderer);
+    m_renderer->setTextureManager(m_textureManager);
+    std::cout << "Renderer initialized: " << m_renderer << std::endl;
+    
     // Initialize sprite manager
     m_spriteManager = new SpriteManager(m_textureManager);
     std::cout << "Sprite manager created: " << m_spriteManager << std::endl;
     
+    // Connect sprite manager to renderer
+    m_renderer->setSpriteManager(m_spriteManager);
+    std::cout << "Connected sprite manager to renderer" << std::endl;
+    
     // Initialize projectile manager
     m_projectileManager = new ProjectileManager();
     std::cout << "Projectile manager created: " << m_projectileManager << std::endl;
+    
+    // Connect projectile manager to renderer
+    m_renderer->setProjectileManager(m_projectileManager);
+    std::cout << "Connected projectile manager to renderer" << std::endl;
+    
+    // Load all game assets
+    if (!loadAssets()) {
+        std::cerr << "Failed to load game assets!" << std::endl;
+        return false;
+    }
+    std::cout << "Game assets loaded successfully" << std::endl;
     
     // Set up map
     m_map = Map(20, 20);  // Create map with default size
@@ -108,33 +139,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     
     // Connect player to projectile manager
     m_player.setProjectileManager(m_projectileManager);
-    
-    // Initialize renderer with all required parameters
-    m_renderer = new Renderer();
-    if (!m_renderer->init(m_screenWidth, m_screenHeight, m_fullscreen)) {
-        std::cerr << "Failed to initialize renderer" << std::endl;
-        return false;
-    }
-    
-    // Set the SDL renderer in our game renderer
-    m_renderer->setSDLRenderer(m_sdlRenderer);
-    std::cout << "Game renderer initialized successfully and connected to SDL renderer" << std::endl;
-    
-    m_renderer->setTextureManager(m_textureManager);
-    m_renderer->setSpriteManager(m_spriteManager);
-    m_renderer->setProjectileManager(m_projectileManager);
-    std::cout << "Managers connected to renderer" << std::endl;
-    
-    // Initialize input handler
-    setupInput();
-    std::cout << "Input handler initialized" << std::endl;
-    
-    // Load assets
-    if (!loadAssets()) {
-        std::cerr << "Failed to load assets" << std::endl;
-        return false;
-    }
-    std::cout << "Assets loaded successfully" << std::endl;
+    std::cout << "Connected player to projectile manager" << std::endl;
     
     // Setup map and player
     setupMap();
@@ -386,98 +391,109 @@ void Engine::render() {
 bool Engine::loadAssets() {
     std::cout << "Loading assets..." << std::endl;
     
+    // Initialize texture IDs to -1
+    m_wallTexture = -1;
+    m_floorTexture = -1;
+    m_ceilingTexture = -1;
+    m_bulletTexture = -1;
+    m_enemyTexture = -1;
+    m_weaponTexture = -1;
+    
     // Set up textures for walls, floor, ceiling
     std::string assetsPath = "assets/textures/";
     
-    // Load wall textures
-    m_wallTexture = m_textureManager->loadTexture(assetsPath + "wall1.png");
-    if (m_wallTexture < 0) {
-        std::cout << "Creating DOOM-style wall texture..." << std::endl;
-        SDL_Surface* wallSurface = createDoomWallTexture(64, 64);
-        if (wallSurface) {
-            m_wallTexture = m_textureManager->createTextureFromSurface(wallSurface);
-            SDL_FreeSurface(wallSurface);
-        } else {
-            std::cout << "Failed to create wall texture, falling back to solid color" << std::endl;
-            m_wallTexture = m_textureManager->createSolidTexture(64, 64, Color(128, 128, 128));
-        }
+    // Create wall texture (ID 0)
+    std::cout << "Creating DOOM-style wall texture..." << std::endl;
+    SDL_Surface* wallSurface = createDoomWallTexture(64, 64);
+    if (wallSurface) {
+        m_wallTexture = m_textureManager->createTextureFromSurface(wallSurface);
+        SDL_FreeSurface(wallSurface);
+    } else {
+        std::cout << "Failed to create wall texture, falling back to solid color" << std::endl;
+        m_wallTexture = m_textureManager->createSolidTexture(64, 64, Color(128, 128, 128));
     }
     std::cout << "Wall texture ID: " << m_wallTexture << std::endl;
     
-    // Load floor texture
-    m_floorTexture = m_textureManager->loadTexture(assetsPath + "floor1.png");
-    if (m_floorTexture < 0) {
-        std::cout << "Creating floor texture..." << std::endl;
-        // Create a darker variant of the wall texture for the floor
-        SDL_Surface* floorSurface = createDoomWallTexture(64, 64);
-        if (floorSurface) {
-            // Darken the floor texture
-            SDL_LockSurface(floorSurface);
-            Uint32* pixels = (Uint32*)floorSurface->pixels;
-            for (int i = 0; i < 64 * 64; i++) {
-                Uint8 r, g, b;
-                SDL_GetRGB(pixels[i], floorSurface->format, &r, &g, &b);
-                r = r * 2 / 3;
-                g = g * 2 / 3;
-                b = b * 2 / 3;
-                pixels[i] = SDL_MapRGB(floorSurface->format, r, g, b);
-            }
-            SDL_UnlockSurface(floorSurface);
-            
-            m_floorTexture = m_textureManager->createTextureFromSurface(floorSurface);
-            SDL_FreeSurface(floorSurface);
-        } else {
-            std::cout << "Failed to create floor texture, falling back to solid color" << std::endl;
-            m_floorTexture = m_textureManager->createSolidTexture(64, 64, Color(32, 32, 64));
+    // Create floor texture (ID 1)
+    std::cout << "Creating floor texture..." << std::endl;
+    SDL_Surface* floorSurface = createDoomWallTexture(64, 64);
+    if (floorSurface) {
+        // Darken the floor texture
+        SDL_LockSurface(floorSurface);
+        Uint32* pixels = (Uint32*)floorSurface->pixels;
+        for (int i = 0; i < 64 * 64; i++) {
+            Uint8 r, g, b;
+            SDL_GetRGB(pixels[i], floorSurface->format, &r, &g, &b);
+            r = r * 2 / 3;
+            g = g * 2 / 3;
+            b = b * 2 / 3;
+            pixels[i] = SDL_MapRGB(floorSurface->format, r, g, b);
         }
+        SDL_UnlockSurface(floorSurface);
+        
+        m_floorTexture = m_textureManager->createTextureFromSurface(floorSurface);
+        SDL_FreeSurface(floorSurface);
+    } else {
+        std::cout << "Failed to create floor texture, falling back to solid color" << std::endl;
+        m_floorTexture = m_textureManager->createSolidTexture(64, 64, Color(32, 32, 64));
     }
     std::cout << "Floor texture ID: " << m_floorTexture << std::endl;
     
-    // Load ceiling texture
-    m_ceilingTexture = m_textureManager->loadTexture(assetsPath + "ceiling1.png");
-    if (m_ceilingTexture < 0) {
-        std::cout << "Creating ceiling texture..." << std::endl;
-        // Create a lighter variant of the wall texture for the ceiling
-        SDL_Surface* ceilingSurface = createDoomWallTexture(64, 64);
-        if (ceilingSurface) {
-            // Lighten the ceiling texture
-            SDL_LockSurface(ceilingSurface);
-            Uint32* pixels = (Uint32*)ceilingSurface->pixels;
-            for (int i = 0; i < 64 * 64; i++) {
-                Uint8 r, g, b;
-                SDL_GetRGB(pixels[i], ceilingSurface->format, &r, &g, &b);
-                r = std::min(255, r * 3 / 2);
-                g = std::min(255, g * 3 / 2);
-                b = std::min(255, b * 3 / 2);
-                pixels[i] = SDL_MapRGB(ceilingSurface->format, r, g, b);
-            }
-            SDL_UnlockSurface(ceilingSurface);
-            
-            m_ceilingTexture = m_textureManager->createTextureFromSurface(ceilingSurface);
-            SDL_FreeSurface(ceilingSurface);
-        } else {
-            std::cout << "Failed to create ceiling texture, falling back to solid color" << std::endl;
-            m_ceilingTexture = m_textureManager->createSolidTexture(64, 64, Color(64, 64, 96));
+    // Create ceiling texture (ID 2)
+    std::cout << "Creating ceiling texture..." << std::endl;
+    SDL_Surface* ceilingSurface = createDoomWallTexture(64, 64);
+    if (ceilingSurface) {
+        // Lighten the ceiling texture
+        SDL_LockSurface(ceilingSurface);
+        Uint32* pixels = (Uint32*)ceilingSurface->pixels;
+        for (int i = 0; i < 64 * 64; i++) {
+            Uint8 r, g, b;
+            SDL_GetRGB(pixels[i], ceilingSurface->format, &r, &g, &b);
+            r = std::min(255, r * 3 / 2);
+            g = std::min(255, g * 3 / 2);
+            b = std::min(255, b * 3 / 2);
+            pixels[i] = SDL_MapRGB(ceilingSurface->format, r, g, b);
         }
+        SDL_UnlockSurface(ceilingSurface);
+        
+        m_ceilingTexture = m_textureManager->createTextureFromSurface(ceilingSurface);
+        SDL_FreeSurface(ceilingSurface);
+    } else {
+        std::cout << "Failed to create ceiling texture, falling back to solid color" << std::endl;
+        m_ceilingTexture = m_textureManager->createSolidTexture(64, 64, Color(64, 64, 96));
     }
     std::cout << "Ceiling texture ID: " << m_ceilingTexture << std::endl;
     
-    // Create bullet texture
+    // Create bullet texture (ID 3)
+    std::cout << "Creating bullet texture..." << std::endl;
     m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
     std::cout << "Bullet texture ID: " << m_bulletTexture << std::endl;
     
-    // Load enemy texture
-    m_enemyTexture = m_textureManager->loadTexture(assetsPath + "enemy1.png");
-    if (m_enemyTexture < 0) {
-        std::cout << "Failed to load enemy texture, creating solid color" << std::endl;
-        m_enemyTexture = m_textureManager->createSolidTexture(64, 64, Color(255, 0, 0));
-    }
+    // Create enemy texture (ID 4)
+    std::cout << "Creating enemy texture..." << std::endl;
+    m_enemyTexture = m_textureManager->createCheckerboardTexture(64, 64, Color(255, 0, 0), Color(200, 0, 0), 16);
     std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
+    
+    // Load weapon texture (ID 5)
+    std::cout << "Loading weapon texture (shotgun.webp)..." << std::endl;
+    m_weaponTexture = m_textureManager->loadTexture(assetsPath + "shotgun.webp");
+    if (m_weaponTexture < 0) {
+        std::cout << "Failed to load weapon texture (shotgun.webp), creating solid color" << std::endl;
+        m_weaponTexture = m_textureManager->createSolidTexture(256, 256, Color(128, 128, 128));
+    }
+    std::cout << "Weapon texture ID: " << m_weaponTexture << std::endl;
     
     // Set bullet texture in projectile manager
     if (m_projectileManager && m_bulletTexture >= 0) {
         m_projectileManager->setDefaultBulletTexture(m_bulletTexture);
         std::cout << "Set default bullet texture ID: " << m_bulletTexture << std::endl;
+    }
+    
+    // Verify all textures were created
+    if (m_wallTexture < 0 || m_floorTexture < 0 || m_ceilingTexture < 0 || 
+        m_bulletTexture < 0 || m_enemyTexture < 0 || m_weaponTexture < 0) {
+        std::cerr << "Failed to create one or more required textures!" << std::endl;
+        return false;
     }
     
     return true;

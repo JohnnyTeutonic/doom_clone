@@ -10,6 +10,9 @@
 #include "sprite.h"
 #include "projectile.h"
 
+// Forward declare Engine to avoid circular dependency
+class Engine;
+
 // Renderer class for raycasting
 class Renderer {
 private:
@@ -21,13 +24,9 @@ private:
     // Rendering buffers
     std::vector<double> m_zBuffer;  // Depth buffer for sprite rendering
     
-    // Texture manager
+    // Managers and references
     TextureManager* m_textureManager;
-    
-    // Sprite manager
     SpriteManager* m_spriteManager;
-    
-    // Projectile manager
     ProjectileManager* m_projectileManager;
     
     // Rendering options
