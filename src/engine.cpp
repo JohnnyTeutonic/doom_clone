@@ -475,7 +475,7 @@ bool Engine::loadAssets() {
     
     // Create enemy texture (ID 4)
     std::cout << "Creating enemy texture..." << std::endl;
-    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 32, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
     if (enemySurface) {
         SDL_LockSurface(enemySurface);
         Uint32* pixels = (Uint32*)enemySurface->pixels;
@@ -487,63 +487,82 @@ bool Engine::loadAssets() {
         Uint32 yellow = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);     // Yellow for eyes
         Uint32 black = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);          // Black for details
         
-        // Fill background with dark red (body)
-        for (int i = 0; i < 64 * 64; i++) {
-            pixels[i] = darkRed;
+        // Fill with transparent color first
+        Uint32 transparent = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+        for (int i = 0; i < 32 * 64; i++) {
+            pixels[i] = transparent;
         }
         
-        // Draw horns (brown triangles at top)
-        for (int y = 0; y < 20; y++) {
-            for (int x = 10; x < 25; x++) {
-                if (x - 10 <= y) pixels[y * 64 + x] = brown;
+        // Draw humanoid shape (narrower body)
+        for (int y = 15; y < 60; y++) {
+            int width = 12;  // Base body width
+            // Wider at shoulders (y=20), narrower at waist (y=40)
+            if (y < 25) width = 16;  // Shoulders
+            else if (y > 40) width = 14;  // Legs
+            
+            int startX = (32 - width) / 2;
+            for (int x = startX; x < startX + width; x++) {
+                pixels[y * 32 + x] = darkRed;
             }
-            for (int x = 39; x < 54; x++) {
-                if (54 - x <= y) pixels[y * 64 + x] = brown;
+        }
+        
+        // Draw horns (smaller and more pointed)
+        for (int y = 0; y < 15; y++) {
+            for (int x = 8; x < 13; x++) {
+                if (x - 8 <= y/2) pixels[y * 32 + x] = brown;
+            }
+            for (int x = 19; x < 24; x++) {
+                if (24 - x <= y/2) pixels[y * 32 + x] = brown;
             }
         }
         
         // Draw eyes (yellow circles with black centers)
-        for (int y = 20; y < 35; y++) {
-            for (int x = 15; x < 25; x++) {
-                int dx = x - 20;
-                int dy = y - 27;
-                if (dx*dx + dy*dy < 25) {
-                    pixels[y * 64 + x] = yellow;
-                    if (dx*dx + dy*dy < 9) {
-                        pixels[y * 64 + x] = black;
+        for (int y = 18; y < 28; y++) {
+            for (int x = 8; x < 15; x++) {
+                int dx = x - 11;
+                int dy = y - 23;
+                if (dx*dx + dy*dy < 9) {
+                    pixels[y * 32 + x] = yellow;
+                    if (dx*dx + dy*dy < 4) {
+                        pixels[y * 32 + x] = black;
                     }
                 }
             }
-            for (int x = 39; x < 49; x++) {
-                int dx = x - 44;
-                int dy = y - 27;
-                if (dx*dx + dy*dy < 25) {
-                    pixels[y * 64 + x] = yellow;
-                    if (dx*dx + dy*dy < 9) {
-                        pixels[y * 64 + x] = black;
+            for (int x = 17; x < 24; x++) {
+                int dx = x - 20;
+                int dy = y - 23;
+                if (dx*dx + dy*dy < 9) {
+                    pixels[y * 32 + x] = yellow;
+                    if (dx*dx + dy*dy < 4) {
+                        pixels[y * 32 + x] = black;
                     }
                 }
             }
         }
         
-        // Draw mouth (jagged line with teeth)
-        for (int y = 40; y < 55; y++) {
-            for (int x = 15; x < 49; x++) {
+        // Draw mouth (smaller and more defined)
+        for (int y = 30; y < 38; y++) {
+            for (int x = 10; x < 22; x++) {
                 // Main mouth line
-                if (y == 47) pixels[y * 64 + x] = black;
+                if (y == 34) pixels[y * 32 + x] = black;
                 
                 // Teeth
-                if (y > 47 && y < 52 && (x % 8 < 4)) {
-                    pixels[y * 64 + x] = lightRed;
+                if (y > 34 && y < 37 && (x % 4 < 2)) {
+                    pixels[y * 32 + x] = lightRed;
                 }
             }
         }
         
-        // Add some muscle definition with lighter red
+        // Add muscle definition with lighter red
         for (int y = 15; y < 60; y++) {
-            for (int x = 5; x < 59; x++) {
-                if ((x + y) % 8 == 0 && pixels[y * 64 + x] == darkRed) {
-                    pixels[y * 64 + x] = lightRed;
+            int width = 12;
+            if (y < 25) width = 16;
+            else if (y > 40) width = 14;
+            
+            int startX = (32 - width) / 2;
+            for (int x = startX; x < startX + width; x++) {
+                if ((x + y) % 6 == 0 && pixels[y * 32 + x] == darkRed) {
+                    pixels[y * 32 + x] = lightRed;
                 }
             }
         }
@@ -553,7 +572,7 @@ bool Engine::loadAssets() {
         SDL_FreeSurface(enemySurface);
     } else {
         std::cout << "Failed to create enemy texture surface, falling back to simple texture" << std::endl;
-        m_enemyTexture = m_textureManager->createCheckerboardTexture(64, 64, Color(255, 0, 0), Color(200, 0, 0), 16);
+        m_enemyTexture = m_textureManager->createCheckerboardTexture(32, 64, Color(255, 0, 0), Color(200, 0, 0), 8);
     }
     std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
     
