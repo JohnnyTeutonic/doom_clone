@@ -170,13 +170,12 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     }
     std::cout << "Game assets loaded successfully" << std::endl;
     
-    // Set up map
-    m_map = Map(20, 20);  // Create map with default size
-    std::cout << "Map created with size: " << m_map.getWidth() << "x" << m_map.getHeight() << std::endl;
+    // Initialize the map
+    m_map = Map(40, 40);  // Create map with doubled size (40x40 instead of 20x20)
     
-    // Initialize player with position and direction
-    m_player.init(8.0, 8.0, 1.0, 0.0);  // x, y, dirX, dirY
-    std::cout << "Player initialized at position (8.0, 8.0)" << std::endl;
+    // Initialize player with position in the middle of the larger map
+    m_player.init(20.0, 20.0, 1.0, 0.0);  // x, y, dirX, dirY (center of 40x40 map)
+    std::cout << "Player initialized at position (20.0, 20.0)" << std::endl;
     
     // Connect player to projectile manager
     m_player.setProjectileManager(m_projectileManager);
@@ -1021,7 +1020,7 @@ bool Engine::loadAssets() {
 void Engine::setupMap() {
     std::cout << "Setting up game map..." << std::endl;
     
-    // Create a more interesting map with varied wall textures
+    // Create a more interesting map with varied wall textures for the larger 40x40 map
     for (int y = 0; y < m_map.getHeight(); y++) {
         for (int x = 0; x < m_map.getWidth(); x++) {
             // Create walls around the perimeter
@@ -1035,49 +1034,91 @@ void Engine::setupMap() {
                     m_map.setWallTexture(x, y, m_wallTexture);  // Fallback to default
                 }
             } else {
-                // Add some walls in the interior with different patterns
-                if ((x % 5 == 0 || y % 5 == 0) && rand() % 3 == 0) {
+                // For larger map, create more interesting patterns
+                
+                // Create maze-like structures in quadrants
+                bool createWall = false;
+                
+                // Top-left quadrant: Grid pattern
+                if (x < m_map.getWidth()/2 && y < m_map.getHeight()/2) {
+                    if ((x % 8 == 0 || y % 8 == 0) && rand() % 3 != 0) {
+                        createWall = true;
+                    }
+                }
+                // Top-right quadrant: Circular/radial pattern
+                else if (x >= m_map.getWidth()/2 && y < m_map.getHeight()/2) {
+                    int centerX = 3*m_map.getWidth()/4;
+                    int centerY = m_map.getHeight()/4;
+                    int dx = x - centerX;
+                    int dy = y - centerY;
+                    int dist = sqrt(dx*dx + dy*dy);
+                    if (dist % 6 == 0 || (atan2(dy, dx) * 10) - int(atan2(dy, dx) * 10) < 0.2) {
+                        createWall = rand() % 3 != 0;
+                    }
+                }
+                // Bottom-left quadrant: Diagonal pattern
+                else if (x < m_map.getWidth()/2 && y >= m_map.getHeight()/2) {
+                    if ((x + y) % 7 == 0 || (x - y) % 7 == 0) {
+                        createWall = rand() % 3 != 0;
+                    }
+                }
+                // Bottom-right quadrant: Random rooms
+                else {
+                    // Create room-like structures
+                    int roomX = (x / 6) * 6;
+                    int roomY = (y / 6) * 6;
+                    if ((x == roomX || x == roomX + 5) && y >= roomY && y <= roomY + 5) {
+                        createWall = true;
+                    }
+                    else if ((y == roomY || y == roomY + 5) && x >= roomX && x <= roomX + 5) {
+                        createWall = true;
+                    }
+                    // Add some doorways
+                    if ((x == roomX + 2 && y == roomY) || 
+                        (x == roomX && y == roomY + 2)) {
+                        createWall = false;
+                    }
+                }
+                
+                // Clear an area around the player starting position
+                int playerStartX = m_map.getWidth() / 2;
+                int playerStartY = m_map.getHeight() / 2;
+                int clearRadius = 5;
+                if ((x - playerStartX) * (x - playerStartX) + 
+                    (y - playerStartY) * (y - playerStartY) < clearRadius * clearRadius) {
+                    createWall = false;
+                }
+                
+                if (createWall) {
                     m_map.setCell(x, y, CellType::Wall);
                     
-                    // Choose wall texture based on position and randomness
+                    // Choose wall texture based on quadrant
                     if (!m_wallTextureVariations.empty()) {
-                        int textureChoice = rand() % 100;
-                        int selectedTexture;
+                        int textureIndex = 0;
                         
-                        if (x % 7 == 0 && y % 7 == 0) {
-                            // Create "ritual circles" with rune walls (second texture)
-                            selectedTexture = m_wallTextureVariations.size() > 1 ? 
-                                m_wallTextureVariations[1] : m_wallTextureVariations[0];
+                        // Top-left: mostly bloody stone
+                        if (x < m_map.getWidth()/2 && y < m_map.getHeight()/2) {
+                            textureIndex = 0;  // Bloody stone
                         }
-                        else if (textureChoice < 40) {
-                            // 40% chance for bloody stone (first texture)
-                            selectedTexture = m_wallTextureVariations[0];
+                        // Top-right: mostly runes
+                        else if (x >= m_map.getWidth()/2 && y < m_map.getHeight()/2) {
+                            textureIndex = m_wallTextureVariations.size() > 1 ? 1 : 0;  // Runes
                         }
-                        else if (textureChoice < 70 && m_wallTextureVariations.size() > 2) {
-                            // 30% chance for flesh walls (third texture)
-                            selectedTexture = m_wallTextureVariations[2];
+                        // Bottom-left: mostly flesh
+                        else if (x < m_map.getWidth()/2 && y >= m_map.getHeight()/2) {
+                            textureIndex = m_wallTextureVariations.size() > 2 ? 2 : 0;  // Flesh
                         }
-                        else if (textureChoice < 90 && m_wallTextureVariations.size() > 1) {
-                            // 20% chance for rune walls (second texture)
-                            selectedTexture = m_wallTextureVariations[1];
-                        }
+                        // Bottom-right: mostly metal
                         else {
-                            // 10% chance for metal walls (last texture) or fallback to first
-                            selectedTexture = m_wallTextureVariations.back();
+                            textureIndex = m_wallTextureVariations.size() > 3 ? 3 : 0;  // Metal
                         }
                         
-                        m_map.setWallTexture(x, y, selectedTexture);
-                        
-                        // Create clusters of similar textures
-                        if (x > 0 && y > 0 && x < m_map.getWidth() - 1 && y < m_map.getHeight() - 1) {
-                            // Check adjacent walls and match textures sometimes
-                            if (m_map.getCell(x-1, y) == CellType::Wall && rand() % 3 == 0) {
-                                m_map.setWallTexture(x, y, m_map.getWallTexture(x-1, y));
-                            }
-                            if (m_map.getCell(x, y-1) == CellType::Wall && rand() % 3 == 0) {
-                                m_map.setWallTexture(x, y, m_map.getWallTexture(x, y-1));
-                            }
+                        // Add some variation
+                        if (rand() % 5 == 0) {
+                            textureIndex = rand() % m_wallTextureVariations.size();
                         }
+                        
+                        m_map.setWallTexture(x, y, m_wallTextureVariations[textureIndex]);
                     } else {
                         // Fallback to default wall texture if no variations available
                         m_map.setWallTexture(x, y, m_wallTexture);
@@ -1085,15 +1126,15 @@ void Engine::setupMap() {
                 } else {
                     m_map.setCell(x, y, CellType::Empty);
                     
-                    // Chance to spawn an enemy in empty cells
-                    if (rand() % 20 == 0 && m_spriteManager && m_enemyTexture >= 0) {
+                    // Chance to spawn an enemy in empty cells (lower probability for larger map)
+                    if (rand() % 40 == 0 && m_spriteManager && m_enemyTexture >= 0) {
                         // Ensure we're not spawning too close to the player start position
                         double distToCenter = std::sqrt(
                             std::pow(x - m_map.getWidth() / 2.0, 2) +
                             std::pow(y - m_map.getHeight() / 2.0, 2)
                         );
                         
-                        if (distToCenter > 5.0) {  // Don't spawn too close to player
+                        if (distToCenter > 8.0) {  // Don't spawn too close to player
                             // Add enemy sprite
                             int spriteId = m_spriteManager->addSprite(
                                 x + 0.5,  // Center in the cell
@@ -1120,7 +1161,7 @@ void Engine::setupMap() {
         }
     }
     
-    // Set up lighting
+    // Set up lighting for the larger map
     if (m_renderer) {
         LightingSystem& lighting = m_renderer->getLightingSystem();
         
@@ -1136,9 +1177,9 @@ void Engine::setupMap() {
         );
         lighting.addLight(moonlight);
         
-        // Add flickering lights throughout the map
-        for (int y = 2; y < m_map.getHeight() - 2; y += 4) {
-            for (int x = 2; x < m_map.getWidth() - 2; x += 4) {
+        // Add flickering lights throughout the larger map (adjusted spacing)
+        for (int y = 4; y < m_map.getHeight() - 4; y += 8) {
+            for (int x = 4; x < m_map.getWidth() - 4; x += 8) {
                 // Only place lights near walls
                 bool nearWall = false;
                 for (int dy = -1; dy <= 1 && !nearWall; dy++) {
@@ -1175,13 +1216,18 @@ void Engine::setupMap() {
             }
         }
         
-        // Add some larger area lights at key positions
+        // Add some larger area lights at key positions in each quadrant
         std::vector<Vec2> keyPositions = {
             Vec2(m_map.getWidth() / 4, m_map.getHeight() / 4),
             Vec2(3 * m_map.getWidth() / 4, m_map.getHeight() / 4),
             Vec2(m_map.getWidth() / 4, 3 * m_map.getHeight() / 4),
             Vec2(3 * m_map.getWidth() / 4, 3 * m_map.getHeight() / 4),
-            Vec2(m_map.getWidth() / 2, m_map.getHeight() / 2)
+            Vec2(m_map.getWidth() / 2, m_map.getHeight() / 2),
+            // Additional lights for the larger map
+            Vec2(m_map.getWidth() / 8, m_map.getHeight() / 8),
+            Vec2(7 * m_map.getWidth() / 8, m_map.getHeight() / 8),
+            Vec2(m_map.getWidth() / 8, 7 * m_map.getHeight() / 8),
+            Vec2(7 * m_map.getWidth() / 8, 7 * m_map.getHeight() / 8)
         };
         
         for (const Vec2& pos : keyPositions) {
@@ -1196,13 +1242,13 @@ void Engine::setupMap() {
                 pos,
                 lightColor,
                 1.0,    // Full intensity
-                10.0    // Large radius
+                12.0    // Larger radius for the bigger map
             );
             lighting.addLight(areaLight);
         }
         
         // Add some small, subtle accent lights
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 20; i++) {  // More lights for larger map
             int x = 2 + rand() % (m_map.getWidth() - 4);
             int y = 2 + rand() % (m_map.getHeight() - 4);
             
@@ -1222,7 +1268,7 @@ void Engine::setupMap() {
         }
     }
     
-    std::cout << "Map setup complete with enhanced lighting" << std::endl;
+    std::cout << "Map setup complete with enhanced lighting for 40x40 map" << std::endl;
 }
 
 void Engine::setupPlayer() {
