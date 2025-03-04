@@ -14,6 +14,13 @@
 // Forward declare Engine to avoid circular dependency
 class Engine;
 
+// Performance settings enumeration
+enum class PerformanceLevel {
+    Low,      // Minimal lighting, maximum performance
+    Medium,   // Balanced lighting and performance
+    High      // Full lighting effects (may impact performance)
+};
+
 // Renderer class for raycasting
 class Renderer {
 private:
@@ -36,17 +43,27 @@ private:
     bool m_showMinimap;
     bool m_showWeapon;
     
+    // Performance settings
+    PerformanceLevel m_performanceLevel;
+    bool m_lightingEnabled;
+    
     // FPS counter
     int m_frameCount;
     double m_fpsTimer;
     double m_fps;
 
-    // Calculate surface normal for lighting
+    // Pre-calculated normals for faster lighting calculation
+    const Vec2 m_normalLeft{-1.0, 0.0};
+    const Vec2 m_normalRight{1.0, 0.0};
+    const Vec2 m_normalUp{0.0, -1.0};
+    const Vec2 m_normalDown{0.0, 1.0};
+    
+    // Calculate surface normal for lighting - optimized to use pre-calculated normals
     Vec2 calculateSurfaceNormal(bool side, const Vec2& rayDir) const {
         if (side) {
-            return Vec2(rayDir.y > 0 ? -1 : 1, 0);  // Hit vertical wall
+            return rayDir.y > 0 ? m_normalLeft : m_normalRight;  // Hit vertical wall
         } else {
-            return Vec2(0, rayDir.x > 0 ? -1 : 1);  // Hit horizontal wall
+            return rayDir.x > 0 ? m_normalUp : m_normalDown;  // Hit horizontal wall
         }
     }
     
@@ -105,7 +122,36 @@ public:
     void toggleFPS() { m_showFPS = !m_showFPS; }
     void toggleMinimap() { m_showMinimap = !m_showMinimap; }
     void toggleWeapon() { m_showWeapon = !m_showWeapon; }
+    void toggleLighting() { m_lightingEnabled = !m_lightingEnabled; m_lightingSystem.setEnabled(m_lightingEnabled); }
     bool getShowWeapon() const { return m_showWeapon; }
+    
+    // Performance settings
+    void setPerformanceLevel(PerformanceLevel level) {
+        m_performanceLevel = level;
+        
+        // Configure lighting system based on performance level
+        switch (level) {
+            case PerformanceLevel::Low:
+                m_lightingSystem.setCullingEnabled(true);
+                m_lightingSystem.setCullDistance(8.0);  // Shorter cull distance
+                m_lightingSystem.setUpdateFrequency(5); // Update lighting less frequently
+                break;
+                
+            case PerformanceLevel::Medium:
+                m_lightingSystem.setCullingEnabled(true);
+                m_lightingSystem.setCullDistance(15.0); // Default cull distance
+                m_lightingSystem.setUpdateFrequency(3); // Normal update frequency
+                break;
+                
+            case PerformanceLevel::High:
+                m_lightingSystem.setCullingEnabled(true);
+                m_lightingSystem.setCullDistance(25.0); // Longer cull distance
+                m_lightingSystem.setUpdateFrequency(1); // Update every frame
+                break;
+        }
+    }
+    
+    PerformanceLevel getPerformanceLevel() const { return m_performanceLevel; }
     
     // Get the SDL renderer
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }

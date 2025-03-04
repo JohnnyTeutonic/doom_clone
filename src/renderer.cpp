@@ -16,6 +16,8 @@ Renderer::Renderer()
     , m_showFPS(true)
     , m_showMinimap(true)
     , m_showWeapon(true)
+    , m_performanceLevel(PerformanceLevel::Medium)
+    , m_lightingEnabled(true)
     , m_frameCount(0)
     , m_fpsTimer(0.0)
     , m_fps(0.0)
@@ -38,6 +40,9 @@ bool Renderer::init(int width, int height, bool fullscreen) {
         std::cerr << "SDL_ttf could not initialize! TTF_Error: " << TTF_GetError() << std::endl;
         return false;
     }
+    
+    // Initialize lighting system with default medium performance settings
+    setPerformanceLevel(PerformanceLevel::Medium);
     
     std::cout << "Renderer initialized with dimensions: " << width << "x" << height << std::endl;
     return true;
@@ -206,23 +211,52 @@ void Renderer::renderView(const Map& map, const Player& player) {
             // Calculate world position of the wall hit
             Vec2 wallPos = player.getPosition() + rayDir * perpWallDist;
             
-            // Draw the textured wall column
-            for (int y = drawStart; y < drawEnd; y++) {
-                // Calculate texture Y coordinate
-                double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+            // Performance optimization: only calculate lighting once per wall segment
+            // if the distance is large enough (reduces calculation per pixel)
+            Color lighting;
+            if (perpWallDist > 4.0) {
+                // For distant walls, calculate lighting once per column
+                lighting = m_lightingSystem.calculateLighting(wallPos, normal, player.getPosition());
                 
-                // Get pixel color from texture
-                Color color = wallTexture->getPixelNormalized(wallX, texY);
+                // Draw the textured wall column with single lighting value
+                for (int y = drawStart; y < drawEnd; y++) {
+                    // Calculate texture Y coordinate
+                    double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+                    
+                    // Get pixel color from texture
+                    Color color = wallTexture->getPixelNormalized(wallX, texY);
+                    
+                    // Apply lighting to the color
+                    color = color * lighting;
+                    
+                    // Draw the pixel
+                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                    SDL_RenderDrawPoint(m_renderer, x, y);
+                }
+            }
+            else {
+                // For nearby walls, calculate lighting at intervals to maintain quality
+                const int lightingInterval = 8; // Calculate lighting every N pixels
                 
-                // Calculate lighting
-                Color lighting = m_lightingSystem.calculateLighting(wallPos, normal);
-                
-                // Apply lighting to the color
-                color = color * lighting;
-                
-                // Draw the pixel
-                SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                SDL_RenderDrawPoint(m_renderer, x, y);
+                for (int y = drawStart; y < drawEnd; y++) {
+                    // Calculate texture Y coordinate
+                    double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+                    
+                    // Get pixel color from texture
+                    Color color = wallTexture->getPixelNormalized(wallX, texY);
+                    
+                    // Calculate lighting only at intervals to improve performance
+                    if (y % lightingInterval == 0 || y == drawStart) {
+                        lighting = m_lightingSystem.calculateLighting(wallPos, normal, player.getPosition());
+                    }
+                    
+                    // Apply lighting to the color
+                    color = color * lighting;
+                    
+                    // Draw the pixel
+                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                    SDL_RenderDrawPoint(m_renderer, x, y);
+                }
             }
         }
     }
@@ -259,6 +293,12 @@ void Renderer::renderSprites(const Player& player) {
         double transformX = invDet * (dir.y * spriteX - dir.x * spriteY);
         double transformY = invDet * (-plane.y * spriteX + plane.x * spriteY);
         
+        // Skip if behind player or too far away (culling)
+        if (transformY <= 0.1) continue;
+        
+        // Optimization: Skip distant sprites when in low performance mode
+        if (m_performanceLevel == PerformanceLevel::Low && transformY > 12.0) continue;
+        
         // Calculate sprite screen position
         int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
         
@@ -281,6 +321,23 @@ void Renderer::renderSprites(const Player& player) {
         const Texture* texture = m_textureManager->getTexture(sprite->getTextureId());
         if (!texture) continue;
         
+        // Optimization: Pre-calculate lighting based on distance (fake lighting for sprites)
+        // This is much faster than calculating per-pixel lighting for sprites
+        double distanceShade = 1.0 - std::min(1.0, transformY / 15.0);
+        
+        // Adjust shading based on performance level
+        if (m_performanceLevel == PerformanceLevel::High) {
+            // For high quality, use slightly more accurate lighting calculation
+            // Create a normal vector pointing towards the player for more accurate lighting
+            Vec2 spriteNormal = (pos - sprite->getPosition()).normalized();
+            
+            // Pre-calculate one lighting value for the whole sprite
+            Color lighting = m_lightingSystem.calculateLighting(sprite->getPosition(), spriteNormal, player.getPosition());
+            
+            // Adjust the distance shading based on this lighting
+            distanceShade *= (lighting.r + lighting.g + lighting.b) / (3.0 * 255.0);
+        }
+        
         // Draw the sprite
         for (int x = drawStartX; x < drawEndX; x++) {
             // Check if sprite is in front of the wall
@@ -288,8 +345,14 @@ void Renderer::renderSprites(const Player& player) {
                 // Calculate texture x coordinate
                 double texX = (x - (-spriteWidth / 2 + spriteScreenX)) / static_cast<double>(spriteWidth);
                 
+                // For medium/high quality, determine pixel lighting frequency
+                int pixelStride = 1; // Default render every pixel
+                if (m_performanceLevel == PerformanceLevel::Low) {
+                    pixelStride = transformY < 5.0 ? 1 : 2; // Skip pixels for distant sprites
+                }
+                
                 // Draw vertical stripe
-                for (int y = drawStartY; y < drawEndY; y++) {
+                for (int y = drawStartY; y < drawEndY; y += pixelStride) {
                     // Calculate texture y coordinate
                     double texY = (y - drawStartY) / static_cast<double>(drawEndY - drawStartY);
                     
@@ -299,13 +362,19 @@ void Renderer::renderSprites(const Player& player) {
                     // Skip transparent pixels
                     if (color.a < 128) continue;
                     
-                    // Apply distance-based shading
-                    double shade = 1.0 - std::min(1.0, transformY / 10.0);
-                    color = color.withLighting(shade);
+                    // Apply pre-calculated distance-based shading
+                    color = color.withLighting(distanceShade);
                     
                     // Draw the pixel
                     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
                     SDL_RenderDrawPoint(m_renderer, x, y);
+                    
+                    // Fill in skipped pixels with the same color if using stride > 1
+                    if (pixelStride > 1) {
+                        for (int i = 1; i < pixelStride && y + i < drawEndY; i++) {
+                            SDL_RenderDrawPoint(m_renderer, x, y + i);
+                        }
+                    }
                 }
             }
         }

@@ -312,6 +312,38 @@ void Engine::processInput() {
                         std::cout << "Switched to shotgun" << std::endl;
                     }
                     break;
+                case SDLK_F1:  // Low performance mode
+                    if (m_renderer) {
+                        m_renderer->setPerformanceLevel(PerformanceLevel::Low);
+                        m_notificationText = "Performance: LOW (maximum FPS)";
+                        m_notificationTimer = 3.0;
+                        std::cout << "Switched to LOW performance mode" << std::endl;
+                    }
+                    break;
+                case SDLK_F2:  // Medium performance mode
+                    if (m_renderer) {
+                        m_renderer->setPerformanceLevel(PerformanceLevel::Medium);
+                        m_notificationText = "Performance: MEDIUM (balanced)";
+                        m_notificationTimer = 3.0;
+                        std::cout << "Switched to MEDIUM performance mode" << std::endl;
+                    }
+                    break;
+                case SDLK_F3:  // High performance mode
+                    if (m_renderer) {
+                        m_renderer->setPerformanceLevel(PerformanceLevel::High);
+                        m_notificationText = "Performance: HIGH (best visuals)";
+                        m_notificationTimer = 3.0;
+                        std::cout << "Switched to HIGH performance mode" << std::endl;
+                    }
+                    break;
+                case SDLK_l:  // Toggle lighting
+                    if (m_renderer) {
+                        m_renderer->toggleLighting();
+                        m_notificationText = "Lighting toggled";
+                        m_notificationTimer = 3.0;
+                        std::cout << "Lighting toggled" << std::endl;
+                    }
+                    break;
                 case SDLK_SPACE:
                     // Manual firing test (independent of player state)
                     std::cout << "SPACE key pressed - Manual firing test" << std::endl;
@@ -409,54 +441,12 @@ void Engine::update() {
             if (m_flashIntensity < 0) m_flashIntensity = 0;
         }
         
-        // Update flickering lights - optimized version
+        // Update lighting system - use the new batched system
         if (m_renderer) {
-            static float flickerTimer = 0.0f;
-            flickerTimer += m_deltaTime;
+            LightingSystem& lighting = m_renderer->getLightingSystem();
             
-            // Only update every few frames to reduce CPU usage
-            static int frameSkip = 0;
-            frameSkip = (frameSkip + 1) % 2;  // Update every 2 frames
-            if (frameSkip == 0) {
-                LightingSystem& lighting = m_renderer->getLightingSystem();
-                
-                // Pre-calculate common values used by all lights
-                float fastFlickerBase = sin(flickerTimer * 15.0f) * 0.2f;
-                float mediumFlickerBase = sin(flickerTimer * 7.0f) * 0.15f;
-                float slowFlickerBase = sin(flickerTimer * 3.0f) * 0.1f;
-                
-                // Update each point light's intensity
-                for (size_t i = 0; i < lighting.getLightCount(); ++i) {
-                    Light& light = lighting.getLightAt(i);
-                    
-                    if (light.type == LightType::Point) {
-                        // Use light's position to create variation without expensive calculations
-                        float positionOffset = (light.position.x + light.position.y) * 0.1f;
-                        
-                        // Combine pre-calculated flicker values with position offset
-                        float flickerAmount = fastFlickerBase + 
-                                           mediumFlickerBase * cos(positionOffset) + 
-                                           slowFlickerBase * sin(positionOffset);
-                        
-                        // Add slight randomness (less frequently)
-                        static int randomSkip = 0;
-                        if (++randomSkip >= 10) {  // Only add randomness every 10 updates
-                            flickerAmount += (rand() % 10) * 0.01f - 0.05f;
-                            randomSkip = 0;
-                        }
-                        
-                        // Apply the flicker effect
-                        float baseIntensity = light.intensity;
-                        light.intensity = std::max(0.1f, std::min(1.0f, baseIntensity + flickerAmount));
-                        
-                        // Vary radius less frequently and with less intensity
-                        if (randomSkip == 0) {  // Only update radius every 10 updates
-                            float radiusVariation = sin(flickerTimer + positionOffset) * 0.2f;
-                            light.radius = std::max(1.0f, static_cast<float>(light.radius + radiusVariation));
-                        }
-                    }
-                }
-            }
+            // Use the new optimized method which handles all batching internally
+            lighting.updateLights(m_deltaTime);
         }
         
         // Check game over condition
