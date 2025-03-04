@@ -746,9 +746,102 @@ bool Engine::loadAssets() {
     std::cout << "Ceiling texture ID: " << m_ceilingTexture << std::endl;
     
     // Create bullet texture
-    std::cout << "Creating bullet texture..." << std::endl;
-    m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
+    std::cout << "Creating realistic bullet texture..." << std::endl;
+    SDL_Surface* bulletSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (bulletSurface) {
+        SDL_LockSurface(bulletSurface);
+        Uint32* pixels = (Uint32*)bulletSurface->pixels;
+        
+        // Colors for the realistic bullet
+        Uint32 bulletBase = SDL_MapRGBA(bulletSurface->format, 180, 180, 180, 255);         // Base brass color
+        Uint32 bulletTip = SDL_MapRGBA(bulletSurface->format, 100, 100, 100, 255);          // Darker bullet tip
+        Uint32 highlight = SDL_MapRGBA(bulletSurface->format, 240, 240, 240, 255);          // Highlight/reflection
+        Uint32 shadow = SDL_MapRGBA(bulletSurface->format, 120, 120, 120, 255);             // Shadow
+        Uint32 transparent = SDL_MapRGBA(bulletSurface->format, 0, 0, 0, 0);                // Transparent background
+        
+        // Fill with transparency first
+        for (int i = 0; i < 32 * 32; i++) {
+            pixels[i] = transparent;
+        }
+        
+        // Draw bullet shape - 3D perspective (bullet flying toward viewer)
+        int centerX = 16;
+        int centerY = 16;
+        int bulletRadius = 12;
+        
+        for (int y = 0; y < 32; y++) {
+            for (int x = 0; x < 32; x++) {
+                // Calculate distance from center
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                
+                // Only draw within circle radius
+                if (distFromCenter <= bulletRadius) {
+                    // Determine which part of the bullet we're drawing
+                    double normalizedDist = distFromCenter / bulletRadius;
+                    
+                    // The central ~30% is the bullet tip, rest is brass casing
+                    if (normalizedDist < 0.3) {
+                        // Bullet tip (darker material)
+                        pixels[y * 32 + x] = bulletTip;
+                        
+                        // Add slight texture variation to bullet tip
+                        if ((x + y) % 4 == 0) {
+                            pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, 90, 90, 90, 255);
+                        }
+                    } else {
+                        // Brass casing
+                        pixels[y * 32 + x] = bulletBase;
+                        
+                        // Create a ring where the casing and tip meet
+                        if (normalizedDist > 0.28 && normalizedDist < 0.32) {
+                            pixels[y * 32 + x] = shadow;
+                        }
+                        
+                        // Add slight texture variation for realism
+                        if ((x + y) % 5 == 0 && normalizedDist > 0.5) {
+                            pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, 170, 170, 170, 255);
+                        }
+                    }
+                    
+                    // Add highlights based on angle (top-left light source)
+                    double angle = atan2(y - centerY, x - centerX);
+                    if (angle > -2.5 && angle < -1.0) {
+                        // Top-left highlight (reflection)
+                        if (normalizedDist > 0.4 && normalizedDist < 0.8) {
+                            pixels[y * 32 + x] = highlight;
+                        }
+                    }
+                    
+                    // Add bottom-right shadow
+                    if (angle > 0.5 && angle < 2.0) {
+                        // Bottom-right shadow
+                        if (normalizedDist > 0.4) {
+                            pixels[y * 32 + x] = shadow;
+                        }
+                    }
+                    
+                    // Add a small central reflection dot
+                    if (distFromCenter < bulletRadius * 0.15) {
+                        pixels[y * 32 + x] = highlight;
+                    }
+                }
+            }
+        }
+        
+        SDL_UnlockSurface(bulletSurface);
+        m_bulletTexture = m_textureManager->createTextureFromSurface(bulletSurface);
+        SDL_FreeSurface(bulletSurface);
+    } else {
+        // Fallback to simple solid texture if surface creation fails
+        m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
+    }
     std::cout << "Bullet texture ID: " << m_bulletTexture << std::endl;
+    
+    // Set the bullet texture in the projectile manager
+    if (m_projectileManager) {
+        m_projectileManager->setBulletTexture(m_bulletTexture);
+        m_projectileManager->setDefaultBulletTexture(m_bulletTexture);
+    }
     
     // Create enemy texture
     std::cout << "Creating enemy texture..." << std::endl;
@@ -889,12 +982,6 @@ bool Engine::loadAssets() {
     
     // Set initial weapon texture
     m_currentWeaponTexture = m_weaponTexture;
-    
-    // Set bullet texture in projectile manager
-    if (m_projectileManager && m_bulletTexture >= 0) {
-        m_projectileManager->setDefaultBulletTexture(m_bulletTexture);
-        std::cout << "Set default bullet texture ID: " << m_bulletTexture << std::endl;
-    }
     
     // Store texture IDs for wall variations
     m_wallTextureVariations.clear();

@@ -61,6 +61,12 @@ public:
     void setPlasmaTexture(int textureId) { m_plasmaTextureId = textureId; }
     void setDefaultBulletTexture(int textureId) { m_defaultBulletTexture = textureId; }
     
+    // Getters for texture IDs
+    int getBulletTextureId() const { return m_bulletTextureId; }
+    int getRocketTextureId() const { return m_rocketTextureId; }
+    int getPlasmaTextureId() const { return m_plasmaTextureId; }
+    int getDefaultBulletTextureId() const { return m_defaultBulletTexture; }
+    
     const std::vector<Projectile*>& getActiveProjectiles() const { return m_activeProjectiles; }
     Projectile* getProjectile(size_t index);
     int getActiveCount() const;

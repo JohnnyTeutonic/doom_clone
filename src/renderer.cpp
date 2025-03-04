@@ -682,69 +682,150 @@ void Renderer::renderProjectiles(const Player& player) {
         int drawEndX = size / 2 + screenX;
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
-        // Draw a bright bullet sprite
-        for (int x = drawStartX; x < drawEndX; x++) {
-            for (int y = drawStartY; y < drawEndY; y++) {
-                // Calculate distance from center (squared)
-                int centerX = (drawStartX + drawEndX) / 2;
-                int centerY = (drawStartY + drawEndY) / 2;
-                double distance = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+        // Try to get the bullet texture based on projectile type
+        int textureId = -1;
+        switch (projectile->getType()) {
+            case ProjectileType::Bullet:
+                textureId = m_projectileManager->getBulletTextureId();
+                break;
+            case ProjectileType::Rocket:
+                textureId = m_projectileManager->getRocketTextureId();
+                break;
+            case ProjectileType::Plasma:
+                textureId = m_projectileManager->getPlasmaTextureId();
+                break;
+        }
+        
+        const Texture* bulletTexture = nullptr;
+        if (textureId >= 0) {
+            bulletTexture = m_textureManager->getTexture(textureId);
+        }
+        
+        // If we have a valid texture, use it
+        if (bulletTexture) {
+            // Calculate the center of the bullet on screen
+            int centerX = (drawStartX + drawEndX) / 2;
+            int centerY = (drawStartY + drawEndY) / 2;
+            
+            // Calculate the size of the bullet
+            int bulletWidth = drawEndX - drawStartX;
+            int bulletHeight = drawEndY - drawStartY;
+            
+            // Apply rotation based on bullet direction
+            double angle = atan2(projectile->getDirection().y, projectile->getDirection().x) * 180.0 / M_PI;
+            
+            // Create a rotation effect based on lifetime for spinning bullets
+            double spinSpeed = 720.0; // degrees per second
+            angle += projectile->getLifetime() * spinSpeed;
+            
+            // Apply slight trajectory-based scaling for a motion blur effect
+            double speedScale = 1.0 + std::min(0.3, projectile->getLifetime() * 0.5);
+            
+            // Create a destination rectangle
+            SDL_Rect destRect = {
+                centerX - static_cast<int>(bulletWidth * speedScale / 2),
+                centerY - static_cast<int>(bulletHeight * speedScale / 2),
+                static_cast<int>(bulletWidth * speedScale),
+                static_cast<int>(bulletHeight * speedScale)
+            };
+            
+            // Get the SDL texture
+            SDL_Texture* sdlTexture = bulletTexture->getSDLTexture();
+            
+            if (sdlTexture) {
+                // Set the blend mode to allow transparency
+                SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
                 
-                // Only draw if within a circle
-                if (distance <= size / 2) {
-                    Color color;
-                    
-                    // Gradient based on distance from center
-                    double gradient = 1.0 - (distance / (size / 2));
-                    gradient = pow(gradient, 0.5); // Make the gradient more pronounced
-                    
-                    // Different colors based on projectile type
-                    switch (projectile->getType()) {
-                        case ProjectileType::Bullet:
-                            // Bright yellow-orange bullet with white core
-                            color = Color(
-                                255,                          // Red
-                                255 * gradient,               // Green
-                                gradient > 0.8 ? 255 : 0,    // Blue (white core)
-                                255                          // Alpha
-                            );
-                            break;
-                        case ProjectileType::Rocket:
-                            // Red-orange rocket with bright core
-                            color = Color(
-                                255,                          // Red
-                                100 * gradient,               // Green
-                                gradient > 0.9 ? 200 : 0,    // Blue
-                                255                          // Alpha
-                            );
-                            break;
-                        case ProjectileType::Plasma:
-                            // Blue-green plasma with bright core
-                            color = Color(
-                                gradient > 0.8 ? 200 : 0,    // Red
-                                200 * gradient,               // Green
-                                255,                         // Blue
-                                255                          // Alpha
-                            );
-                            break;
-                    }
-                    
-                    // Draw the pixel
-                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                    SDL_RenderDrawPoint(m_renderer, x, y);
+                // Draw the rotated texture
+                SDL_RenderCopyEx(
+                    m_renderer,
+                    sdlTexture,
+                    NULL,                    // Use the entire source texture
+                    &destRect,               // Destination on screen
+                    angle,                   // Rotation angle in degrees
+                    NULL,                    // Rotate around center
+                    SDL_FLIP_NONE            // No flipping
+                );
+                
+                // Add a small glow effect
+                if (m_performanceLevel != PerformanceLevel::Low) {
+                    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 64);
+                    SDL_Rect glowRect = { 
+                        centerX - size / 2 - 2, 
+                        centerY - size / 2 - 2, 
+                        size + 4, 
+                        size + 4 
+                    };
+                    SDL_RenderDrawRect(m_renderer, &glowRect);
                 }
             }
         }
-        
-        // Draw an outer glow
-        SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 64);
-        SDL_Rect glowRect = { 
-            (drawStartX + drawEndX) / 2 - size / 2, 
-            (drawStartY + drawEndY) / 2 - size / 2, 
-            size, 
-            size 
-        };
-        SDL_RenderDrawRect(m_renderer, &glowRect);
+        // Fallback to procedural drawing if texture not available
+        else {
+            // Draw a bright bullet sprite (procedural fallback)
+            for (int x = drawStartX; x < drawEndX; x++) {
+                for (int y = drawStartY; y < drawEndY; y++) {
+                    // Calculate distance from center (squared)
+                    int centerX = (drawStartX + drawEndX) / 2;
+                    int centerY = (drawStartY + drawEndY) / 2;
+                    double distance = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                    
+                    // Only draw if within a circle
+                    if (distance <= size / 2) {
+                        Color color;
+                        
+                        // Gradient based on distance from center
+                        double gradient = 1.0 - (distance / (size / 2));
+                        gradient = pow(gradient, 0.5); // Make the gradient more pronounced
+                        
+                        // Different colors based on projectile type
+                        switch (projectile->getType()) {
+                            case ProjectileType::Bullet:
+                                // Bright yellow-orange bullet with white core
+                                color = Color(
+                                    255,                          // Red
+                                    255 * gradient,               // Green
+                                    gradient > 0.8 ? 255 : 0,    // Blue (white core)
+                                    255                          // Alpha
+                                );
+                                break;
+                            case ProjectileType::Rocket:
+                                // Red-orange rocket with bright core
+                                color = Color(
+                                    255,                          // Red
+                                    100 * gradient,               // Green
+                                    gradient > 0.9 ? 200 : 0,    // Blue
+                                    255                          // Alpha
+                                );
+                                break;
+                            case ProjectileType::Plasma:
+                                // Blue-green plasma with bright core
+                                color = Color(
+                                    gradient > 0.8 ? 200 : 0,    // Red
+                                    200 * gradient,               // Green
+                                    255,                         // Blue
+                                    255                          // Alpha
+                                );
+                                break;
+                        }
+                        
+                        // Draw the pixel
+                        SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                        SDL_RenderDrawPoint(m_renderer, x, y);
+                    }
+                }
+            }
+            
+            // Draw an outer glow
+            SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 64);
+            SDL_Rect glowRect = { 
+                (drawStartX + drawEndX) / 2 - size / 2, 
+                (drawStartY + drawEndY) / 2 - size / 2, 
+                size, 
+                size 
+            };
+            SDL_RenderDrawRect(m_renderer, &glowRect);
+        }
     }
 }
 
