@@ -995,12 +995,7 @@ void Renderer::renderProjectiles(const Player& player) {
             std::cerr << "Null projectile in active projectiles list!" << std::endl;
             continue;
         }
-        
-        // Print projectile information
-        std::cout << "Rendering bullet at (" << projectile->getPosition().x << ", " 
-                  << projectile->getPosition().y << "), active: " << projectile->isActive() 
-                  << ", lifetime: " << projectile->getLifetime() << " seconds" << std::endl;
-        
+                
         // Calculate projectile position relative to player
         double projX = projectile->getPosition().x - pos.x;
         double projY = projectile->getPosition().y - pos.y;

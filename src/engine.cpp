@@ -40,6 +40,7 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_audioSystem(nullptr)
     , m_musicEnabled(true)
     , m_prevKeyboardState{}
+    , m_prevMouseLeftDown(false)
 {
     std::cout << "Engine created with resolution " << screenWidth << "x" << screenHeight << std::endl;
 }
@@ -352,7 +353,26 @@ void Engine::processInput() {
         }
         
         // Shooting - use direct keyboard state for Space
+        bool shouldFire = false;
+        
+        // Check for spacebar firing
         if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
+            shouldFire = true;
+            m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
+        } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
+            m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
+        }
+        
+        // Check for left mouse button firing
+        if (m_inputHandler.isLeftMouseDown() && !m_prevMouseLeftDown) {
+            shouldFire = true;
+            m_prevMouseLeftDown = true;
+        } else if (!m_inputHandler.isLeftMouseDown()) {
+            m_prevMouseLeftDown = false;
+        }
+        
+        // Fire weapon if either input was triggered
+        if (shouldFire) {
             if (m_player.fire()) {
                 // Apply recoil effect
                 m_weaponRecoil = 0.1;
@@ -360,9 +380,6 @@ void Engine::processInput() {
                 // Apply muzzle flash effect
                 m_flashIntensity = 1.0;
             }
-            m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
-        } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
-            m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
         }
         
         // Reload - use direct keyboard state for R
@@ -406,25 +423,56 @@ void Engine::processInput() {
             m_prevKeyboardState[SDL_SCANCODE_F3] = false;
         }
         
-        // Weapon switching - use direct keyboard state for 1 and 2
+        // Weapon switching - use direct keyboard state for 1-5
         if (keyboardState[SDL_SCANCODE_1] && !m_prevKeyboardState[SDL_SCANCODE_1]) {
-            if (m_currentWeaponTexture != m_weaponTexture) {
-                m_currentWeaponTexture = m_weaponTexture;
-                showNotification("Switched to shotgun", 2.0);
-            }
+            m_player.setCurrentWeapon(WeaponType::Pistol);
+            showNotification("Switched to pistol", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_1] = true;
         } else if (!keyboardState[SDL_SCANCODE_1]) {
             m_prevKeyboardState[SDL_SCANCODE_1] = false;
         }
         
         if (keyboardState[SDL_SCANCODE_2] && !m_prevKeyboardState[SDL_SCANCODE_2]) {
-            if (m_currentWeaponTexture != m_machineGunTexture) {
-                m_currentWeaponTexture = m_machineGunTexture;
-                showNotification("Switched to machine gun", 2.0);
-            }
+            m_player.setCurrentWeapon(WeaponType::Shotgun);
+            showNotification("Switched to shotgun", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_2] = true;
         } else if (!keyboardState[SDL_SCANCODE_2]) {
             m_prevKeyboardState[SDL_SCANCODE_2] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_3] && !m_prevKeyboardState[SDL_SCANCODE_3]) {
+            m_player.setCurrentWeapon(WeaponType::RocketLauncher);
+            showNotification("Switched to rocket launcher", 2.0);
+            m_prevKeyboardState[SDL_SCANCODE_3] = true;
+        } else if (!keyboardState[SDL_SCANCODE_3]) {
+            m_prevKeyboardState[SDL_SCANCODE_3] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_4] && !m_prevKeyboardState[SDL_SCANCODE_4]) {
+            m_player.setCurrentWeapon(WeaponType::PlasmaGun);
+            showNotification("Switched to plasma gun", 2.0);
+            m_prevKeyboardState[SDL_SCANCODE_4] = true;
+        } else if (!keyboardState[SDL_SCANCODE_4]) {
+            m_prevKeyboardState[SDL_SCANCODE_4] = false;
+        }
+        
+        if (keyboardState[SDL_SCANCODE_5] && !m_prevKeyboardState[SDL_SCANCODE_5]) {
+            m_player.setCurrentWeapon(WeaponType::GrenadeLauncher);
+            showNotification("Switched to grenade launcher", 2.0);
+            m_prevKeyboardState[SDL_SCANCODE_5] = true;
+        } else if (!keyboardState[SDL_SCANCODE_5]) {
+            m_prevKeyboardState[SDL_SCANCODE_5] = false;
+        }
+        
+        // Throw grenade directly with G key
+        if (keyboardState[SDL_SCANCODE_G] && !m_prevKeyboardState[SDL_SCANCODE_G]) {
+            if (m_player.throwGrenade()) {
+                // Apply recoil effect
+                m_weaponRecoil = 0.15;
+            }
+            m_prevKeyboardState[SDL_SCANCODE_G] = true;
+        } else if (!keyboardState[SDL_SCANCODE_G]) {
+            m_prevKeyboardState[SDL_SCANCODE_G] = false;
         }
         
         // Audio controls - use direct keyboard state for better compatibility with WSL2

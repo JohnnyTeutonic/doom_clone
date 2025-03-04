@@ -2,23 +2,26 @@
 #include "projectile.h"
 #include <iostream>
 #include <algorithm> // for std::clamp
+#include <cmath>
 
 Player::Player() 
-    : m_position(0, 0)
+    : m_position(2, 2)
     , m_direction(1, 0)
     , m_plane(0, 0.66)  // FOV is approximately 2 * atan(0.66/1.0) = 66 degrees
-    , m_moveSpeed(3.0)
-    , m_rotSpeed(2.5)
-    , m_health(100)
+    , m_moveSpeed(5.0)
+    , m_rotSpeed(3.0)
+    , m_health(100.0)
     , m_ammo(50)
     , m_verticalAngle(0.0)
-    , m_verticalLookSpeed(1.5)
+    , m_verticalLookSpeed(2.0)
     , m_maxVerticalAngle(M_PI / 4.0)  // 45 degrees up/down
     , m_projectileManager(nullptr)
     , m_currentWeapon(WeaponType::Pistol)
-    , m_weaponDamage(30.0)
-    , m_weaponCooldown(0.5)
+    , m_weaponDamage(25.0)
+    , m_weaponCooldown(0.2)
     , m_timeSinceLastShot(0.0)
+    , m_grenades(3)        // Start with 3 grenades
+    , m_throwPower(10.0)   // Default throw power
 {
 }
 
@@ -518,6 +521,11 @@ void Player::setCurrentWeapon(WeaponType weapon) {
             m_weaponDamage = 25.0;
             m_weaponCooldown = 0.2;
             break;
+            
+        case WeaponType::GrenadeLauncher:
+            m_weaponDamage = 75.0;
+            m_weaponCooldown = 1.0;
+            break;
     }
 }
 
@@ -525,6 +533,11 @@ bool Player::fire() {
     if (!m_projectileManager) {
         std::cerr << "[FIRE ERROR] Player has no projectile manager!" << std::endl;
         return false;
+    }
+    
+    // Special case for grenade launcher
+    if (m_currentWeapon == WeaponType::GrenadeLauncher) {
+        return throwGrenade();
     }
     
     if (m_ammo <= 0) {
@@ -557,55 +570,125 @@ bool Player::fire() {
     
     std::cout << "  Bullet start position: (" << bulletPos.x << ", " << bulletPos.y << ")" << std::endl;
     
-    // Fire 3 bullets with slight spread for improved visibility
     bool success = false;
     
-    // The spread amount controls how much the bullets deviate
-    double spreadAmount = 0.1;
+    // Handle different weapon types
+    switch (m_currentWeapon) {
+        case WeaponType::Pistol:
+        {
+            // Single bullet, no spread
+            success = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::Bullet,
+                20.0,
+                m_weaponDamage
+            ) >= 0;
+            break;
+        }
+        
+        case WeaponType::Shotgun:
+        {
+            // Multiple bullets with spread
+            double spreadAmount = 0.15;
+            
+            // Center bullet
+            bool centerBulletSuccess = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::Bullet,
+                15.0,
+                m_weaponDamage
+            ) >= 0;
+            success |= centerBulletSuccess;
+            
+            // Create 4 spread bullets (2 left, 2 right)
+            for (int i = 1; i <= 2; i++) {
+                // Left spread
+                Vec2 leftDir = m_direction;
+                leftDir.rotate(-spreadAmount * i);
+                bool leftSuccess = m_projectileManager->createProjectile(
+                    bulletPos,
+                    leftDir,
+                    ProjectileType::Bullet,
+                    15.0,
+                    m_weaponDamage * 0.7  // Reduced damage for spread bullets
+                ) >= 0;
+                success |= leftSuccess;
+                
+                // Right spread
+                Vec2 rightDir = m_direction;
+                rightDir.rotate(spreadAmount * i);
+                bool rightSuccess = m_projectileManager->createProjectile(
+                    bulletPos,
+                    rightDir,
+                    ProjectileType::Bullet,
+                    15.0,
+                    m_weaponDamage * 0.7
+                ) >= 0;
+                success |= rightSuccess;
+            }
+            break;
+        }
+        
+        case WeaponType::RocketLauncher:
+        {
+            // Single rocket with physics
+            int rocketId = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::Rocket,
+                10.0,
+                m_weaponDamage
+            );
+            
+            success = (rocketId >= 0);
+            break;
+        }
+        
+        case WeaponType::PlasmaGun:
+        {
+            // Rapid fire plasma bolts with slight spread
+            double spreadAmount = 0.05;
+            
+            // Center plasma bolt
+            bool centerSuccess = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::Plasma,
+                18.0,
+                m_weaponDamage
+            ) >= 0;
+            success |= centerSuccess;
+            
+            // Slight spread for visual effect
+            Vec2 leftDir = m_direction;
+            leftDir.rotate(-spreadAmount);
+            bool leftSuccess = m_projectileManager->createProjectile(
+                bulletPos,
+                leftDir,
+                ProjectileType::Plasma,
+                18.0,
+                m_weaponDamage * 0.5
+            ) >= 0;
+            success |= leftSuccess;
+            
+            break;
+        }
+        
+        default:
+            // Fallback to basic bullet
+            success = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::Bullet,
+                15.0,
+                m_weaponDamage
+            ) >= 0;
+            break;
+    }
     
-    std::cout << "  Firing multiple bullets with spread: " << spreadAmount << std::endl;
-    
-    // Center bullet (no spread)
-    bool centerBulletSuccess = m_projectileManager->createProjectile(
-        bulletPos,
-        m_direction,
-        ProjectileType::Bullet,
-        15.0,  // Increased speed
-        m_weaponDamage
-    ) >= 0;
-    
-    std::cout << "  Center bullet created: " << (centerBulletSuccess ? "SUCCESS" : "FAILED") << std::endl;
-    success |= centerBulletSuccess;
-    
-    // Left spread bullet
-    Vec2 leftDir = m_direction;
-    leftDir.rotate(-spreadAmount);
-    bool leftBulletSuccess = m_projectileManager->createProjectile(
-        bulletPos,
-        leftDir,
-        ProjectileType::Bullet,
-        15.0,
-        m_weaponDamage
-    ) >= 0;
-    
-    std::cout << "  Left bullet created: " << (leftBulletSuccess ? "SUCCESS" : "FAILED") << std::endl;
-    success |= leftBulletSuccess;
-    
-    // Right spread bullet
-    Vec2 rightDir = m_direction;
-    rightDir.rotate(spreadAmount);
-    bool rightBulletSuccess = m_projectileManager->createProjectile(
-        bulletPos,
-        rightDir,
-        ProjectileType::Bullet,
-        15.0,
-        m_weaponDamage
-    ) >= 0;
-    
-    std::cout << "  Right bullet created: " << (rightBulletSuccess ? "SUCCESS" : "FAILED") << std::endl;
-    success |= rightBulletSuccess;
-    
-    std::cout << "  Overall firing result: " << (success ? "SUCCESS" : "ALL BULLETS FAILED") << std::endl;
+    std::cout << "  Firing result: " << (success ? "SUCCESS" : "FAILED") << std::endl;
     std::cout << "  Ammo now: " << m_ammo << std::endl;
     std::cout << "=======================================" << std::endl;
     
@@ -627,4 +710,106 @@ void Player::takeDamage(double amount) {
 void Player::teleport(double x, double y) {
     m_position.x = x;
     m_position.y = y;
+}
+
+// New method for throwing grenades
+bool Player::throwGrenade() {
+    // Check if we have grenades
+    if (m_grenades <= 0) {
+        std::cout << "No grenades left!" << std::endl;
+        return false;
+    }
+    
+    // Check if we have a projectile manager
+    if (!m_projectileManager) {
+        std::cout << "No projectile manager!" << std::endl;
+        return false;
+    }
+    
+    // Check cooldown
+    if (m_timeSinceLastShot < m_weaponCooldown) {
+        std::cout << "Weapon on cooldown!" << std::endl;
+        return false;
+    }
+    
+    // Reset cooldown
+    m_timeSinceLastShot = 0.0;
+    
+    // Decrease grenade count
+    m_grenades--;
+    
+    std::cout << "=======================================" << std::endl;
+    std::cout << "[GRENADE] Throwing grenade!" << std::endl;
+    std::cout << "  Grenades left: " << m_grenades << std::endl;
+    
+    // Calculate starting position (slightly in front of player)
+    Vec2 grenadePos = m_position + m_direction * 0.5;
+    
+    // Calculate initial velocity based on throw power and direction
+    // Include vertical angle in the calculation
+    Vec2 throwDir = m_direction;
+    
+    // Apply vertical angle to throw direction (positive angle = throwing upward)
+    double verticalFactor = sin(m_verticalAngle);
+    double horizontalFactor = cos(m_verticalAngle);
+    
+    // Adjust throw power based on vertical angle
+    double effectiveThrowPower = m_throwPower * horizontalFactor;
+    
+    std::cout << "  Throw power: " << m_throwPower << std::endl;
+    std::cout << "  Vertical factor: " << verticalFactor << std::endl;
+    std::cout << "  Horizontal factor: " << horizontalFactor << std::endl;
+    std::cout << "  Effective throw power: " << effectiveThrowPower << std::endl;
+    
+    // Create the grenade projectile
+    int grenadeId = m_projectileManager->createProjectile(
+        grenadePos,
+        throwDir,
+        ProjectileType::Grenade,
+        effectiveThrowPower,
+        50.0  // Grenade damage
+    );
+    
+    if (grenadeId >= 0) {
+        // Get the created projectile to adjust its properties
+        Projectile* grenade = nullptr;
+        const std::vector<Projectile*>& projectiles = m_projectileManager->getActiveProjectiles();
+        for (auto proj : projectiles) {
+            if (proj->getId() == grenadeId) {
+                grenade = proj;
+                break;
+            }
+        }
+        
+        if (grenade) {
+            // Apply vertical velocity component based on look angle
+            Vec2 velocity = grenade->getVelocity();
+            
+            // Adjust velocity based on vertical angle
+            // In a 2D raycaster, we're simulating 3D with a 2D engine
+            // We'll use the Y component to simulate vertical movement
+            velocity.y -= verticalFactor * m_throwPower; // Negative Y is up in most 2D raycasters
+            
+            // Set the updated velocity
+            grenade->setVelocity(velocity);
+            
+            // Make sure physics is enabled
+            grenade->setUsePhysics(true);
+            
+            // Set appropriate physics properties
+            grenade->setGravity(9.8);       // Standard gravity
+            grenade->setAirResistance(0.02); // Light air resistance
+            grenade->setMass(1.0);          // Standard mass
+            grenade->setBounciness(0.6);    // Fairly bouncy
+            grenade->setMaxBounces(3);      // Can bounce up to 3 times
+            
+            std::cout << "  Grenade thrown with velocity: (" << velocity.x << ", " << velocity.y << ")" << std::endl;
+            std::cout << "=======================================" << std::endl;
+            return true;
+        }
+    }
+    
+    std::cout << "  Failed to create grenade projectile!" << std::endl;
+    std::cout << "=======================================" << std::endl;
+    return false;
 } 

@@ -159,6 +159,9 @@ private:
     // Keyboard state tracking for WSL2 compatibility
     std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
     
+    // Mouse state tracking
+    bool m_prevMouseLeftDown;
+    
     // Private methods
     void setupMap();
     void setupPlayer();

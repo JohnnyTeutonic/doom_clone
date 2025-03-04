@@ -12,7 +12,8 @@ enum class WeaponType {
     Pistol,
     Shotgun,
     RocketLauncher,
-    PlasmaGun
+    PlasmaGun,
+    GrenadeLauncher  // New weapon type
 };
 
 class Player {
@@ -35,6 +36,10 @@ private:
     double m_weaponDamage;
     double m_weaponCooldown;
     double m_timeSinceLastShot;
+    
+    // Grenade properties
+    int m_grenades;       // Grenade count
+    double m_throwPower;  // How hard grenades are thrown
     
     // Reference to projectile manager (not owned)
     ProjectileManager* m_projectileManager;
@@ -64,11 +69,19 @@ public:
     
     // Weapon/combat
     bool fire();
+    bool throwGrenade();  // New method for throwing grenades
     void reload();
     void takeDamage(double amount);
     double getWeaponDamage() const { return m_weaponDamage; }
     WeaponType getCurrentWeapon() const { return m_currentWeapon; }
     void setCurrentWeapon(WeaponType weapon);
+    
+    // Grenade methods
+    int getGrenades() const { return m_grenades; }
+    void setGrenades(int count) { m_grenades = count; }
+    void addGrenades(int count) { m_grenades += count; }
+    double getThrowPower() const { return m_throwPower; }
+    void setThrowPower(double power) { m_throwPower = power; }
     
     // Getters
     const Vec2& getPosition() const { return m_position; }

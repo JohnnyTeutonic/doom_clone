@@ -62,18 +62,25 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
     double distToPlayer = toPlayer.length();
     
     // Different behavior states based on distance to player
-    enum class EnemyState { Idle, Patrol, Chase, Attack };
+    enum class EnemyState { Idle, Patrol, Chase, Attack, Maintain };
+    
+    // Define distance thresholds
+    const double ATTACK_DISTANCE = 1.5;
+    const double MINIMUM_DISTANCE = 1.2; // Minimum distance to maintain from player
+    const double CHASE_DISTANCE = 8.0;
     
     // Determine the current state
     EnemyState state;
-    if (distToPlayer < 1.5) {
-        state = EnemyState::Attack;  // Very close - attack
-    } else if (distToPlayer < 8.0) {
-        state = EnemyState::Chase;   // Within range - chase
+    if (distToPlayer < MINIMUM_DISTANCE) {
+        state = EnemyState::Maintain;  // Too close - back up
+    } else if (distToPlayer < ATTACK_DISTANCE) {
+        state = EnemyState::Attack;    // Close enough to attack but not too close
+    } else if (distToPlayer < CHASE_DISTANCE) {
+        state = EnemyState::Chase;     // Within range - chase
     } else if (m_moveTimer < m_moveDuration) {
-        state = EnemyState::Patrol;  // Normal patrolling
+        state = EnemyState::Patrol;    // Normal patrolling
     } else {
-        state = EnemyState::Idle;    // Idle, about to change direction
+        state = EnemyState::Idle;      // Idle, about to change direction
     }
     
     // Handle behavior based on state
@@ -104,7 +111,11 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
                 
                 // Use first and second animation frames for patrol
                 if (m_isAnimated && m_frameCount > 1) {
-                    m_currentFrame = (m_currentFrame < 2) ? m_currentFrame : 0;
+                    m_animationTimer += deltaTime;
+                    if (m_animationTimer >= 1.0 / m_animationSpeed) {
+                        m_currentFrame = (m_currentFrame + 1) % 2;
+                        m_animationTimer = 0.0;
+                    }
                 }
             }
             break;
@@ -140,20 +151,60 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
                 
                 // Use second and third animation frames for chase
                 if (m_isAnimated && m_frameCount > 2) {
-                    m_currentFrame = 1 + (m_currentFrame % 2);
+                    m_animationTimer += deltaTime;
+                    if (m_animationTimer >= 1.0 / m_animationSpeed) {
+                        m_currentFrame = 1 + ((m_currentFrame - 1 + 1) % 2);
+                        m_animationTimer = 0.0;
+                    }
                 }
             }
             break;
             
         case EnemyState::Attack:
-            // Attack the player
+            // Attack the player but maintain minimum distance
             // In a real game, this would deal damage to the player
-            // For now, just face the player and use the attack animation
             m_direction = toPlayer.normalized();
             
             // Use the fourth animation frame (attack) if available
             if (m_isAnimated && m_frameCount > 3) {
                 m_currentFrame = 3;
+            }
+            break;
+            
+        case EnemyState::Maintain:
+            // Back away from player to maintain minimum distance
+            {
+                // Direction is away from player
+                m_direction = (m_position - playerPos).normalized();
+                
+                // Move away from player
+                Vec2 newPos = m_position + m_direction * m_moveSpeed * 1.2 * deltaTime;
+                
+                // Check if we can move there and it's not too far from player
+                if (canMoveTo(newPos, map)) {
+                    m_position = newPos;
+                } else {
+                    // If we can't back up directly, try moving laterally
+                    Vec2 lateralDir(-m_direction.y, m_direction.x);
+                    Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                    
+                    if (canMoveTo(lateralPos, map)) {
+                        m_position = lateralPos;
+                    } else {
+                        // Try the other lateral direction
+                        lateralDir = Vec2(m_direction.y, -m_direction.x);
+                        lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                        
+                        if (canMoveTo(lateralPos, map)) {
+                            m_position = lateralPos;
+                        }
+                    }
+                }
+                
+                // Use attack animation frame
+                if (m_isAnimated && m_frameCount > 3) {
+                    m_currentFrame = 3;
+                }
             }
             break;
     }
@@ -180,7 +231,21 @@ void Sprite::changeDirection(const Map& map) {
 
 bool Sprite::canMoveTo(const Vec2& newPos, const Map& map) const {
     // Check if the new position is valid (not in a wall)
-    return map.isValidPosition(newPos.x, newPos.y);
+    // Add a small buffer around the sprite to prevent getting too close to walls
+    const double buffer = 0.2; // Buffer distance from walls
+    
+    // Check the center and four points around the sprite (like a plus sign)
+    if (!map.isValidPosition(newPos.x, newPos.y)) return false;
+    
+    // Check points at the edge of the sprite's collision radius
+    double radius = m_size * 0.4; // Use 40% of sprite size as collision radius
+    
+    if (!map.isValidPosition(newPos.x + radius, newPos.y)) return false;
+    if (!map.isValidPosition(newPos.x - radius, newPos.y)) return false;
+    if (!map.isValidPosition(newPos.x, newPos.y + radius)) return false;
+    if (!map.isValidPosition(newPos.x, newPos.y - radius)) return false;
+    
+    return true;
 }
 
 void Sprite::setAnimated(bool animated, int frameCount, double animationSpeed) {
