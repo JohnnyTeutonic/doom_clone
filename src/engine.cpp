@@ -393,10 +393,10 @@ void Engine::processInput() {
         m_player.strafeLeft(moveSpeed, m_map);
     }
     if (keyState[SDL_SCANCODE_RIGHT]) {
-        m_player.rotateRight(rotSpeed);
+        m_player.rotateLeft(rotSpeed);
     }
     if (keyState[SDL_SCANCODE_LEFT]) {
-        m_player.rotateLeft(rotSpeed);
+        m_player.rotateRight(rotSpeed);
     }
     
     // Handle vertical looking with Up and Down arrow keys
