@@ -754,16 +754,13 @@ void Engine::setupMap() {
             if (x == 0 || y == 0 || x == m_map.getWidth() - 1 || y == m_map.getHeight() - 1) {
                 m_map.setCell(x, y, CellType::Wall);
                 m_map.setWallTexture(x, y, m_wallTexture);
-                std::cout << "#";
             } else {
                 // Add some random walls in the interior
                 if ((x % 5 == 0 || y % 5 == 0) && rand() % 3 == 0) {
                     m_map.setCell(x, y, CellType::Wall);
                     m_map.setWallTexture(x, y, m_wallTexture);
-                    std::cout << "#";
                 } else {
                     m_map.setCell(x, y, CellType::Empty);
-                    std::cout << ".";
                     
                     // Chance to spawn an enemy in empty cells
                     if (rand() % 20 == 0 && m_spriteManager && m_enemyTexture >= 0) {
@@ -783,15 +780,72 @@ void Engine::setupMap() {
                                 SpriteType::Enemy
                             );
                             
-                            if (spriteId >= 0) {
-                                std::cout << "Spawned enemy at (" << x << ", " << y << ")" << std::endl;
+                            // Add a point light for the enemy
+                            if (spriteId >= 0 && m_renderer) {
+                                Light enemyLight = Light::createPointLight(
+                                    Vec2(x + 0.5, y + 0.5),  // Position
+                                    Color(255, 0, 0),        // Red light
+                                    0.5,                     // Intensity
+                                    3.0                      // Radius
+                                );
+                                m_renderer->getLightingSystem().addLight(enemyLight);
                             }
                         }
                     }
                 }
             }
         }
-        std::cout << std::endl;
+    }
+    
+    // Set up lighting
+    if (m_renderer) {
+        LightingSystem& lighting = m_renderer->getLightingSystem();
+        
+        // Set ambient lighting (dark, bluish tone for DOOM atmosphere)
+        lighting.setAmbientColor(Color(64, 64, 96));
+        lighting.setAmbientIntensity(0.2);
+        
+        // Add main directional light (like moonlight)
+        Light moonlight = Light::createDirectionalLight(
+            Vec2(-0.5, -0.7),           // Direction
+            Color(150, 150, 200),       // Bluish white
+            0.5                         // Intensity
+        );
+        lighting.addLight(moonlight);
+        
+        // Add some atmospheric point lights
+        // Corners
+        Light cornerLight1 = Light::createPointLight(
+            Vec2(2.0, 2.0),
+            Color(255, 100, 0),  // Orange
+            0.7,
+            5.0
+        );
+        lighting.addLight(cornerLight1);
+        
+        Light cornerLight2 = Light::createPointLight(
+            Vec2(m_map.getWidth() - 2.0, 2.0),
+            Color(0, 100, 255),  // Blue
+            0.7,
+            5.0
+        );
+        lighting.addLight(cornerLight2);
+        
+        Light cornerLight3 = Light::createPointLight(
+            Vec2(2.0, m_map.getHeight() - 2.0),
+            Color(100, 255, 0),  // Green
+            0.7,
+            5.0
+        );
+        lighting.addLight(cornerLight3);
+        
+        Light cornerLight4 = Light::createPointLight(
+            Vec2(m_map.getWidth() - 2.0, m_map.getHeight() - 2.0),
+            Color(255, 0, 100),  // Pink
+            0.7,
+            5.0
+        );
+        lighting.addLight(cornerLight4);
     }
     
     std::cout << "Map setup complete" << std::endl;

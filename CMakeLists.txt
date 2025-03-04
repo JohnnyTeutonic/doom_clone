@@ -72,6 +72,7 @@ set(HEADERS
     src/projectile.h
     src/input.h
     src/utils.h
+    src/lighting.h
 )
 
 # Define executable

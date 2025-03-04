@@ -83,6 +83,57 @@ struct Color {
             a
         );
     }
+
+    // Apply ambient, diffuse, and specular lighting
+    Color withAdvancedLighting(const Color& ambient, const Color& diffuse, const Color& specular, double intensity) const {
+        intensity = std::max(0.0, std::min(1.0, intensity));
+        return Color(
+            static_cast<uint8_t>(std::min(255.0, 
+                (r * ambient.r / 255.0) + 
+                (r * diffuse.r / 255.0 * intensity) +
+                (specular.r * intensity))),
+            static_cast<uint8_t>(std::min(255.0, 
+                (g * ambient.g / 255.0) + 
+                (g * diffuse.g / 255.0 * intensity) +
+                (specular.g * intensity))),
+            static_cast<uint8_t>(std::min(255.0, 
+                (b * ambient.b / 255.0) + 
+                (b * diffuse.b / 255.0 * intensity) +
+                (specular.b * intensity))),
+            a
+        );
+    }
+
+    // Add colors together (for multiple light sources)
+    Color operator+(const Color& other) const {
+        return Color(
+            static_cast<uint8_t>(std::min(255, int(r) + int(other.r))),
+            static_cast<uint8_t>(std::min(255, int(g) + int(other.g))),
+            static_cast<uint8_t>(std::min(255, int(b) + int(other.b))),
+            static_cast<uint8_t>(std::min(255, int(a) + int(other.a)))
+        );
+    }
+
+    // Multiply colors (for light filtering)
+    Color operator*(const Color& other) const {
+        return Color(
+            static_cast<uint8_t>((r * other.r) / 255),
+            static_cast<uint8_t>((g * other.g) / 255),
+            static_cast<uint8_t>((b * other.b) / 255),
+            static_cast<uint8_t>((a * other.a) / 255)
+        );
+    }
+
+    // Scale color by a factor
+    Color operator*(double factor) const {
+        factor = std::max(0.0, std::min(1.0, factor));
+        return Color(
+            static_cast<uint8_t>(r * factor),
+            static_cast<uint8_t>(g * factor),
+            static_cast<uint8_t>(b * factor),
+            a
+        );
+    }
 };
 
 // Timer class for measuring elapsed time

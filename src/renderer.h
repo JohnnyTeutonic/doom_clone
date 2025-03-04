@@ -9,6 +9,7 @@
 #include "texture.h"
 #include "sprite.h"
 #include "projectile.h"
+#include "lighting.h"
 
 // Forward declare Engine to avoid circular dependency
 class Engine;
@@ -28,6 +29,7 @@ private:
     TextureManager* m_textureManager;
     SpriteManager* m_spriteManager;
     ProjectileManager* m_projectileManager;
+    LightingSystem m_lightingSystem;  // New lighting system
     
     // Rendering options
     bool m_showFPS;
@@ -38,6 +40,15 @@ private:
     int m_frameCount;
     double m_fpsTimer;
     double m_fps;
+
+    // Calculate surface normal for lighting
+    Vec2 calculateSurfaceNormal(bool side, const Vec2& rayDir) const {
+        if (side) {
+            return Vec2(rayDir.y > 0 ? -1 : 1, 0);  // Hit vertical wall
+        } else {
+            return Vec2(0, rayDir.x > 0 ? -1 : 1);  // Hit horizontal wall
+        }
+    }
     
 public:
     Renderer();
@@ -61,6 +72,7 @@ public:
     TextureManager* getTextureManager() const { return m_textureManager; }
     SpriteManager* getSpriteManager() const { return m_spriteManager; }
     ProjectileManager* getProjectileManager() const { return m_projectileManager; }
+    LightingSystem& getLightingSystem() { return m_lightingSystem; }
     
     // Render a frame
     void render(const Map& map, const Player& player, double deltaTime, double recoil = 0.0, double flashIntensity = 0.0);

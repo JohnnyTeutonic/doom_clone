@@ -112,22 +112,11 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
 }
 
 void Renderer::renderView(const Map& map, const Player& player) {
-    std::cout << "\n=== Starting renderView ===" << std::endl;
-    std::cout << "Player position: (" << player.getPosition().x << ", " << player.getPosition().y << ")" << std::endl;
-    std::cout << "Player direction: (" << player.getDirection().x << ", " << player.getDirection().y << ")" << std::endl;
-    std::cout << "Player plane: (" << player.getPlane().x << ", " << player.getPlane().y << ")" << std::endl;
-
     // For each vertical strip of the screen
     for (int x = 0; x < m_screenWidth; x++) {
         // Calculate ray position and direction
         double cameraX = 2 * x / static_cast<double>(m_screenWidth) - 1;
         Vec2 rayDir = player.getDirection() + player.getPlane() * cameraX;
-
-        if (x == m_screenWidth / 2) { // Log middle ray for debugging
-            std::cout << "\nMiddle ray details (x=" << x << "):" << std::endl;
-            std::cout << "Camera X: " << cameraX << std::endl;
-            std::cout << "Ray direction: (" << rayDir.x << ", " << rayDir.y << ")" << std::endl;
-        }
 
         // Initialize DDA algorithm variables
         Vec2 mapPos = Vec2(static_cast<int>(player.getPosition().x), static_cast<int>(player.getPosition().y));
@@ -154,10 +143,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
         // Perform DDA
         bool hit = false;
         bool side = false; // NS or EW wall hit
-        int maxSteps = 100; // Prevent infinite loops
-        int steps = 0;
-
-        while (!hit && steps < maxSteps) {
+        while (!hit) {
             // Jump to next map square
             if (sideDist.x < sideDist.y) {
                 sideDist.x += deltaDist.x;
@@ -172,13 +158,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
             // Check if ray has hit a wall
             if (map.isSolid(mapPos.x, mapPos.y)) {
                 hit = true;
-                if (x == m_screenWidth / 2) {
-                    std::cout << "Hit wall at: (" << mapPos.x << ", " << mapPos.y << ")" << std::endl;
-                    std::cout << "Steps taken: " << steps << std::endl;
-                    std::cout << "Side hit: " << (side ? "NS" : "EW") << std::endl;
-                }
             }
-            steps++;
         }
 
         if (hit) {
@@ -193,20 +173,12 @@ void Renderer::renderView(const Map& map, const Player& player) {
             // Store distance in zBuffer
             m_zBuffer[x] = perpWallDist;
 
-            if (x == m_screenWidth / 2) {
-                std::cout << "Perpendicular wall distance: " << perpWallDist << std::endl;
-            }
-
             // Calculate wall height
             int lineHeight = static_cast<int>(m_screenHeight / perpWallDist);
             int drawStart = -lineHeight / 2 + m_screenHeight / 2;
             if (drawStart < 0) drawStart = 0;
             int drawEnd = lineHeight / 2 + m_screenHeight / 2;
             if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
-
-            if (x == m_screenWidth / 2) {
-                std::cout << "Wall rendering bounds: " << drawStart << " to " << drawEnd << std::endl;
-            }
 
             // Get wall texture
             int texNum = map.getWallTexture(mapPos.x, mapPos.y);
@@ -228,6 +200,12 @@ void Renderer::renderView(const Map& map, const Player& player) {
             }
             wallX -= floor(wallX);  // Normalize to [0,1]
             
+            // Calculate surface normal for lighting
+            Vec2 normal = calculateSurfaceNormal(side, rayDir);
+            
+            // Calculate world position of the wall hit
+            Vec2 wallPos = player.getPosition() + rayDir * perpWallDist;
+            
             // Draw the textured wall column
             for (int y = drawStart; y < drawEnd; y++) {
                 // Calculate texture Y coordinate
@@ -236,10 +214,11 @@ void Renderer::renderView(const Map& map, const Player& player) {
                 // Get pixel color from texture
                 Color color = wallTexture->getPixelNormalized(wallX, texY);
                 
-                // Apply distance-based shading
-                double shade = 1.0 - std::min(1.0, perpWallDist / 10.0);
-                if (side) shade *= 0.7;  // Make sides darker
-                color = color.withLighting(shade);
+                // Calculate lighting
+                Color lighting = m_lightingSystem.calculateLighting(wallPos, normal);
+                
+                // Apply lighting to the color
+                color = color * lighting;
                 
                 // Draw the pixel
                 SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
@@ -247,7 +226,6 @@ void Renderer::renderView(const Map& map, const Player& player) {
             }
         }
     }
-    std::cout << "=== renderView completed ===" << std::endl;
 }
 
 void Renderer::renderSprites(const Player& player) {
