@@ -117,146 +117,166 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
 }
 
 void Renderer::renderView(const Map& map, const Player& player) {
+    // Clear the z-buffer
+    std::fill(m_zBuffer.begin(), m_zBuffer.end(), std::numeric_limits<double>::max());
+    
+    // Get player position, direction, and vertical angle
+    const Vec2& pos = player.getPosition();
+    const Vec2& dir = player.getDirection();
+    const Vec2& plane = player.getPlane();
+    double verticalAngle = player.getVerticalAngle();  // Get the vertical look angle
+    
+    // Calculate vertical offset based on vertical angle
+    int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
+    
     // For each vertical strip of the screen
     for (int x = 0; x < m_screenWidth; x++) {
         // Calculate ray position and direction
-        double cameraX = 2 * x / static_cast<double>(m_screenWidth) - 1;
-        Vec2 rayDir = player.getDirection() + player.getPlane() * cameraX;
-
-        // Initialize DDA algorithm variables
-        Vec2 mapPos = Vec2(static_cast<int>(player.getPosition().x), static_cast<int>(player.getPosition().y));
-        Vec2 deltaDist = Vec2(std::abs(1.0 / rayDir.x), std::abs(1.0 / rayDir.y));
-        Vec2 sideDist;
-        Vec2 step;
-
+        double cameraX = 2.0 * x / static_cast<double>(m_screenWidth) - 1.0;
+        Vec2 rayDir = dir + plane * cameraX;
+        
+        // Calculate which box of the map we're in
+        Vec2 mapPos(static_cast<int>(pos.x), static_cast<int>(pos.y));
+        
+        // Length of ray from current position to next x or y-side
+        Vec2 deltaDist(
+            std::abs(rayDir.x) < 1e-8 ? 1e8 : std::abs(1.0 / rayDir.x),
+            std::abs(rayDir.y) < 1e-8 ? 1e8 : std::abs(1.0 / rayDir.y)
+        );
+        
         // Calculate step and initial sideDist
+        Vec2 step;
+        Vec2 sideDist;
+        
         if (rayDir.x < 0) {
             step.x = -1;
-            sideDist.x = (player.getPosition().x - mapPos.x) * deltaDist.x;
+            sideDist.x = (pos.x - mapPos.x) * deltaDist.x;
         } else {
             step.x = 1;
-            sideDist.x = (mapPos.x + 1.0 - player.getPosition().x) * deltaDist.x;
+            sideDist.x = (mapPos.x + 1.0 - pos.x) * deltaDist.x;
         }
+        
         if (rayDir.y < 0) {
             step.y = -1;
-            sideDist.y = (player.getPosition().y - mapPos.y) * deltaDist.y;
+            sideDist.y = (pos.y - mapPos.y) * deltaDist.y;
         } else {
             step.y = 1;
-            sideDist.y = (mapPos.y + 1.0 - player.getPosition().y) * deltaDist.y;
+            sideDist.y = (mapPos.y + 1.0 - pos.y) * deltaDist.y;
         }
-
+        
         // Perform DDA
         bool hit = false;
-        bool side = false; // NS or EW wall hit
+        int side;
+        
         while (!hit) {
             // Jump to next map square
             if (sideDist.x < sideDist.y) {
                 sideDist.x += deltaDist.x;
                 mapPos.x += step.x;
-                side = false;
+                side = 0;
             } else {
                 sideDist.y += deltaDist.y;
                 mapPos.y += step.y;
-                side = true;
+                side = 1;
             }
-
+            
             // Check if ray has hit a wall
             if (map.isSolid(mapPos.x, mapPos.y)) {
                 hit = true;
             }
         }
+        
+        // Calculate distance projected on camera direction
+        double perpWallDist;
+        if (side == 0) {
+            perpWallDist = (mapPos.x - pos.x + (1 - step.x) / 2) / rayDir.x;
+        } else {
+            perpWallDist = (mapPos.y - pos.y + (1 - step.y) / 2) / rayDir.y;
+        }
+        
+        // Save distance for sprite rendering
+        m_zBuffer[x] = perpWallDist;
+        
+        // Calculate wall height
+        int lineHeight = static_cast<int>(m_screenHeight / perpWallDist);
+        
+        // Apply vertical angle to wall placement
+        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + verticalOffset;
+        if (drawStart < 0) drawStart = 0;
+        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + verticalOffset;
+        if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
 
-        if (hit) {
-            // Calculate distance to wall
-            double perpWallDist;
-            if (!side) {
-                perpWallDist = (mapPos.x - player.getPosition().x + (1 - step.x) / 2) / rayDir.x;
-            } else {
-                perpWallDist = (mapPos.y - player.getPosition().y + (1 - step.y) / 2) / rayDir.y;
-            }
-
-            // Store distance in zBuffer
-            m_zBuffer[x] = perpWallDist;
-
-            // Calculate wall height
-            int lineHeight = static_cast<int>(m_screenHeight / perpWallDist);
-            int drawStart = -lineHeight / 2 + m_screenHeight / 2;
-            if (drawStart < 0) drawStart = 0;
-            int drawEnd = lineHeight / 2 + m_screenHeight / 2;
-            if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
-
-            // Get wall texture
-            int texNum = map.getWallTexture(mapPos.x, mapPos.y);
-            const Texture* wallTexture = m_textureManager->getTexture(texNum);
+        // Get wall texture
+        int texNum = map.getWallTexture(mapPos.x, mapPos.y);
+        const Texture* wallTexture = m_textureManager->getTexture(texNum);
+        
+        if (!wallTexture) {
+            // Fallback to solid color if texture not found
+            SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
+            SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
+            continue;
+        }
+        
+        // Calculate texture coordinates
+        double wallX;  // Where exactly the wall was hit
+        if (!side) {
+            wallX = pos.y + perpWallDist * rayDir.y;
+        } else {
+            wallX = pos.x + perpWallDist * rayDir.x;
+        }
+        wallX -= floor(wallX);  // Normalize to [0,1]
+        
+        // Calculate surface normal for lighting
+        Vec2 normal = calculateSurfaceNormal(side, rayDir);
+        
+        // Calculate world position of the wall hit
+        Vec2 wallPos = pos + rayDir * perpWallDist;
+        
+        // Performance optimization: only calculate lighting once per wall segment
+        // if the distance is large enough (reduces calculation per pixel)
+        Color lighting;
+        if (perpWallDist > 4.0) {
+            // For distant walls, calculate lighting once per column
+            lighting = m_lightingSystem.calculateLighting(wallPos, normal, pos);
             
-            if (!wallTexture) {
-                // Fallback to solid color if texture not found
-                SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
-                SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
-                continue;
-            }
-            
-            // Calculate texture coordinates
-            double wallX;  // Where exactly the wall was hit
-            if (!side) {
-                wallX = player.getPosition().y + perpWallDist * rayDir.y;
-            } else {
-                wallX = player.getPosition().x + perpWallDist * rayDir.x;
-            }
-            wallX -= floor(wallX);  // Normalize to [0,1]
-            
-            // Calculate surface normal for lighting
-            Vec2 normal = calculateSurfaceNormal(side, rayDir);
-            
-            // Calculate world position of the wall hit
-            Vec2 wallPos = player.getPosition() + rayDir * perpWallDist;
-            
-            // Performance optimization: only calculate lighting once per wall segment
-            // if the distance is large enough (reduces calculation per pixel)
-            Color lighting;
-            if (perpWallDist > 4.0) {
-                // For distant walls, calculate lighting once per column
-                lighting = m_lightingSystem.calculateLighting(wallPos, normal, player.getPosition());
+            // Draw the textured wall column with single lighting value
+            for (int y = drawStart; y < drawEnd; y++) {
+                // Calculate texture Y coordinate
+                double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
                 
-                // Draw the textured wall column with single lighting value
-                for (int y = drawStart; y < drawEnd; y++) {
-                    // Calculate texture Y coordinate
-                    double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
-                    
-                    // Get pixel color from texture
-                    Color color = wallTexture->getPixelNormalized(wallX, texY);
-                    
-                    // Apply lighting to the color
-                    color = color * lighting;
-                    
-                    // Draw the pixel
-                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                    SDL_RenderDrawPoint(m_renderer, x, y);
-                }
-            }
-            else {
-                // For nearby walls, calculate lighting at intervals to maintain quality
-                const int lightingInterval = 8; // Calculate lighting every N pixels
+                // Get pixel color from texture
+                Color color = wallTexture->getPixelNormalized(wallX, texY);
                 
-                for (int y = drawStart; y < drawEnd; y++) {
-                    // Calculate texture Y coordinate
-                    double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
-                    
-                    // Get pixel color from texture
-                    Color color = wallTexture->getPixelNormalized(wallX, texY);
-                    
-                    // Calculate lighting only at intervals to improve performance
-                    if (y % lightingInterval == 0 || y == drawStart) {
-                        lighting = m_lightingSystem.calculateLighting(wallPos, normal, player.getPosition());
-                    }
-                    
-                    // Apply lighting to the color
-                    color = color * lighting;
-                    
-                    // Draw the pixel
-                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                    SDL_RenderDrawPoint(m_renderer, x, y);
+                // Apply lighting to the color
+                color = color * lighting;
+                
+                // Draw the pixel
+                SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                SDL_RenderDrawPoint(m_renderer, x, y);
+            }
+        }
+        else {
+            // For nearby walls, calculate lighting at intervals to maintain quality
+            const int lightingInterval = 8; // Calculate lighting every N pixels
+            
+            for (int y = drawStart; y < drawEnd; y++) {
+                // Calculate texture Y coordinate
+                double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+                
+                // Get pixel color from texture
+                Color color = wallTexture->getPixelNormalized(wallX, texY);
+                
+                // Calculate lighting only at intervals to improve performance
+                if (y % lightingInterval == 0 || y == drawStart) {
+                    lighting = m_lightingSystem.calculateLighting(wallPos, normal, pos);
                 }
+                
+                // Apply lighting to the color
+                color = color * lighting;
+                
+                // Draw the pixel
+                SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                SDL_RenderDrawPoint(m_renderer, x, y);
             }
         }
     }
@@ -265,10 +285,14 @@ void Renderer::renderView(const Map& map, const Player& player) {
 void Renderer::renderSprites(const Player& player) {
     if (!m_spriteManager) return;
     
-    // Get player position
+    // Get player position and vertical angle
     const Vec2& pos = player.getPosition();
     const Vec2& dir = player.getDirection();
     const Vec2& plane = player.getPlane();
+    double verticalAngle = player.getVerticalAngle();  // Get vertical look angle
+    
+    // Calculate vertical offset based on vertical angle
+    int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
     
     // Get active sprites
     std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
@@ -306,10 +330,10 @@ void Renderer::renderSprites(const Player& player) {
         int spriteHeight = std::abs(static_cast<int>(m_screenHeight / transformY)) * sprite->getSize();
         int spriteWidth = spriteHeight; // Square sprites
         
-        // Calculate drawing boundaries
-        int drawStartY = -spriteHeight / 2 + m_screenHeight / 2;
+        // Calculate drawing boundaries with vertical offset applied
+        int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
         if (drawStartY < 0) drawStartY = 0;
-        int drawEndY = spriteHeight / 2 + m_screenHeight / 2;
+        int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
         if (drawEndY >= m_screenHeight) drawEndY = m_screenHeight - 1;
         
         int drawStartX = -spriteWidth / 2 + spriteScreenX;
@@ -332,7 +356,7 @@ void Renderer::renderSprites(const Player& player) {
             Vec2 spriteNormal = (pos - sprite->getPosition()).normalized();
             
             // Pre-calculate one lighting value for the whole sprite
-            Color lighting = m_lightingSystem.calculateLighting(sprite->getPosition(), spriteNormal, player.getPosition());
+            Color lighting = m_lightingSystem.calculateLighting(sprite->getPosition(), spriteNormal, pos);
             
             // Adjust the distance shading based on this lighting
             distanceShade *= (lighting.r + lighting.g + lighting.b) / (3.0 * 255.0);

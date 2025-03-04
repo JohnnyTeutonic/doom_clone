@@ -387,10 +387,24 @@ void Engine::processInput() {
         m_player.moveBackward(moveSpeed, m_map);
     }
     if (keyState[SDL_SCANCODE_D]) {
-        m_player.rotateLeft(rotSpeed);
+        m_player.strafeRight(moveSpeed, m_map);
     }
     if (keyState[SDL_SCANCODE_A]) {
+        m_player.strafeLeft(moveSpeed, m_map);
+    }
+    if (keyState[SDL_SCANCODE_RIGHT]) {
         m_player.rotateRight(rotSpeed);
+    }
+    if (keyState[SDL_SCANCODE_LEFT]) {
+        m_player.rotateLeft(rotSpeed);
+    }
+    
+    // Handle vertical looking with Page Up and Page Down
+    if (keyState[SDL_SCANCODE_PAGEUP]) {
+        m_player.lookUp(m_deltaTime);
+    }
+    if (keyState[SDL_SCANCODE_PAGEDOWN]) {
+        m_player.lookDown(m_deltaTime);
     }
     
     // Normal fire through player object

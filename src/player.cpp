@@ -1,6 +1,7 @@
 #include "player.h"
 #include "projectile.h"
 #include <iostream>
+#include <algorithm> // for std::clamp
 
 Player::Player() 
     : m_position(0, 0)
@@ -10,6 +11,9 @@ Player::Player()
     , m_rotSpeed(2.5)
     , m_health(100)
     , m_ammo(50)
+    , m_verticalAngle(0.0)
+    , m_verticalLookSpeed(1.5)
+    , m_maxVerticalAngle(M_PI / 4.0)  // 45 degrees up/down
     , m_projectileManager(nullptr)
     , m_currentWeapon(WeaponType::Pistol)
     , m_weaponDamage(30.0)
@@ -24,6 +28,9 @@ void Player::init(double x, double y, double dirX, double dirY) {
     
     // Set camera plane perpendicular to direction (for 66 degree FOV)
     m_plane = Vec2(-m_direction.y, m_direction.x) * 0.66;
+    
+    // Reset vertical angle
+    m_verticalAngle = 0.0;
     
     // Reset weapon state
     m_currentWeapon = WeaponType::Pistol;
@@ -133,6 +140,27 @@ void Player::rotateRight(double deltaTime) {
     
     m_plane.x = m_plane.x * cosRot - m_plane.y * sinRot;
     m_plane.y = oldPlaneX * sinRot + m_plane.y * cosRot;
+}
+
+void Player::lookUp(double deltaTime) {
+    // Adjust vertical angle, clamping to prevent looking too far up
+    m_verticalAngle += m_verticalLookSpeed * deltaTime;
+    if (m_verticalAngle > m_maxVerticalAngle) {
+        m_verticalAngle = m_maxVerticalAngle;
+    }
+}
+
+void Player::lookDown(double deltaTime) {
+    // Adjust vertical angle, clamping to prevent looking too far down
+    m_verticalAngle -= m_verticalLookSpeed * deltaTime;
+    if (m_verticalAngle < -m_maxVerticalAngle) {
+        m_verticalAngle = -m_maxVerticalAngle;
+    }
+}
+
+void Player::setVerticalAngle(double angle) {
+    // Clamp the vertical angle to the allowed range
+    m_verticalAngle = std::max(-m_maxVerticalAngle, std::min(angle, m_maxVerticalAngle));
 }
 
 void Player::setCurrentWeapon(WeaponType weapon) {
