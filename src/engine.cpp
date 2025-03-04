@@ -148,29 +148,6 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_gameState = GameState::Playing;
     m_running = true;
     
-    // Create a test bullet to verify the rendering pipeline
-    if (m_projectileManager) {
-        // Create a static test bullet in front of the player
-        Vec2 bulletPos(10.0, 10.0);  // Middle of the map
-        Vec2 bulletDir(1.0, 0.0);    // Moving to the right
-        
-        int bulletId = m_projectileManager->createProjectile(
-            bulletPos, 
-            bulletDir, 
-            ProjectileType::Bullet, 
-            0.5,  // Slower speed for testing
-            30.0  // Damage
-        );
-        
-        std::cout << "Created test bullet with ID " << bulletId << " at position ("
-                  << bulletPos.x << ", " << bulletPos.y << ")" << std::endl;
-        
-        // Set the bullet's texture
-        if (m_bulletTexture >= 0) {
-            m_projectileManager->getProjectile(bulletId)->setTextureId(m_bulletTexture);
-            std::cout << "Set test bullet texture ID to: " << m_bulletTexture << std::endl;
-        }
-    }
     
     std::cout << "Engine initialization complete!" << std::endl;
     std::cout << "=============================================================" << std::endl;
