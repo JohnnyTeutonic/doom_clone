@@ -392,24 +392,73 @@ bool Engine::loadAssets() {
     // Load wall textures
     m_wallTexture = m_textureManager->loadTexture(assetsPath + "wall1.png");
     if (m_wallTexture < 0) {
-        std::cout << "Failed to load wall texture, creating solid color" << std::endl;
-        m_wallTexture = m_textureManager->createSolidTexture(64, 64, Color(128, 128, 128));
+        std::cout << "Creating DOOM-style wall texture..." << std::endl;
+        SDL_Surface* wallSurface = createDoomWallTexture(64, 64);
+        if (wallSurface) {
+            m_wallTexture = m_textureManager->createTextureFromSurface(wallSurface);
+            SDL_FreeSurface(wallSurface);
+        } else {
+            std::cout << "Failed to create wall texture, falling back to solid color" << std::endl;
+            m_wallTexture = m_textureManager->createSolidTexture(64, 64, Color(128, 128, 128));
+        }
     }
     std::cout << "Wall texture ID: " << m_wallTexture << std::endl;
     
     // Load floor texture
     m_floorTexture = m_textureManager->loadTexture(assetsPath + "floor1.png");
     if (m_floorTexture < 0) {
-        std::cout << "Failed to load floor texture, creating solid color" << std::endl;
-        m_floorTexture = m_textureManager->createSolidTexture(64, 64, Color(32, 32, 64));
+        std::cout << "Creating floor texture..." << std::endl;
+        // Create a darker variant of the wall texture for the floor
+        SDL_Surface* floorSurface = createDoomWallTexture(64, 64);
+        if (floorSurface) {
+            // Darken the floor texture
+            SDL_LockSurface(floorSurface);
+            Uint32* pixels = (Uint32*)floorSurface->pixels;
+            for (int i = 0; i < 64 * 64; i++) {
+                Uint8 r, g, b;
+                SDL_GetRGB(pixels[i], floorSurface->format, &r, &g, &b);
+                r = r * 2 / 3;
+                g = g * 2 / 3;
+                b = b * 2 / 3;
+                pixels[i] = SDL_MapRGB(floorSurface->format, r, g, b);
+            }
+            SDL_UnlockSurface(floorSurface);
+            
+            m_floorTexture = m_textureManager->createTextureFromSurface(floorSurface);
+            SDL_FreeSurface(floorSurface);
+        } else {
+            std::cout << "Failed to create floor texture, falling back to solid color" << std::endl;
+            m_floorTexture = m_textureManager->createSolidTexture(64, 64, Color(32, 32, 64));
+        }
     }
     std::cout << "Floor texture ID: " << m_floorTexture << std::endl;
     
     // Load ceiling texture
     m_ceilingTexture = m_textureManager->loadTexture(assetsPath + "ceiling1.png");
     if (m_ceilingTexture < 0) {
-        std::cout << "Failed to load ceiling texture, creating solid color" << std::endl;
-        m_ceilingTexture = m_textureManager->createSolidTexture(64, 64, Color(64, 64, 96));
+        std::cout << "Creating ceiling texture..." << std::endl;
+        // Create a lighter variant of the wall texture for the ceiling
+        SDL_Surface* ceilingSurface = createDoomWallTexture(64, 64);
+        if (ceilingSurface) {
+            // Lighten the ceiling texture
+            SDL_LockSurface(ceilingSurface);
+            Uint32* pixels = (Uint32*)ceilingSurface->pixels;
+            for (int i = 0; i < 64 * 64; i++) {
+                Uint8 r, g, b;
+                SDL_GetRGB(pixels[i], ceilingSurface->format, &r, &g, &b);
+                r = std::min(255, r * 3 / 2);
+                g = std::min(255, g * 3 / 2);
+                b = std::min(255, b * 3 / 2);
+                pixels[i] = SDL_MapRGB(ceilingSurface->format, r, g, b);
+            }
+            SDL_UnlockSurface(ceilingSurface);
+            
+            m_ceilingTexture = m_textureManager->createTextureFromSurface(ceilingSurface);
+            SDL_FreeSurface(ceilingSurface);
+        } else {
+            std::cout << "Failed to create ceiling texture, falling back to solid color" << std::endl;
+            m_ceilingTexture = m_textureManager->createSolidTexture(64, 64, Color(64, 64, 96));
+        }
     }
     std::cout << "Ceiling texture ID: " << m_ceilingTexture << std::endl;
     

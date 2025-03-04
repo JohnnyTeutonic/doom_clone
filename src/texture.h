@@ -7,12 +7,21 @@
 #include <SDL2/SDL.h>
 #include "utils.h"
 
+// Forward declarations
+class TextureManager;
+
+// Helper function to create a DOOM-style wall texture
+SDL_Surface* createDoomWallTexture(int width, int height);
+
 class Texture {
 private:
     int m_width;
     int m_height;
     std::vector<Color> m_pixels;
     std::unique_ptr<SDL_Texture, void(*)(SDL_Texture*)> m_sdlTexture;
+    
+    // Make TextureManager a friend so it can access private members
+    friend class TextureManager;
     
 public:
     Texture();
@@ -52,24 +61,29 @@ public:
 // Texture manager class to load and store textures
 class TextureManager {
 private:
-    std::vector<Texture> m_textures;
     SDL_Renderer* m_renderer;
+    std::vector<std::unique_ptr<Texture>> m_textures;
     
 public:
-    TextureManager(SDL_Renderer* renderer);
+    explicit TextureManager(SDL_Renderer* renderer);
     ~TextureManager();
     
-    // Load a texture and return its ID
+    // Load a texture from file
     int loadTexture(const std::string& filename);
     
-    // Create procedural textures
+    // Create a solid color texture
     int createSolidTexture(int width, int height, const Color& color);
+    
+    // Create a checkerboard pattern texture
     int createCheckerboardTexture(int width, int height, const Color& color1, const Color& color2, int cellSize);
+    
+    // Create a texture from an SDL surface
+    int createTextureFromSurface(SDL_Surface* surface);
     
     // Get a texture by ID
     const Texture* getTexture(int id) const;
     
-    // Initialize with default textures when no image files are available
+    // Initialize default textures
     void initDefaultTextures();
 };
 

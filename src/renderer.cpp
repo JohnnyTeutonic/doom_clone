@@ -249,14 +249,42 @@ void Renderer::renderView(const Map& map, const Player& player) {
             }
 
             // Get wall texture
-            int texNum = static_cast<int>(map.getCell(mapPos.x, mapPos.y)) - 1; // Subtract 1 as cell types start at 1
-            if (x == m_screenWidth / 2) {
-                std::cout << "Using texture number: " << texNum << std::endl;
+            int texNum = map.getWallTexture(mapPos.x, mapPos.y);
+            const Texture* wallTexture = m_textureManager->getTexture(texNum);
+            
+            if (!wallTexture) {
+                // Fallback to solid color if texture not found
+                SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
+                SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
+                continue;
             }
-
-            // Draw the walls
-            SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255); // Gray color for walls
-            SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
+            
+            // Calculate texture coordinates
+            double wallX;  // Where exactly the wall was hit
+            if (!side) {
+                wallX = player.getPosition().y + perpWallDist * rayDir.y;
+            } else {
+                wallX = player.getPosition().x + perpWallDist * rayDir.x;
+            }
+            wallX -= floor(wallX);  // Normalize to [0,1]
+            
+            // Draw the textured wall column
+            for (int y = drawStart; y < drawEnd; y++) {
+                // Calculate texture Y coordinate
+                double texY = (y - drawStart) / static_cast<double>(drawEnd - drawStart);
+                
+                // Get pixel color from texture
+                Color color = wallTexture->getPixelNormalized(wallX, texY);
+                
+                // Apply distance-based shading
+                double shade = 1.0 - std::min(1.0, perpWallDist / 10.0);
+                if (side) shade *= 0.7;  // Make sides darker
+                color = color.withLighting(shade);
+                
+                // Draw the pixel
+                SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
+                SDL_RenderDrawPoint(m_renderer, x, y);
+            }
         }
     }
     std::cout << "=== renderView completed ===" << std::endl;
