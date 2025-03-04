@@ -37,6 +37,8 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_font(nullptr)
     , m_notificationTexture(nullptr)
     , m_notificationRect{}
+    , m_audioSystem(nullptr)
+    , m_musicEnabled(true)
 {
     std::cout << "Engine created with resolution " << screenWidth << "x" << screenHeight << std::endl;
 }
@@ -48,7 +50,7 @@ Engine::~Engine() {
     if (m_projectileManager) delete m_projectileManager;
     if (m_spriteManager) delete m_spriteManager;
     if (m_textureManager) delete m_textureManager;
-    if (m_renderer) delete m_renderer;
+    if (m_audioSystem) delete m_audioSystem;
     
     // Clean up font resources
     if (m_notificationTexture) SDL_DestroyTexture(m_notificationTexture);
@@ -76,7 +78,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_frameTime = 1.0 / targetFPS;
     
     // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
         return false;
     }
@@ -193,6 +195,24 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_gameState = GameState::Playing;
     m_running = true;
     
+    // Initialize audio system
+    m_audioSystem = new AudioSystem();
+    if (!m_audioSystem->init()) {
+        std::cerr << "Failed to initialize audio system!" << std::endl;
+        // Continue anyway, audio is not critical
+    } else {
+        std::cout << "Audio system initialized: " << m_audioSystem << std::endl;
+        
+        // Load and play the background music
+        std::string musicPath = "assets/music/M_E1M1.mid";
+        if (m_audioSystem->loadMusic(musicPath)) {
+            if (m_musicEnabled) {
+                m_audioSystem->playMusic(true); // Loop the music
+            }
+        } else {
+            std::cerr << "Failed to load music: " << musicPath << std::endl;
+        }
+    }
     
     std::cout << "Engine initialization complete!" << std::endl;
     std::cout << "=============================================================" << std::endl;
@@ -284,140 +304,125 @@ void Engine::restartGame() {
 }
 
 void Engine::processInput() {
-    // Handle SDL events
+    // Process SDL events
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
             m_running = false;
         }
-        else if (event.type == SDL_KEYDOWN) {
-            switch (event.key.keysym.sym) {
-                case SDLK_ESCAPE:
-                    m_running = false;
-                    break;
-                case SDLK_2:  // Switch to machine gun
-                    if (m_currentWeaponTexture != m_machineGunTexture) {
-                        m_currentWeaponTexture = m_machineGunTexture;
-                        m_notificationText = "Switched to machine gun";
-                        m_notificationTimer = 3.0;  // Show for 3 seconds
-                        std::cout << "Switched to machine gun" << std::endl;
-                    }
-                    break;
-                case SDLK_1:  // Switch back to default weapon
-                    if (m_currentWeaponTexture != m_weaponTexture) {
-                        m_currentWeaponTexture = m_weaponTexture;
-                        m_notificationText = "Switched to shotgun";
-                        m_notificationTimer = 3.0;  // Show for 3 seconds
-                        std::cout << "Switched to shotgun" << std::endl;
-                    }
-                    break;
-                case SDLK_F1:  // Low performance mode
-                    if (m_renderer) {
-                        m_renderer->setPerformanceLevel(PerformanceLevel::Low);
-                        m_notificationText = "Performance: LOW (maximum FPS)";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Switched to LOW performance mode" << std::endl;
-                    }
-                    break;
-                case SDLK_F2:  // Medium performance mode
-                    if (m_renderer) {
-                        m_renderer->setPerformanceLevel(PerformanceLevel::Medium);
-                        m_notificationText = "Performance: MEDIUM (balanced)";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Switched to MEDIUM performance mode" << std::endl;
-                    }
-                    break;
-                case SDLK_F3:  // High performance mode
-                    if (m_renderer) {
-                        m_renderer->setPerformanceLevel(PerformanceLevel::High);
-                        m_notificationText = "Performance: HIGH (best visuals)";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Switched to HIGH performance mode" << std::endl;
-                    }
-                    break;
-                case SDLK_l:  // Toggle lighting
-                    if (m_renderer) {
-                        m_renderer->toggleLighting();
-                        m_notificationText = "Lighting toggled";
-                        m_notificationTimer = 3.0;
-                        std::cout << "Lighting toggled" << std::endl;
-                    }
-                    break;
-                case SDLK_SPACE:
-                    // Manual firing test (independent of player state)
-                    std::cout << "SPACE key pressed - Manual firing test" << std::endl;
-                    if (m_projectileManager) {
-                        Vec2 bulletPos = m_player.getPosition();
-                        Vec2 bulletDir = m_player.getDirection();
-                        
-                        // Move bullet in front of player
-                        bulletPos.x += bulletDir.x * 1.0;
-                        bulletPos.y += bulletDir.y * 1.0;
-                        
-                        int bulletId = m_projectileManager->createProjectile(
-                            bulletPos, 
-                            bulletDir, 
-                            ProjectileType::Bullet,
-                            15.0,  // Speed
-                            30.0   // Damage
-                        );
-                        
-                        std::cout << "Created manual test bullet with ID " << bulletId 
-                                  << " at (" << bulletPos.x << ", " << bulletPos.y << ")" << std::endl;
-                    } else {
-                        std::cerr << "ERROR: Could not create manual test bullet - Projectile manager is null!" << std::endl;
-                    }
-                    break;
+        
+        // Let the input handler process the event
+        m_inputHandler.processEvent(event);
+    }
+    
+    // Process input actions
+    if (m_gameState == GameState::Playing) {
+        // Movement
+        if (m_inputHandler.isActionActive(InputAction::MoveForward)) {
+            m_player.moveForward(m_deltaTime, m_map);
+        }
+        if (m_inputHandler.isActionActive(InputAction::MoveBackward)) {
+            m_player.moveBackward(m_deltaTime, m_map);
+        }
+        if (m_inputHandler.isActionActive(InputAction::StrafeLeft)) {
+            m_player.strafeLeft(m_deltaTime, m_map);
+        }
+        if (m_inputHandler.isActionActive(InputAction::StrafeRight)) {
+            m_player.strafeRight(m_deltaTime, m_map);
+        }
+        if (m_inputHandler.isActionActive(InputAction::RotateLeft)) {
+            m_player.rotateLeft(m_deltaTime);
+        }
+        if (m_inputHandler.isActionActive(InputAction::RotateRight)) {
+            m_player.rotateRight(m_deltaTime);
+        }
+        
+        // Actions
+        if (m_inputHandler.isActionJustPressed(InputAction::Fire)) {
+            if (m_player.fire()) {
+                // Apply recoil effect
+                m_weaponRecoil = 0.1;
+                
+                // Apply muzzle flash effect
+                m_flashIntensity = 1.0;
+            }
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::Reload)) {
+            m_player.reload();
+        }
+        
+        // Toggle displays
+        if (m_inputHandler.isActionJustPressed(InputAction::ToggleFPS)) {
+            m_renderer->toggleFPS();
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::ToggleMinimap)) {
+            m_renderer->toggleMinimap();
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::ToggleWeapon)) {
+            m_renderer->toggleWeapon();
+        }
+        
+        // Audio controls
+        if (m_inputHandler.isActionJustPressed(InputAction::ToggleMusic)) {
+            toggleMusic();
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::IncreaseMusicVolume)) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getMusicVolume();
+                setMusicVolume(currentVolume + 8); // Increase by ~6% (8/128)
+            }
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::DecreaseMusicVolume)) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getMusicVolume();
+                setMusicVolume(currentVolume - 8); // Decrease by ~6% (8/128)
+            }
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::IncreaseSfxVolume)) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getSfxVolume();
+                setSfxVolume(currentVolume + 8); // Increase by ~6% (8/128)
+            }
+        }
+        if (m_inputHandler.isActionJustPressed(InputAction::DecreaseSfxVolume)) {
+            if (m_audioSystem) {
+                int currentVolume = m_audioSystem->getSfxVolume();
+                setSfxVolume(currentVolume - 8); // Decrease by ~6% (8/128)
             }
         }
     }
     
-    // Get keyboard state
-    const Uint8* keyState = SDL_GetKeyboardState(NULL);
-    
-    // Handle movement
-    double moveSpeed = 3.0 * m_deltaTime;
-    double rotSpeed = 2.0 * m_deltaTime;
-    
-    if (keyState[SDL_SCANCODE_W]) {
-        m_player.moveForward(moveSpeed, m_map);
+    // Global actions (work in any state)
+    if (m_inputHandler.isActionJustPressed(InputAction::Menu)) {
+        if (m_gameState == GameState::Playing) {
+            setState(GameState::Paused);
+        } else if (m_gameState == GameState::Paused) {
+            setState(GameState::Playing);
+        }
     }
-    if (keyState[SDL_SCANCODE_S]) {
-        m_player.moveBackward(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_D]) {
-        m_player.strafeRight(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_A]) {
-        m_player.strafeLeft(moveSpeed, m_map);
-    }
-    if (keyState[SDL_SCANCODE_RIGHT]) {
-        m_player.rotateLeft(rotSpeed);
-    }
-    if (keyState[SDL_SCANCODE_LEFT]) {
-        m_player.rotateRight(rotSpeed);
+    if (m_inputHandler.isActionJustPressed(InputAction::Quit)) {
+        m_running = false;
     }
     
-    // Handle vertical looking with Up and Down arrow keys
-    if (keyState[SDL_SCANCODE_UP]) {
-        m_player.lookUp(m_deltaTime);
-    }
-    if (keyState[SDL_SCANCODE_DOWN]) {
-        m_player.lookDown(m_deltaTime);
-    }
+    // Process mouse movement for camera rotation
+    int mouseX, mouseY;
+    m_inputHandler.getMouseMotion(mouseX, mouseY);
     
-    // Normal fire through player object
-    if (keyState[SDL_SCANCODE_SPACE]) {
-        std::cout << "Trying to fire through player object..." << std::endl;
-        
-        // Check if player has a project manager
-        if (m_player.getProjectileManager()) {
-            std::cout << "Player has projectile manager: " << m_player.getProjectileManager() << std::endl;
-            bool fireSuccess = m_player.fire();
-            std::cout << "Player fire result: " << (fireSuccess ? "SUCCESS" : "FAILED") << std::endl;
+    if (mouseX != 0) {
+        // Use the existing rotation methods with the mouse input
+        if (mouseX > 0) {
+            m_player.rotateLeft(m_deltaTime * mouseX * 0.01);
         } else {
-            std::cerr << "ERROR: Player has no projectile manager! Reconnecting..." << std::endl;
-            m_player.setProjectileManager(m_projectileManager);
+            m_player.rotateRight(m_deltaTime * -mouseX * 0.01);
+        }
+    }
+    
+    if (mouseY != 0) {
+        // Use the existing look methods with the mouse input
+        if (mouseY > 0) {
+            m_player.lookDown(m_deltaTime * mouseY * 0.01);
+        } else {
+            m_player.lookUp(m_deltaTime * -mouseY * 0.01);
         }
     }
 }
@@ -1456,6 +1461,65 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_F2, InputAction::ToggleMinimap);
     m_inputHandler.bindKey(SDL_SCANCODE_F3, InputAction::ToggleWeapon);
     
+    // Audio control keys
+    m_inputHandler.bindKey(SDL_SCANCODE_M, InputAction::ToggleMusic);
+    m_inputHandler.bindKey(SDL_SCANCODE_PAGEUP, InputAction::IncreaseMusicVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_PAGEDOWN, InputAction::DecreaseMusicVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_HOME, InputAction::IncreaseSfxVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_END, InputAction::DecreaseSfxVolume);
+    
     // Enable mouse capture for looking around
     m_inputHandler.setMouseCapture(true);
+}
+
+void Engine::toggleMusic() {
+    if (!m_audioSystem) return;
+    
+    m_musicEnabled = !m_musicEnabled;
+    
+    if (m_musicEnabled) {
+        m_audioSystem->resumeMusic();
+    } else {
+        m_audioSystem->pauseMusic();
+    }
+    
+    // Show notification
+    std::string message = m_musicEnabled ? "Music: On" : "Music: Off";
+    showNotification(message, 2.0);
+}
+
+void Engine::setMusicVolume(int volume) {
+    if (!m_audioSystem) return;
+    
+    m_audioSystem->setMusicVolume(volume);
+    
+    // Show notification
+    std::string message = "Music Volume: " + std::to_string(volume * 100 / MIX_MAX_VOLUME) + "%";
+    showNotification(message, 2.0);
+}
+
+void Engine::setSfxVolume(int volume) {
+    if (!m_audioSystem) return;
+    
+    m_audioSystem->setSfxVolume(volume);
+    
+    // Show notification
+    std::string message = "SFX Volume: " + std::to_string(volume * 100 / MIX_MAX_VOLUME) + "%";
+    showNotification(message, 2.0);
+}
+
+bool Engine::isMusicPlaying() const {
+    if (!m_audioSystem) return false;
+    return m_audioSystem->isMusicPlaying();
+}
+
+void Engine::showNotification(const std::string& text, double duration) {
+    m_notificationText = text;
+    m_notificationTimer = duration;
+    
+    // Clean up any existing notification texture
+    if (m_notificationTexture) {
+        SDL_DestroyTexture(m_notificationTexture);
+        m_notificationTexture = nullptr;
+    }
 } 

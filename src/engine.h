@@ -16,6 +16,7 @@ class ProjectileManager;
 class InputHandler;
 class Map;
 class Player;
+class AudioSystem;
 
 #include "renderer.h"
 #include "map.h"
@@ -25,6 +26,7 @@ class Player;
 #include "projectile.h"
 #include "input.h"
 #include "utils.h"
+#include "audio.h"
 
 // Game states
 enum class GameState {
@@ -70,6 +72,15 @@ public:
     
     // Create sprites from map cells
     void createSpritesFromMap();
+    
+    // Audio control
+    void toggleMusic();
+    void setMusicVolume(int volume);
+    void setSfxVolume(int volume);
+    bool isMusicPlaying() const;
+    
+    // Notification system
+    void showNotification(const std::string& text, double duration);
     
 private:
     void processInput();
@@ -133,6 +144,10 @@ private:
     TTF_Font* m_font;
     SDL_Texture* m_notificationTexture;
     SDL_Rect m_notificationRect;
+    
+    // Audio system
+    AudioSystem* m_audioSystem;
+    bool m_musicEnabled;
     
     // Private methods
     void setupMap();

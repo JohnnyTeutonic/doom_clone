@@ -18,6 +18,7 @@ This project requires the following libraries:
 - SDL2_image
 - SDL2_ttf
 - SDL2_mixer (optional, for sound)
+- PulseAudio
 
 ## Building on WSL2 (Windows Subsystem for Linux)
 
@@ -42,7 +43,7 @@ If you prefer to install dependencies manually:
 sudo apt update
 
 # Install required packages
-sudo apt install -y build-essential cmake libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev pkg-config
+sudo apt install -y build-essential cmake libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev pkg-config pulseaudio libsdl2-mixer-2.0-0 libsdl2-mixer-dev
 ```
 
 ### Building the game

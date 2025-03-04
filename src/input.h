@@ -24,7 +24,12 @@ enum class InputAction {
     Quit,
     ToggleFPS,
     ToggleMinimap,
-    ToggleWeapon
+    ToggleWeapon,
+    ToggleMusic,
+    IncreaseMusicVolume,
+    DecreaseMusicVolume,
+    IncreaseSfxVolume,
+    DecreaseSfxVolume
 };
 
 // Input handler class to manage keyboard and mouse input
