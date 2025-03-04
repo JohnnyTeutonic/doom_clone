@@ -51,24 +51,77 @@ void Player::moveForward(double deltaTime, const Map& map) {
     double newX = m_position.x + m_direction.x * m_moveSpeed * deltaTime;
     double newY = m_position.y + m_direction.y * m_moveSpeed * deltaTime;
     
-    // Check for valid position with collision detection
-    if (map.isValidPosition(newX, m_position.y)) {
-        m_position.x = newX;
-    }
-    if (map.isValidPosition(m_position.x, newY)) {
-        m_position.y = newY;
-    }
-    
-    // Check for stairs and stair steps to update elevation and camera angle
+    // Get current cell data
     int currentX = static_cast<int>(m_position.x);
     int currentY = static_cast<int>(m_position.y);
     CellType currentCell = map.getCell(currentX, currentY);
+    int currentElevation = map.getCellElevation(currentX, currentY);
     
-    // Detect level transitions based on cell type
+    // Calculate new cell data
+    int newCellX = static_cast<int>(newX);
+    int newCellY = static_cast<int>(newY);
+    CellType newCellType = map.getCell(newCellX, newCellY);
+    int newCellElevation = map.getCellElevation(newCellX, newCellY);
+    
+    // Special handling for stairs transitions
+    bool onStairs = (currentCell == CellType::Stairs || currentCell == CellType::StairStep1 || 
+                     currentCell == CellType::StairStep2 || currentCell == CellType::StairStep3);
+    
+    bool movingToStairs = (newCellType == CellType::Stairs || newCellType == CellType::StairStep1 || 
+                          newCellType == CellType::StairStep2 || newCellType == CellType::StairStep3);
+    
+    // Determine if we're crossing a level boundary
+    bool crossingElevation = (currentElevation != newCellElevation) &&
+                            !(onStairs || movingToStairs);
+    
+    // Debug output for elevation changes
+    if (currentElevation != newCellElevation) {
+        std::cout << "Elevation change detected: " << currentElevation << " -> " << newCellElevation 
+                  << " (onStairs: " << onStairs << ", movingToStairs: " << movingToStairs << ")" << std::endl;
+    }
+    
+    // Check for valid position with collision detection
+    // If we're crossing elevation without stairs, block movement
+    if (crossingElevation) {
+        // Don't allow crossing elevation without stairs
+        std::cout << "Blocked movement across elevation boundary" << std::endl;
+    } else {
+        // Normal collision detection
+        bool validX = map.isValidPosition(newX, m_position.y);
+        bool validY = map.isValidPosition(m_position.x, newY);
+        
+        // Check if the new position maintains the same elevation (unless on stairs)
+        if (validX) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
+            if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
+                m_position.x = newX;
+            } else {
+                std::cout << "Blocked X movement due to elevation change" << std::endl;
+            }
+        }
+        
+        if (validY) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
+            if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
+                m_position.y = newY;
+            } else {
+                std::cout << "Blocked Y movement due to elevation change" << std::endl;
+            }
+        }
+    }
+    
+    // Update current position after movement
+    currentX = static_cast<int>(m_position.x);
+    currentY = static_cast<int>(m_position.y);
+    currentCell = map.getCell(currentX, currentY);
+    currentElevation = map.getCellElevation(currentX, currentY);
+    
+    // Handle stair and step transitions
     if (currentCell == CellType::Stairs) {
-        // Check if we're at the entrance or exit of a staircase
-        // The exit is typically marked with an elevation of 0 or 1
-        int newElevation = map.getCellElevation(currentX, currentY);
+        // At a stair entry/exit point - determine if going up or down
+        int stairElevation = map.getCellElevation(currentX, currentY);
         
         // Look ahead to determine if we're going up or down
         int lookAheadX = static_cast<int>(m_position.x + m_direction.x);
@@ -76,12 +129,14 @@ void Player::moveForward(double deltaTime, const Map& map) {
         int lookAheadElevation = map.getCellElevation(lookAheadX, lookAheadY);
         
         // Update the vertical angle to indicate level change
-        if (lookAheadElevation > newElevation) {
+        if (lookAheadElevation > stairElevation) {
             // Going up
             m_verticalAngle = m_maxVerticalAngle * 0.5;
-        } else if (lookAheadElevation < newElevation) {
+            std::cout << "Going up stairs" << std::endl;
+        } else if (lookAheadElevation < stairElevation) {
             // Going down
             m_verticalAngle = -m_maxVerticalAngle * 0.5;
+            std::cout << "Going down stairs" << std::endl;
         }
     }
     else if (map.isStairStep(currentX, currentY)) {
@@ -103,7 +158,10 @@ void Player::moveForward(double deltaTime, const Map& map) {
         }
     }
     else {
-        // When not on stairs, gradually return vertical angle to neutral
+        // Not on stairs - determine angle based on elevation
+        int elevation = map.getCellElevation(currentX, currentY);
+        
+        // Gradually return vertical angle to neutral
         if (m_verticalAngle > 0.01) {
             m_verticalAngle -= m_verticalLookSpeed * deltaTime * 2.0;
             if (m_verticalAngle < 0) m_verticalAngle = 0;
@@ -112,6 +170,10 @@ void Player::moveForward(double deltaTime, const Map& map) {
             if (m_verticalAngle > 0) m_verticalAngle = 0;
         }
     }
+    
+    // Debug output for current position and elevation
+    std::cout << "Player position: (" << m_position.x << ", " << m_position.y 
+              << "), Elevation: " << currentElevation << std::endl;
 }
 
 void Player::moveBackward(double deltaTime, const Map& map) {
@@ -119,36 +181,85 @@ void Player::moveBackward(double deltaTime, const Map& map) {
     double newX = m_position.x - m_direction.x * m_moveSpeed * deltaTime;
     double newY = m_position.y - m_direction.y * m_moveSpeed * deltaTime;
     
-    // Check for valid position with collision detection
-    if (map.isValidPosition(newX, m_position.y)) {
-        m_position.x = newX;
-    }
-    if (map.isValidPosition(m_position.x, newY)) {
-        m_position.y = newY;
-    }
-    
-    // Check for stairs and stair steps to update elevation and camera angle
+    // Get current cell data
     int currentX = static_cast<int>(m_position.x);
     int currentY = static_cast<int>(m_position.y);
     CellType currentCell = map.getCell(currentX, currentY);
+    int currentElevation = map.getCellElevation(currentX, currentY);
     
-    // Detect level transitions based on cell type
-    if (currentCell == CellType::Stairs) {
-        // Check if we're at the entrance or exit of a staircase
-        int newElevation = map.getCellElevation(currentX, currentY);
+    // Calculate new cell data
+    int newCellX = static_cast<int>(newX);
+    int newCellY = static_cast<int>(newY);
+    CellType newCellType = map.getCell(newCellX, newCellY);
+    int newCellElevation = map.getCellElevation(newCellX, newCellY);
+    
+    // Special handling for stairs transitions
+    bool onStairs = (currentCell == CellType::Stairs || currentCell == CellType::StairStep1 || 
+                     currentCell == CellType::StairStep2 || currentCell == CellType::StairStep3);
+    
+    bool movingToStairs = (newCellType == CellType::Stairs || newCellType == CellType::StairStep1 || 
+                          newCellType == CellType::StairStep2 || newCellType == CellType::StairStep3);
+    
+    // Determine if we're crossing a level boundary
+    bool crossingElevation = (currentElevation != newCellElevation) &&
+                            !(onStairs || movingToStairs);
+    
+    // Check for valid position with collision detection
+    // If we're crossing elevation without stairs, block movement
+    if (crossingElevation) {
+        // Don't allow crossing elevation without stairs
+        std::cout << "Blocked backward movement across elevation boundary" << std::endl;
+    } else {
+        // Normal collision detection
+        bool validX = map.isValidPosition(newX, m_position.y);
+        bool validY = map.isValidPosition(m_position.x, newY);
         
-        // Look behind to determine if we're going up or down (since we're moving backward)
+        // Check if the new position maintains the same elevation (unless on stairs)
+        if (validX) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
+            if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
+                m_position.x = newX;
+            } else {
+                std::cout << "Blocked backward X movement due to elevation change" << std::endl;
+            }
+        }
+        
+        if (validY) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
+            if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
+                m_position.y = newY;
+            } else {
+                std::cout << "Blocked backward Y movement due to elevation change" << std::endl;
+            }
+        }
+    }
+    
+    // Update current position after movement
+    currentX = static_cast<int>(m_position.x);
+    currentY = static_cast<int>(m_position.y);
+    currentCell = map.getCell(currentX, currentY);
+    
+    // Handle stair and step transitions
+    if (currentCell == CellType::Stairs) {
+        // At a stair entry/exit point - determine if going up or down
+        int stairElevation = map.getCellElevation(currentX, currentY);
+        
+        // When moving backward, look behind to determine direction
         int lookBehindX = static_cast<int>(m_position.x - m_direction.x);
         int lookBehindY = static_cast<int>(m_position.y - m_direction.y);
         int lookBehindElevation = map.getCellElevation(lookBehindX, lookBehindY);
         
-        // Update the vertical angle to indicate level change (reversed since moving backward)
-        if (lookBehindElevation > newElevation) {
-            // Going down (when walking backward)
+        // Update the vertical angle to indicate level change (reversed for backward)
+        if (lookBehindElevation > stairElevation) {
+            // Going down when walking backward
             m_verticalAngle = -m_maxVerticalAngle * 0.5;
-        } else if (lookBehindElevation < newElevation) {
-            // Going up (when walking backward)
+            std::cout << "Going down stairs (backward)" << std::endl;
+        } else if (lookBehindElevation < stairElevation) {
+            // Going up when walking backward
             m_verticalAngle = m_maxVerticalAngle * 0.5;
+            std::cout << "Going up stairs (backward)" << std::endl;
         }
     }
     else if (map.isStairStep(currentX, currentY)) {
@@ -170,7 +281,10 @@ void Player::moveBackward(double deltaTime, const Map& map) {
         }
     }
     else {
-        // When not on stairs, gradually return vertical angle to neutral
+        // Not on stairs - determine angle based on elevation
+        int elevation = map.getCellElevation(currentX, currentY);
+        
+        // Gradually return vertical angle to neutral
         if (m_verticalAngle > 0.01) {
             m_verticalAngle -= m_verticalLookSpeed * deltaTime * 2.0;
             if (m_verticalAngle < 0) m_verticalAngle = 0;
@@ -186,17 +300,59 @@ void Player::strafeLeft(double deltaTime, const Map& map) {
     double newX = m_position.x - m_plane.x * m_moveSpeed * deltaTime;
     double newY = m_position.y - m_plane.y * m_moveSpeed * deltaTime;
     
+    // Get current cell data
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    int currentElevation = map.getCellElevation(currentX, currentY);
+    CellType currentCell = map.getCell(currentX, currentY);
+    
+    // Calculate new cell data
+    int newCellX = static_cast<int>(newX);
+    int newCellY = static_cast<int>(newY);
+    int newCellElevation = map.getCellElevation(newCellX, newCellY);
+    CellType newCellType = map.getCell(newCellX, newCellY);
+    
+    // Special handling for stairs transitions
+    bool onStairs = (currentCell == CellType::Stairs || currentCell == CellType::StairStep1 || 
+                     currentCell == CellType::StairStep2 || currentCell == CellType::StairStep3);
+    
+    bool movingToStairs = (newCellType == CellType::Stairs || newCellType == CellType::StairStep1 || 
+                          newCellType == CellType::StairStep2 || newCellType == CellType::StairStep3);
+    
+    // Determine if we're crossing a level boundary
+    bool crossingElevation = (currentElevation != newCellElevation) &&
+                            !(onStairs || movingToStairs);
+    
     // Check for valid position with collision detection
-    if (map.isValidPosition(newX, m_position.y)) {
-        m_position.x = newX;
-    }
-    if (map.isValidPosition(m_position.x, newY)) {
-        m_position.y = newY;
+    if (crossingElevation) {
+        // Don't allow crossing elevation without stairs
+        std::cout << "Blocked strafe left movement across elevation boundary" << std::endl;
+    } else {
+        // Normal collision detection
+        bool validX = map.isValidPosition(newX, m_position.y);
+        bool validY = map.isValidPosition(m_position.x, newY);
+        
+        // Check if the new position maintains the same elevation (unless on stairs)
+        if (validX) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
+            if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
+                m_position.x = newX;
+            }
+        }
+        
+        if (validY) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
+            if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
+                m_position.y = newY;
+            }
+        }
     }
     
     // Check if we're on stairs and update elevation accordingly
-    int currentX = static_cast<int>(m_position.x);
-    int currentY = static_cast<int>(m_position.y);
+    currentX = static_cast<int>(m_position.x);
+    currentY = static_cast<int>(m_position.y);
     if (map.isStairs(currentX, currentY)) {
         // Handle elevation changes similarly to forward/backward movement
         int stairElevation = map.getCellElevation(currentX, currentY);
@@ -216,17 +372,59 @@ void Player::strafeRight(double deltaTime, const Map& map) {
     double newX = m_position.x + m_plane.x * m_moveSpeed * deltaTime;
     double newY = m_position.y + m_plane.y * m_moveSpeed * deltaTime;
     
+    // Get current cell data
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    int currentElevation = map.getCellElevation(currentX, currentY);
+    CellType currentCell = map.getCell(currentX, currentY);
+    
+    // Calculate new cell data
+    int newCellX = static_cast<int>(newX);
+    int newCellY = static_cast<int>(newY);
+    int newCellElevation = map.getCellElevation(newCellX, newCellY);
+    CellType newCellType = map.getCell(newCellX, newCellY);
+    
+    // Special handling for stairs transitions
+    bool onStairs = (currentCell == CellType::Stairs || currentCell == CellType::StairStep1 || 
+                     currentCell == CellType::StairStep2 || currentCell == CellType::StairStep3);
+    
+    bool movingToStairs = (newCellType == CellType::Stairs || newCellType == CellType::StairStep1 || 
+                          newCellType == CellType::StairStep2 || newCellType == CellType::StairStep3);
+    
+    // Determine if we're crossing a level boundary
+    bool crossingElevation = (currentElevation != newCellElevation) &&
+                            !(onStairs || movingToStairs);
+    
     // Check for valid position with collision detection
-    if (map.isValidPosition(newX, m_position.y)) {
-        m_position.x = newX;
-    }
-    if (map.isValidPosition(m_position.x, newY)) {
-        m_position.y = newY;
+    if (crossingElevation) {
+        // Don't allow crossing elevation without stairs
+        std::cout << "Blocked strafe right movement across elevation boundary" << std::endl;
+    } else {
+        // Normal collision detection
+        bool validX = map.isValidPosition(newX, m_position.y);
+        bool validY = map.isValidPosition(m_position.x, newY);
+        
+        // Check if the new position maintains the same elevation (unless on stairs)
+        if (validX) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
+            if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
+                m_position.x = newX;
+            }
+        }
+        
+        if (validY) {
+            // Only move if we're not crossing elevation boundaries without stairs
+            int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
+            if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
+                m_position.y = newY;
+            }
+        }
     }
     
     // Check if we're on stairs and update elevation accordingly
-    int currentX = static_cast<int>(m_position.x);
-    int currentY = static_cast<int>(m_position.y);
+    currentX = static_cast<int>(m_position.x);
+    currentY = static_cast<int>(m_position.y);
     if (map.isStairs(currentX, currentY)) {
         // Handle elevation changes similarly to forward/backward movement
         int stairElevation = map.getCellElevation(currentX, currentY);

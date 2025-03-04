@@ -125,7 +125,14 @@ public:
     void renderProjectiles(const Player& player);
     
     // Render the minimap
-    void renderMinimap(const Map& map, const Player& player);
+    void renderMinimap(const Map& map, const Player& player, ProjectileManager& projectileManager);
+    
+    // Overload for backward compatibility
+    void renderMinimap(const Map& map, const Player& player) {
+        if (m_projectileManager) {
+            renderMinimap(map, player, *m_projectileManager);
+        }
+    }
     
     // Render the HUD (health, ammo, etc.)
     void renderHUD(const Player& player);

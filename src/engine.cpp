@@ -1025,544 +1025,363 @@ bool Engine::loadAssets() {
 }
 
 void Engine::setupMap() {
-    std::cout << "Setting up game map..." << std::endl;
+    // Reset the map instead of clear
+    for (int x = 0; x < m_map.getWidth(); x++) {
+        for (int y = 0; y < m_map.getHeight(); y++) {
+            m_map.setCell(x, y, CellType::Empty);
+            m_map.setCellElevation(x, y, 0);
+        }
+    }
     
-    // Define platform dimensions at a wider scope
-    int platformStartX = 3 * m_map.getWidth() / 4;
-    int platformStartY = m_map.getHeight() / 8;
-    int platformWidth = m_map.getWidth() / 5;
-    int platformHeight = m_map.getHeight() / 5;
+    // Seed the random number generator
+    srand(static_cast<unsigned int>(time(nullptr)));
     
-    // Create a more interesting map with varied wall textures for the larger 40x40 map
-    for (int y = 0; y < m_map.getHeight(); y++) {
-        for (int x = 0; x < m_map.getWidth(); x++) {
-            // Create walls around the perimeter
-            if (x == 0 || y == 0 || x == m_map.getWidth() - 1 || y == m_map.getHeight() - 1) {
+    // Define the second level area
+    int secondLevelStartX = m_map.getWidth() / 2;
+    int secondLevelStartY = 0;
+    int secondLevelWidth = m_map.getWidth() / 2;
+    int secondLevelHeight = m_map.getHeight() / 2;
+    
+    // Create the second level with proper walls and floor
+    for (int x = secondLevelStartX; x < secondLevelStartX + secondLevelWidth; x++) {
+        for (int y = secondLevelStartY; y < secondLevelStartY + secondLevelHeight; y++) {
+            // Set all cells in this region to elevated floor
+            m_map.setCell(x, y, CellType::Empty); // Use Empty instead of ElevatedFloor
+            m_map.setCellElevation(x, y, 1); // Set elevation to 1 (second level)
+            
+            // Create walls around the perimeter of the second level
+            if (x == secondLevelStartX || x == secondLevelStartX + secondLevelWidth - 1 ||
+                y == secondLevelStartY || y == secondLevelStartY + secondLevelHeight - 1) {
+                
+                // Check for stair entrance/exit points
+                bool isStairEntrance = false;
+                
+                // North staircase entrance - about 1/3 from the left
+                if (y == secondLevelStartY && 
+                    x >= secondLevelStartX + secondLevelWidth/3 - 1 && 
+                    x <= secondLevelStartX + secondLevelWidth/3 + 1) {
+                    isStairEntrance = true;
+                }
+                
+                // East staircase entrance - about middle
+                if (x == secondLevelStartX + secondLevelWidth - 1 && 
+                    y >= secondLevelStartY + secondLevelHeight/2 - 1 && 
+                    y <= secondLevelStartY + secondLevelHeight/2 + 1) {
+                    isStairEntrance = true;
+                }
+                
+                if (!isStairEntrance) {
+                    m_map.setCell(x, y, CellType::Wall); // Use Wall instead of ElevatedWall
+                    if (!m_wallTextureVariations.empty() && m_wallTextureVariations.size() > 1) {
+                        m_map.setWallTexture(x, y, m_wallTextureVariations[1]); // Rune texture for edges
+                    }
+                }
+            }
+            // Internal structures for second level
+            else {
+                // Create some internal wall patterns on the second level
+                bool createSecondLevelWall = false;
+                
+                // Horizontal corridors
+                if ((y - secondLevelStartY) % 5 == 0 && x > secondLevelStartX && 
+                    x < secondLevelStartX + secondLevelWidth - 1) {
+                    if ((x - secondLevelStartX) % 8 != 3 && (x - secondLevelStartX) % 8 != 4) {
+                        createSecondLevelWall = true;
+                    }
+                }
+                
+                // Vertical corridors
+                if ((x - secondLevelStartX) % 8 == 0 && y > secondLevelStartY && 
+                    y < secondLevelStartY + secondLevelHeight - 1) {
+                    if ((y - secondLevelStartY) % 5 != 2 && (y - secondLevelStartY) % 5 != 3) {
+                        createSecondLevelWall = true;
+                    }
+                }
+                
+                // Central chamber or boss area
+                int centerX = secondLevelStartX + secondLevelWidth / 2;
+                int centerY = secondLevelStartY + secondLevelHeight / 2;
+                int chamberSize = 5;
+                
+                if (abs(x - centerX) <= chamberSize && abs(y - centerY) <= chamberSize) {
+                    // Inside the central chamber
+                    if (abs(x - centerX) == chamberSize || abs(y - centerY) == chamberSize) {
+                        // Chamber walls
+                        createSecondLevelWall = true;
+                        
+                        // Add doorways to the chamber
+                        if ((x == centerX && abs(y - centerY) == chamberSize) ||
+                            (y == centerY && abs(x - centerX) == chamberSize)) {
+                            createSecondLevelWall = false;
+                        }
+                    }
+                    
+                    // Add some enemies in the central chamber
+                    if (!createSecondLevelWall && 
+                        abs(x - centerX) < chamberSize - 1 && 
+                        abs(y - centerY) < chamberSize - 1) {
+                        // 20% chance to spawn an enemy
+                        if (rand() % 5 == 0) {
+                            m_map.setCell(x, y, CellType::Enemy);
+                            m_map.setCellElevation(x, y, 1); // Keep elevation at level 2
+                        }
+                    }
+                }
+                
+                if (createSecondLevelWall) {
+                    m_map.setCell(x, y, CellType::Wall); // Use Wall instead of ElevatedWall
+                    
+                    // Use a different texture for internal walls
+                    if (!m_wallTextureVariations.empty() && m_wallTextureVariations.size() > 2) {
+                        m_map.setWallTexture(x, y, m_wallTextureVariations[2]); // Use third texture if available
+                    } else if (!m_wallTextureVariations.empty()) {
+                        m_map.setWallTexture(x, y, m_wallTextureVariations[0]); // Use first texture otherwise
+                    }
+                }
+            }
+        }
+    }
+    
+    // Create staircases connecting the levels - manually create them instead of using createStaircase
+    // First staircase - from bottom left to top right (North entrance)
+    int stair1StartX = secondLevelStartX + secondLevelWidth/3 - 5;
+    int stair1StartY = secondLevelStartY + secondLevelHeight;
+    int stair1EndX = secondLevelStartX + secondLevelWidth/3;
+    int stair1EndY = secondLevelStartY;
+    
+    // Create a diagonal staircase from start to end
+    int stairLength = std::max(abs(stair1EndX - stair1StartX), abs(stair1EndY - stair1StartY));
+    for (int i = 0; i < stairLength; i++) {
+        int x = stair1StartX + (stair1EndX - stair1StartX) * i / stairLength;
+        int y = stair1StartY + (stair1EndY - stair1StartY) * i / stairLength;
+        
+        // Create stair steps
+        m_map.setCell(x, y, CellType::Stairs);
+        
+        // Set step height based on position along the staircase
+        float stepHeight = static_cast<float>(i) / stairLength;
+        m_map.setStepHeight(x, y, stepHeight);
+        
+        // Set appropriate elevation
+        if (i < stairLength / 2) {
+            m_map.setCellElevation(x, y, 0);
+        } else {
+            m_map.setCellElevation(x, y, 1);
+        }
+    }
+    
+    // Second staircase - from right middle to east entrance
+    int stair2StartX = secondLevelStartX + secondLevelWidth;
+    int stair2StartY = secondLevelStartY + secondLevelHeight/2 + 5;
+    int stair2EndX = secondLevelStartX + secondLevelWidth - 1;
+    int stair2EndY = secondLevelStartY + secondLevelHeight/2;
+    
+    // Create a diagonal staircase from start to end
+    stairLength = std::max(abs(stair2EndX - stair2StartX), abs(stair2EndY - stair2StartY));
+    for (int i = 0; i < stairLength; i++) {
+        int x = stair2StartX + (stair2EndX - stair2StartX) * i / stairLength;
+        int y = stair2StartY + (stair2EndY - stair2StartY) * i / stairLength;
+        
+        // Create stair steps
+        m_map.setCell(x, y, CellType::Stairs);
+        
+        // Set step height based on position along the staircase
+        float stepHeight = static_cast<float>(i) / stairLength;
+        m_map.setStepHeight(x, y, stepHeight);
+        
+        // Set appropriate elevation
+        if (i < stairLength / 2) {
+            m_map.setCellElevation(x, y, 0);
+        } else {
+            m_map.setCellElevation(x, y, 1);
+        }
+    }
+    
+    // Add lights at key locations using the lighting system instead of addLight
+    if (m_renderer) {
+        // Light at the north staircase entrance
+        Light northLight = Light::createPointLight(
+            Vec2(stair1EndX, stair1EndY + 1),
+            Color(255, 204, 153),  // Warm light
+            1.0f,                  // Intensity
+            8.0f                   // Radius
+        );
+        m_renderer->getLightingSystem().addLight(northLight);
+        
+        // Light at the east staircase entrance
+        Light eastLight = Light::createPointLight(
+            Vec2(stair2EndX - 1, stair2EndY),
+            Color(153, 204, 255),  // Cool light
+            1.0f,                  // Intensity
+            8.0f                   // Radius
+        );
+        m_renderer->getLightingSystem().addLight(eastLight);
+        
+        // Light in the central chamber
+        Light centerLight = Light::createPointLight(
+            Vec2(secondLevelStartX + secondLevelWidth/2, secondLevelStartY + secondLevelHeight/2),
+            Color(204, 102, 230),  // Purple light
+            1.0f,                  // Intensity
+            10.0f                  // Radius
+        );
+        m_renderer->getLightingSystem().addLight(centerLight);
+        
+        // Add some additional lights throughout the second level
+        for (int i = 0; i < 5; i++) {
+            int lightX = secondLevelStartX + rand() % secondLevelWidth;
+            int lightY = secondLevelStartY + rand() % secondLevelHeight;
+            
+            // Only place lights on floor cells (empty cells at elevation 1)
+            if (m_map.getCell(lightX, lightY) == CellType::Empty && 
+                m_map.getCellElevation(lightX, lightY) == 1) {
+                
+                float r = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
+                float g = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
+                float b = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
+                
+                Light randomLight = Light::createPointLight(
+                    Vec2(lightX, lightY),
+                    Color(r * 255, g * 255, b * 255),
+                    0.8f,                  // Intensity
+                    5.0f                   // Radius
+                );
+                m_renderer->getLightingSystem().addLight(randomLight);
+            }
+        }
+    }
+    
+    // Create the ground level map
+    for (int x = 0; x < m_map.getWidth(); x++) {
+        for (int y = 0; y < m_map.getHeight(); y++) {
+            // Skip cells that are already part of the second level
+            if (x >= secondLevelStartX && x < secondLevelStartX + secondLevelWidth &&
+                y >= secondLevelStartY && y < secondLevelStartY + secondLevelHeight) {
+                continue;
+            }
+            
+            // Skip cells that are already part of the staircases
+            if (m_map.getCell(x, y) == CellType::Stairs) {
+                continue;
+            }
+            
+            // Set default cell type to empty
+            m_map.setCell(x, y, CellType::Empty); // Use Empty instead of Floor
+            m_map.setCellElevation(x, y, 0); // Ground level
+            
+            // Create walls around the perimeter of the map
+            if (x == 0 || x == m_map.getWidth() - 1 || y == 0 || y == m_map.getHeight() - 1) {
                 m_map.setCell(x, y, CellType::Wall);
                 
-                // Use metal texture for perimeter walls (last texture in variations)
+                // Use a different texture for perimeter walls
                 if (!m_wallTextureVariations.empty()) {
-                    m_map.setWallTexture(x, y, m_wallTextureVariations.back());
-                } else {
-                    m_map.setWallTexture(x, y, m_wallTexture);  // Fallback to default
+                    m_map.setWallTexture(x, y, m_wallTextureVariations[0]);
                 }
-            } else {
-                // For larger map, create more interesting patterns
-                
-                // Create maze-like structures in quadrants
+            }
+            // Create internal walls with a maze-like pattern
+            else {
                 bool createWall = false;
                 
-                // Top-left quadrant: Grid pattern
+                // Different patterns for different quadrants
                 if (x < m_map.getWidth()/2 && y < m_map.getHeight()/2) {
-                    if ((x % 8 == 0 || y % 8 == 0) && rand() % 3 != 0) {
+                    // Top-left quadrant: grid pattern
+                    if ((x % 8 == 0 || y % 8 == 0) && (x % 8 != 4 && y % 8 != 4)) {
                         createWall = true;
                     }
                 }
-                // Top-right quadrant: Second level area with its own layout
                 else if (x >= m_map.getWidth()/2 && y < m_map.getHeight()/2) {
-                    // If inside the elevated platform bounds
-                    if (x >= platformStartX && x < platformStartX + platformWidth &&
-                        y >= platformStartY && y < platformStartY + platformHeight) {
-                        
-                        // Set the entire platform area as empty but elevated by default
-                        m_map.setCell(x, y, CellType::Empty);
-                        m_map.setCellElevation(x, y, 1); // Elevated level
-                        
-                        // Create a completely different layout for the second level
-                        // This creates a small maze-like structure on the second level
-                        
-                        // Edge walls for second level
-                        if (x == platformStartX || x == platformStartX + platformWidth - 1 ||
-                            y == platformStartY || y == platformStartY + platformHeight - 1) {
-                            
-                            // Create openings for staircases
-                            bool isStairEntrance = false;
-                            
-                            // North staircase
-                            if (y == platformStartY && x >= platformStartX + platformWidth/2 - 1 && 
-                                x <= platformStartX + platformWidth/2 + 1) {
-                                isStairEntrance = true;
-                            }
-                            
-                            // South staircase
-                            if (y == platformStartY + platformHeight - 1 && 
-                                x >= platformStartX + 1 && x <= platformStartX + 3) {
-                                isStairEntrance = true;
-                            }
-                            
-                            if (!isStairEntrance) {
-                                m_map.setCell(x, y, CellType::ElevatedWall);
-                                if (!m_wallTextureVariations.empty() && m_wallTextureVariations.size() > 1) {
-                                    m_map.setWallTexture(x, y, m_wallTextureVariations[1]); // Rune texture for edges
-                                }
-                            }
-                        }
-                        // Internal walls and rooms for second level
-                        else {
-                            // Create a different pattern for the second level
-                            // Checkerboard pattern with some random walls and openings
-                            bool createSecondLevelWall = false;
-                            
-                            // Create some internal wall patterns on the second level
-                            if ((x - platformStartX) % 3 == 0 || (y - platformStartY) % 3 == 0) {
-                                createSecondLevelWall = (rand() % 3 == 0); // 1/3 chance for walls along grid
-                            }
-                            
-                            // Small rooms in the corners of the second level
-                            if ((x == platformStartX + 2 || x == platformStartX + platformWidth - 3) && 
-                                (y == platformStartY + 2 || y == platformStartY + platformHeight - 3)) {
-                                createSecondLevelWall = true;
-                            }
-                            
-                            // Create a central room/structure
-                            int centerX = platformStartX + platformWidth / 2;
-                            int centerY = platformStartY + platformHeight / 2;
-                            if (abs(x - centerX) <= 2 && abs(y - centerY) <= 2) {
-                                if (abs(x - centerX) == 2 || abs(y - centerY) == 2) {
-                                    createSecondLevelWall = true; // Walls of central room
-                                } else {
-                                    // Place some items or enemies in the central room
-                                    if (rand() % 4 == 0 && m_spriteManager && m_enemyTexture >= 0) {
-                                        // Add enemy sprite in the central room
-                                        int spriteId = m_spriteManager->addSprite(
-                                            x + 0.5,  // Center in the cell
-                                            y + 0.5,
-                                            1.0,      // Size
-                                            m_enemyTexture,
-                                            SpriteType::Enemy
-                                        );
-                                        
-                                        // Add a red light for the enemy
-                                        if (spriteId >= 0 && m_renderer) {
-                                            Light enemyLight = Light::createPointLight(
-                                                Vec2(x + 0.5, y + 0.5),  // Position
-                                                Color(255, 0, 0),        // Red light
-                                                0.7,                     // Intensity
-                                                4.0                      // Radius
-                                            );
-                                            m_renderer->getLightingSystem().addLight(enemyLight);
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // Apply the second level wall
-                            if (createSecondLevelWall) {
-                                m_map.setCell(x, y, CellType::ElevatedWall);
-                                // Choose a different texture for internal walls
-                                if (!m_wallTextureVariations.empty() && m_wallTextureVariations.size() > 2) {
-                                    m_map.setWallTexture(x, y, m_wallTextureVariations[2]); // Flesh texture for internal walls
-                                }
-                            }
-                        }
-                        
-                        createWall = false; // Skip regular wall creation logic
-                    }
-                    // Create staircases outside the platform bounds
-                    else if ((x >= platformStartX + platformWidth/2 - 1 && x <= platformStartX + platformWidth/2 + 1 && // North staircase
-                              y >= platformStartY - 4 && y < platformStartY) ||
-                             (x >= platformStartX + 1 && x <= platformStartX + 3 && // South staircase
-                              y > platformStartY + platformHeight - 1 && 
-                              y <= platformStartY + platformHeight + 3)) {
-                        
-                        // North staircase - create a proper connected staircase
-                        if (x >= platformStartX + platformWidth/2 - 2 && x <= platformStartX + platformWidth/2 + 2 && 
-                            y >= platformStartY - 6 && y < platformStartY) {
-                            
-                            // Calculate stair properties
-                            int stairLength = 6; // Longer staircase for better visibility
-                            int stairWidth = 5;  // Wider staircase
-                            int stairStartX = platformStartX + platformWidth/2 - 2;
-                            int stairEndX = platformStartX + platformWidth/2 + 2;
-                            int stairEndY = platformStartY - 1;
-                            int stairStartY = platformStartY - stairLength;
-                            
-                            // Check if we're on the stairs
-                            if (x >= stairStartX && x <= stairEndX && y >= stairStartY && y <= stairEndY) {
-                                // Calculate which step we're on (0 is bottom, stairLength-1 is top)
-                                int stepNumber = y - stairStartY;
-                                float stepHeight = stepNumber / static_cast<float>(stairLength - 1);
-                                
-                                // Create the step (inverted from how we'd normally count steps)
-                                int invertedStep = stairLength - 1 - stepNumber;
-                                
-                                // Only create the steps in a stair pattern (higher x has higher step)
-                                int stepOffset = x - stairStartX;
-                                
-                                // Create proper staircase pattern - steps rise diagonally
-                                if (invertedStep >= stepOffset) {
-                                    // Structure that looks like actual stairs
-                                    switch(stepOffset) {
-                                        case 0: // Leftmost - vertical wall
-                                            m_map.setCell(x, y, CellType::Wall);
-                                            m_map.setWallTexture(x, y, m_wallTextureVariations[3]); // Metal texture
-                                            break;
-                                        case 4: // Rightmost - vertical wall 
-                                            m_map.setCell(x, y, CellType::Wall);
-                                            m_map.setWallTexture(x, y, m_wallTextureVariations[3]); // Metal texture
-                                            break;
-                                        default: // Middle - proper stair steps
-                                            if (y == stairEndY) {
-                                                // Top step connects to platform
-                                                m_map.setCell(x, y, CellType::StairStep3);
-                                                m_map.setStepHeight(x, y, 0.9f);
-                                                m_map.setCellElevation(x, y, 1); // Mark as elevated
-                                            }
-                                            else if (invertedStep == stepOffset) {
-                                                // The actual stair step (diagonal line of steps)
-                                                m_map.setCell(x, y, CellType::StairStep2);
-                                                m_map.setStepHeight(x, y, stepHeight);
-                                            }
-                                            else if (invertedStep > stepOffset) {
-                                                // Underneath the stairs structure
-                                                m_map.setCell(x, y, CellType::Wall);
-                                                m_map.setWallTexture(x, y, m_wallTextureVariations[3]); // Metal texture
-                                            }
-                                    }
-                                    createWall = false;
-                                }
-                                
-                                // The stair entry cell
-                                if (y == stairStartY && x == stairStartX + 2) {
-                                    m_map.setCell(x, y, CellType::Stairs);
-                                    m_map.setStepHeight(x, y, 0.0f);
-                                    createWall = false;
-                                }
-                            }
-                        }
-                        
-                        // South staircase - create a proper connected staircase
-                        else if (x >= platformStartX && x <= platformStartX + 5 && 
-                            y > platformStartY + platformHeight - 1 && y <= platformStartY + platformHeight + 6) {
-                            
-                            // Calculate stair properties
-                            int stairLength = 6; // Longer staircase for better visibility
-                            int stairWidth = 5;  // Wider staircase
-                            int stairStartX = platformStartX;
-                            int stairEndX = platformStartX + stairWidth - 1;
-                            int stairStartY = platformStartY + platformHeight;
-                            int stairEndY = platformStartY + platformHeight + stairLength - 1;
-                            
-                            // Check if we're on the stairs
-                            if (x >= stairStartX && x <= stairEndX && y >= stairStartY && y <= stairEndY) {
-                                // Calculate which step we're on
-                                int stepNumber = y - stairStartY;
-                                float stepHeight = 1.0f - (stepNumber / static_cast<float>(stairLength - 1));
-                                
-                                // Create the step
-                                int invertedX = stairEndX - x; // So stairs go down from right to left
-                                
-                                // Only create the steps in a stair pattern (higher x has lower step)
-                                if (stepNumber >= invertedX) {
-                                    // Structure that looks like actual stairs
-                                    switch(invertedX) {
-                                        case 0: // Rightmost - vertical wall
-                                            m_map.setCell(x, y, CellType::Wall);
-                                            m_map.setWallTexture(x, y, m_wallTextureVariations[3]); // Metal texture
-                                            break;
-                                        case 4: // Leftmost - vertical wall 
-                                            m_map.setCell(x, y, CellType::Wall);
-                                            m_map.setWallTexture(x, y, m_wallTextureVariations[3]); // Metal texture
-                                            break;
-                                        default: // Middle - proper stair steps
-                                            if (y == stairStartY) {
-                                                // Top step connects to platform
-                                                m_map.setCell(x, y, CellType::StairStep3);
-                                                m_map.setStepHeight(x, y, 0.9f);
-                                                m_map.setCellElevation(x, y, 1); // Mark as elevated
-                                            }
-                                                else if (stepNumber == invertedX) {
-                                                    // The actual stair step (diagonal line of steps)
-                                                    m_map.setCell(x, y, CellType::StairStep2);
-                                                    m_map.setStepHeight(x, y, stepHeight);
-                                                }
-                                                else if (stepNumber > invertedX) {
-                                                    // Underneath the stairs structure
-                                                    m_map.setCell(x, y, CellType::Wall);
-                                                    m_map.setWallTexture(x, y, m_wallTextureVariations[3]); // Metal texture
-                                                }
-                                    }
-                                    createWall = false;
-                                }
-                                
-                                // The stair exit cell
-                                if (y == stairEndY && x == stairStartX + 2) {
-                                    m_map.setCell(x, y, CellType::Stairs);
-                                    m_map.setStepHeight(x, y, 0.0f);
-                                    createWall = false;
-                                }
-                            }
-                        }
-                    }
-                    // Regular circular/radial pattern for the rest of this quadrant
-                    else {
-                        int centerX = 3*m_map.getWidth()/4;
-                        int centerY = m_map.getHeight()/4;
-                        int dx = x - centerX;
-                        int dy = y - centerY;
-                        int dist = sqrt(dx*dx + dy*dy);
-                        if (dist % 6 == 0 || (atan2(dy, dx) * 10) - int(atan2(dy, dx) * 10) < 0.2) {
-                            createWall = rand() % 3 != 0;
-                        }
-                    }
+                    // Top-right quadrant: already handled as second level
+                    continue;
                 }
-                // Bottom-left quadrant: Diagonal pattern
                 else if (x < m_map.getWidth()/2 && y >= m_map.getHeight()/2) {
-                    if ((x + y) % 7 == 0 || (x - y) % 7 == 0) {
-                        createWall = rand() % 3 != 0;
-                    }
+                    // Bottom-left quadrant: random walls
+                    createWall = rand() % 3 == 0;
                 }
-                // Bottom-right quadrant: Random rooms
                 else {
-                    // Create room-like structures
-                    int roomX = (x / 6) * 6;
-                    int roomY = (y / 6) * 6;
-                    if ((x == roomX || x == roomX + 5) && y >= roomY && y <= roomY + 5) {
+                    // Bottom-right quadrant: circular pattern
+                    int centerX = 3 * m_map.getWidth() / 4;
+                    int centerY = 3 * m_map.getHeight() / 4;
+                    int distance = static_cast<int>(sqrt(pow(x - centerX, 2) + pow(y - centerY, 2)));
+                    
+                    if (distance % 5 == 0) {
                         createWall = true;
-                    }
-                    else if ((y == roomY || y == roomY + 5) && x >= roomX && x <= roomX + 5) {
-                        createWall = true;
-                    }
-                    // Add some doorways
-                    if ((x == roomX + 2 && y == roomY) || 
-                        (x == roomX && y == roomY + 2)) {
-                        createWall = false;
                     }
                 }
                 
-                // Clear an area around the player starting position
-                int playerStartX = m_map.getWidth() / 2;
-                int playerStartY = m_map.getHeight() / 2;
-                int clearRadius = 5;
-                if ((x - playerStartX) * (x - playerStartX) + 
-                    (y - playerStartY) * (y - playerStartY) < clearRadius * clearRadius) {
-                    createWall = false;
-                }
+                // Don't create walls near staircase entrances
+                bool nearStair1 = (abs(x - stair1StartX) < 3 && abs(y - stair1StartY) < 3);
+                bool nearStair2 = (abs(x - stair2StartX) < 3 && abs(y - stair2StartY) < 3);
                 
-                if (createWall) {
+                if (createWall && !nearStair1 && !nearStair2) {
                     m_map.setCell(x, y, CellType::Wall);
                     
-                    // Choose wall texture based on quadrant
+                    // Randomly assign wall textures
                     if (!m_wallTextureVariations.empty()) {
-                        int textureIndex = 0;
-                        
-                        // Top-left: mostly bloody stone
-                        if (x < m_map.getWidth()/2 && y < m_map.getHeight()/2) {
-                            textureIndex = 0;  // Bloody stone
-                        }
-                        // Top-right: mostly runes
-                        else if (x >= m_map.getWidth()/2 && y < m_map.getHeight()/2) {
-                            textureIndex = m_wallTextureVariations.size() > 1 ? 1 : 0;  // Runes
-                        }
-                        // Bottom-left: mostly flesh
-                        else if (x < m_map.getWidth()/2 && y >= m_map.getHeight()/2) {
-                            textureIndex = m_wallTextureVariations.size() > 2 ? 2 : 0;  // Flesh
-                        }
-                        // Bottom-right: mostly metal
-                        else {
-                            textureIndex = m_wallTextureVariations.size() > 3 ? 3 : 0;  // Metal
-                        }
-                        
-                        // Add some variation
-                        if (rand() % 5 == 0) {
-                            textureIndex = rand() % m_wallTextureVariations.size();
-                        }
-                        
+                        int textureIndex = rand() % m_wallTextureVariations.size();
                         m_map.setWallTexture(x, y, m_wallTextureVariations[textureIndex]);
-                    } else {
-                        // Fallback to default wall texture if no variations available
-                        m_map.setWallTexture(x, y, m_wallTexture);
-                    }
-                } else {
-                    // Only set as empty if we didn't already set it (for elevated platform)
-                    if (m_map.getCell(x, y) != CellType::ElevatedWall && 
-                        m_map.getCell(x, y) != CellType::Stairs) {
-                        m_map.setCell(x, y, CellType::Empty);
-                    }
-                    
-                    // Chance to spawn an enemy in empty cells (lower probability for larger map)
-                    if (m_map.getCell(x, y) == CellType::Empty && rand() % 40 == 0 && 
-                        m_spriteManager && m_enemyTexture >= 0) {
-                        // Ensure we're not spawning too close to the player start position
-                        double distToCenter = std::sqrt(
-                            std::pow(x - m_map.getWidth() / 2.0, 2) +
-                            std::pow(y - m_map.getHeight() / 2.0, 2)
-                        );
-                        
-                        if (distToCenter > 8.0) {  // Don't spawn too close to player
-                            // Add enemy sprite
-                            int spriteId = m_spriteManager->addSprite(
-                                x + 0.5,  // Center in the cell
-                                y + 0.5,
-                                1.0,      // Size
-                                m_enemyTexture,
-                                SpriteType::Enemy
-                            );
-                            
-                            // Add a pulsing red light for the enemy
-                            if (spriteId >= 0 && m_renderer) {
-                                Light enemyLight = Light::createPointLight(
-                                    Vec2(x + 0.5, y + 0.5),  // Position
-                                    Color(255, 0, 0),        // Red light
-                                    0.7,                     // Higher intensity
-                                    4.0                      // Larger radius
-                                );
-                                m_renderer->getLightingSystem().addLight(enemyLight);
-                            }
-                        }
                     }
                 }
             }
         }
     }
     
-    // Set up lighting for the larger map
+    // Add some items and enemies to the ground level
+    for (int i = 0; i < 20; i++) {
+        int x = rand() % m_map.getWidth();
+        int y = rand() % m_map.getHeight();
+        
+        // Only place items on empty cells at ground level
+        if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
+            // 50% chance for item, 50% chance for enemy
+            if (rand() % 2 == 0) {
+                m_map.setCell(x, y, CellType::Item);
+            } else {
+                m_map.setCell(x, y, CellType::Enemy);
+            }
+        }
+    }
+    
+    // Add lights to the ground level using the lighting system
     if (m_renderer) {
-        LightingSystem& lighting = m_renderer->getLightingSystem();
-        
-        // Set darker ambient lighting for more dramatic effect
-        lighting.setAmbientColor(Color(32, 32, 48));  // Darker bluish tone
-        lighting.setAmbientIntensity(0.15);           // Lower ambient intensity
-        
-        // Add main directional light (moonlight)
-        Light moonlight = Light::createDirectionalLight(
-            Vec2(-0.5, -0.7),           // Direction
-            Color(120, 120, 180),       // Cool bluish tone
-            0.4                         // Moderate intensity
-        );
-        lighting.addLight(moonlight);
-        
-        // Add flickering lights throughout the larger map (adjusted spacing)
-        for (int y = 4; y < m_map.getHeight() - 4; y += 8) {
-            for (int x = 4; x < m_map.getWidth() - 4; x += 8) {
-                // Only place lights near walls
-                bool nearWall = false;
-                for (int dy = -1; dy <= 1 && !nearWall; dy++) {
-                    for (int dx = -1; dx <= 1 && !nearWall; dx++) {
-                        if (m_map.getCell(x + dx, y + dy) == CellType::Wall) {
-                            nearWall = true;
-                        }
-                    }
-                }
+        for (int i = 0; i < 10; i++) {
+            int x = rand() % m_map.getWidth();
+            int y = rand() % m_map.getHeight();
+            
+            // Only place lights on empty cells at ground level
+            if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
+                float r = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
+                float g = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
+                float b = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
                 
-                if (nearWall && rand() % 2 == 0) {
-                    // Create a flickering light with random color variation
-                    Color baseColor;
-                    switch (rand() % 3) {
-                        case 0: // Warm orange
-                            baseColor = Color(255, 147, 41);
-                            break;
-                        case 1: // Cool blue
-                            baseColor = Color(41, 169, 255);
-                            break;
-                        case 2: // Eerie green
-                            baseColor = Color(41, 255, 147);
-                            break;
-                    }
-                    
-                    Light flickeringLight = Light::createPointLight(
-                        Vec2(x + 0.5, y + 0.5),
-                        baseColor,
-                        0.8 + (rand() % 20) / 100.0,  // Random base intensity
-                        6.0 + (rand() % 20) / 10.0    // Random radius
-                    );
-                    lighting.addLight(flickeringLight);
-                }
+                Light groundLight = Light::createPointLight(
+                    Vec2(x, y),
+                    Color(r * 255, g * 255, b * 255),
+                    0.8f,                  // Intensity
+                    5.0f                   // Radius
+                );
+                m_renderer->getLightingSystem().addLight(groundLight);
             }
         }
         
-        // Add special lighting for the second level
-        // Traverse the second level to add lights
-        for (int y = platformStartY; y < platformStartY + platformHeight; y++) {
-            for (int x = platformStartX; x < platformStartX + platformWidth; x++) {
-                CellType cellType = m_map.getCell(x, y);
-                int elevation = m_map.getCellElevation(x, y);
-                
-                // Add lights at various spots on the second level
-                if (elevation == 1 && cellType == CellType::Empty) {
-                    // Only add lights at certain positions for aesthetic purposes
-                    if ((x - platformStartX) % 4 == 0 && (y - platformStartY) % 4 == 0) {
-                        // Different colored lights
-                        Color lightColor;
-                        switch ((x + y) % 3) {
-                            case 0: // Blue
-                                lightColor = Color(100, 150, 255);
-                                break;
-                            case 1: // Purple
-                                lightColor = Color(200, 100, 255);
-                                break;
-                            case 2: // Green
-                                lightColor = Color(100, 255, 150);
-                                break;
-                        }
-                        
-                        Light secondLevelLight = Light::createPointLight(
-                            Vec2(x + 0.5, y + 0.5),
-                            lightColor,
-                            0.9,                    // Higher intensity
-                            5.0 + (rand() % 30) / 10.0 // Varied radius
-                        );
-                        lighting.addLight(secondLevelLight);
-                    }
-                }
-            }
-        }
-        
-        // Add bright lights at the stair locations to make them more visible
-        // North staircase (bottom of stairs)
-        int northStairX = platformStartX + platformWidth/2;
-        int northStairY = platformStartY - 4;
-        
-        Light northStairLight = Light::createPointLight(
-            Vec2(northStairX, northStairY),
-            Color(255, 255, 255),  // Bright white
-            2.0,                   // Very high intensity
-            10.0                   // Large radius
+        // Add lights at staircase entrances
+        Light stair1Light = Light::createPointLight(
+            Vec2(stair1StartX, stair1StartY),
+            Color(255, 204, 153),  // Warm light
+            1.0f,                  // Intensity
+            8.0f                   // Radius
         );
-        lighting.addLight(northStairLight);
+        m_renderer->getLightingSystem().addLight(stair1Light);
         
-        // South staircase (bottom of stairs)
-        int southStairX = platformStartX + 2;
-        int southStairY = platformStartY + platformHeight + 3;
-        
-        Light southStairLight = Light::createPointLight(
-            Vec2(southStairX, southStairY),
-            Color(255, 255, 255),  // Bright white
-            2.0,                   // Very high intensity
-            10.0                   // Large radius
+        Light stair2Light = Light::createPointLight(
+            Vec2(stair2StartX, stair2StartY),
+            Color(153, 204, 255),  // Cool light
+            1.0f,                  // Intensity
+            8.0f                   // Radius
         );
-        lighting.addLight(southStairLight);
-        
-        // Add a bright white light at each step of the north staircase
-        for (int i = 0; i < 4; i++) {
-            int stepX = platformStartX + platformWidth/2;
-            int stepY = platformStartY - i - 1;
-            
-            Light stepLight = Light::createPointLight(
-                Vec2(stepX, stepY),
-                Color(255, 255, 255),  // Bright white
-                1.5,                    // High intensity
-                5.0                     // Medium radius
-            );
-            lighting.addLight(stepLight);
-        }
-        
-        // Add a bright white light at each step of the south staircase
-        for (int i = 0; i < 4; i++) {
-            int stepX = platformStartX + 2;
-            int stepY = platformStartY + platformHeight + i;
-            
-            Light stepLight = Light::createPointLight(
-                Vec2(stepX, stepY),
-                Color(255, 255, 255),  // Bright white
-                1.5,                    // High intensity
-                5.0                     // Medium radius
-            );
-            lighting.addLight(stepLight);
-        }
+        m_renderer->getLightingSystem().addLight(stair2Light);
     }
     
-    std::cout << "Map setup complete with enhanced lighting for 40x40 map" << std::endl;
+    // Set player starting position
+    m_player.init(m_map.getWidth() / 4, m_map.getHeight() / 4, 1.0, 0.0);
 }
 
 void Engine::setupPlayer() {

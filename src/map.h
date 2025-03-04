@@ -16,7 +16,9 @@ enum class CellType {
     ElevatedWall = 6,  // Wall on the elevated level
     StairStep1 = 7,    // First step of stairs (25% elevation)
     StairStep2 = 8,    // Second step of stairs (50% elevation)
-    StairStep3 = 9     // Third step of stairs (75% elevation)
+    StairStep3 = 9,     // Third step of stairs (75% elevation)
+    Floor = 10,
+    ElevatedFloor = 11
 };
 
 class Map {
