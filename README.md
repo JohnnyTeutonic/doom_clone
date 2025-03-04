@@ -79,6 +79,10 @@ cmake -DSDL2_DIR=path/to/SDL2/cmake -DSDL2_IMAGE_DIR=path/to/SDL2_image/cmake -D
 
 # Build (using your preferred IDE or build system)
 ```
+Alternatively, building (and running) in powershell can be done:
+```
+powershell -ExecutionPolicy Bypass -File build_and_run.ps1
+```
 
 ## Controls
 

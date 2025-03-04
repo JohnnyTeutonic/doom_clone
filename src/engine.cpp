@@ -342,6 +342,14 @@ void Engine::processInput() {
             m_player.rotateRight(m_deltaTime);
         }
         
+        // Vertical looking - use direct keyboard state for up and down arrow keys
+        if (keyboardState[SDL_SCANCODE_UP]) {
+            m_player.lookUp(m_deltaTime);
+        }
+        if (keyboardState[SDL_SCANCODE_DOWN]) {
+            m_player.lookDown(m_deltaTime);
+        }
+        
         // Shooting - use direct keyboard state for Space
         if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
             if (m_player.fire()) {
