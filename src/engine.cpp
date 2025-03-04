@@ -767,16 +767,90 @@ bool Engine::loadAssets() {
         SDL_LockSurface(enemySurface);
         Uint32* pixels = (Uint32*)enemySurface->pixels;
         
+        // Colors for the demon
+        Uint32 darkRed = SDL_MapRGBA(enemySurface->format, 139, 0, 0, 255);      // Dark red for body
+        Uint32 lightRed = SDL_MapRGBA(enemySurface->format, 220, 20, 20, 255);   // Lighter red for highlights
+        Uint32 brown = SDL_MapRGBA(enemySurface->format, 139, 69, 19, 255);      // Brown for horns
+        Uint32 yellow = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);     // Yellow for eyes
+        Uint32 black = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);          // Black for details
+        
         // Fill with transparent color first
         Uint32 transparent = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
         for (int i = 0; i < 32 * 64; i++) {
             pixels[i] = transparent;
         }
         
-        // Draw enemy shape (simplified for stability)
-        for (int y = 10; y < 54; y++) {
-            for (int x = 8; x < 24; x++) {
-                pixels[y * 32 + x] = SDL_MapRGBA(enemySurface->format, 200, 0, 0, 255);
+        // Draw humanoid shape (narrower body)
+        for (int y = 15; y < 60; y++) {
+            int width = 12;  // Base body width
+            // Wider at shoulders (y=20), narrower at waist (y=40)
+            if (y < 25) width = 16;  // Shoulders
+            else if (y > 40) width = 14;  // Legs
+            
+            int startX = (32 - width) / 2;
+            for (int x = startX; x < startX + width; x++) {
+                pixels[y * 32 + x] = darkRed;
+            }
+        }
+        
+        // Draw horns (smaller and more pointed)
+        for (int y = 0; y < 15; y++) {
+            for (int x = 8; x < 13; x++) {
+                if (x - 8 <= y/2) pixels[y * 32 + x] = brown;
+            }
+            for (int x = 19; x < 24; x++) {
+                if (24 - x <= y/2) pixels[y * 32 + x] = brown;
+            }
+        }
+        
+        // Draw eyes (yellow circles with black centers)
+        for (int y = 18; y < 28; y++) {
+            for (int x = 8; x < 15; x++) {
+                int dx = x - 11;
+                int dy = y - 23;
+                if (dx*dx + dy*dy < 9) {
+                    pixels[y * 32 + x] = yellow;
+                    if (dx*dx + dy*dy < 4) {
+                        pixels[y * 32 + x] = black;
+                    }
+                }
+            }
+            for (int x = 17; x < 24; x++) {
+                int dx = x - 20;
+                int dy = y - 23;
+                if (dx*dx + dy*dy < 9) {
+                    pixels[y * 32 + x] = yellow;
+                    if (dx*dx + dy*dy < 4) {
+                        pixels[y * 32 + x] = black;
+                    }
+                }
+            }
+        }
+        
+        // Draw mouth (smaller and more defined)
+        for (int y = 30; y < 38; y++) {
+            for (int x = 10; x < 22; x++) {
+                // Main mouth line
+                if (y == 34) pixels[y * 32 + x] = black;
+                
+                // Teeth
+                if (y > 34 && y < 37 && (x % 4 < 2)) {
+                    pixels[y * 32 + x] = lightRed;
+                }
+            }
+        }
+        
+        // Add muscle definition with lighter red
+        for (int y = 15; y < 60; y++) {
+            int width = 12;
+            if (y < 25) width = 16;
+            else if (y > 40) width = 14;
+            
+            int startX = (32 - width) / 2;
+            for (int x = startX; x < startX + width; x++) {
+                if ((x + y) % 6 == 0 && pixels[y * 32 + x] == darkRed) {
+                    pixels[y * 32 + x] = lightRed;
+                }
             }
         }
         
