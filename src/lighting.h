@@ -74,7 +74,7 @@ private:
 public:
     LightingSystem() 
         : m_ambientColor(Color(64, 64, 96))  // Slight bluish ambient for doom-like atmosphere
-        , m_ambientIntensity(0.2)            // Low ambient light by default
+        , m_ambientIntensity(0.23)           // Increased from 0.2 to 0.23 (15% increase)
         , m_enabled(true)
         , m_cullDistance(15.0)               // Default culling distance
         , m_useCulling(true)                 // Enable culling by default

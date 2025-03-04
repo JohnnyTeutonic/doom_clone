@@ -1516,8 +1516,9 @@ void Engine::setupMap() {
                     if (!createSecondLevelWall && 
                         abs(x - centerX) < chamberSize - 1 && 
                         abs(y - centerY) < chamberSize - 1) {
-                        // 20% chance to spawn an enemy
-                        if (rand() % 5 == 0) {
+                        // Increase spawn chance from 20% to 40% for more enemies
+                        if (rand() % 5 <= 1) {
+                            // Make all enemies in the central chamber Imps for a more challenging boss area
                             m_map.setCell(x, y, CellType::Enemy);
                             m_map.setCellElevation(x, y, 1); // Keep elevation at level 2
                         }
@@ -1599,8 +1600,8 @@ void Engine::setupMap() {
         Light northLight = Light::createPointLight(
             Vec2(stair1EndX, stair1EndY + 1),
             Color(255, 204, 153),  // Warm light
-            1.0f,                  // Intensity
-            8.0f                   // Radius
+            1.15f,                 // Intensity increased by 15%
+            9.2f                   // Radius increased by 15%
         );
         m_renderer->getLightingSystem().addLight(northLight);
         
@@ -1608,8 +1609,8 @@ void Engine::setupMap() {
         Light eastLight = Light::createPointLight(
             Vec2(stair2EndX - 1, stair2EndY),
             Color(153, 204, 255),  // Cool light
-            1.0f,                  // Intensity
-            8.0f                   // Radius
+            1.15f,                 // Intensity increased by 15%
+            9.2f                   // Radius increased by 15%
         );
         m_renderer->getLightingSystem().addLight(eastLight);
         
@@ -1617,13 +1618,13 @@ void Engine::setupMap() {
         Light centerLight = Light::createPointLight(
             Vec2(secondLevelStartX + secondLevelWidth/2, secondLevelStartY + secondLevelHeight/2),
             Color(204, 102, 230),  // Purple light
-            1.0f,                  // Intensity
-            10.0f                  // Radius
+            1.15f,                 // Intensity increased by 15%
+            11.5f                  // Radius increased by 15%
         );
         m_renderer->getLightingSystem().addLight(centerLight);
         
         // Add some additional lights throughout the second level
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 8; i++) {
             int lightX = secondLevelStartX + rand() % secondLevelWidth;
             int lightY = secondLevelStartY + rand() % secondLevelHeight;
             
@@ -1638,8 +1639,8 @@ void Engine::setupMap() {
                 Light randomLight = Light::createPointLight(
                     Vec2(lightX, lightY),
                     Color(r * 255, g * 255, b * 255),
-                    0.8f,                  // Intensity
-                    5.0f                   // Radius
+                    0.92f,                 // Intensity increased by 15%
+                    5.75f                  // Radius increased by 15%
                 );
                 m_renderer->getLightingSystem().addLight(randomLight);
             }
@@ -1721,14 +1722,14 @@ void Engine::setupMap() {
     }
     
     // Add some items and enemies to the ground level
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 40; i++) {
         int x = rand() % m_map.getWidth();
         int y = rand() % m_map.getHeight();
         
         // Only place items on empty cells at ground level
         if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
-            // 50% chance for item, 50% chance for enemy
-            if (rand() % 2 == 0) {
+            // 30% chance for item, 70% chance for enemy (increased enemy ratio)
+            if (rand() % 10 < 3) {
                 m_map.setCell(x, y, CellType::Item);
             } else {
                 m_map.setCell(x, y, CellType::Enemy);
@@ -1736,9 +1737,44 @@ void Engine::setupMap() {
         }
     }
     
+    // Create a special area with only Imps in the bottom-right quadrant
+    int impAreaCenterX = 3 * m_map.getWidth() / 4;
+    int impAreaCenterY = 3 * m_map.getHeight() / 4;
+    int impAreaRadius = 5;
+    
+    // Add a cluster of Imps in this area
+    for (int i = 0; i < 8; i++) {
+        // Random position within the imp area
+        int offsetX = rand() % (impAreaRadius * 2) - impAreaRadius;
+        int offsetY = rand() % (impAreaRadius * 2) - impAreaRadius;
+        
+        int x = impAreaCenterX + offsetX;
+        int y = impAreaCenterY + offsetY;
+        
+        // Make sure the position is valid
+        if (x >= 0 && x < m_map.getWidth() && y >= 0 && y < m_map.getHeight()) {
+            // Only place on empty cells
+            if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
+                m_map.setCell(x, y, CellType::Enemy);
+            }
+        }
+    }
+    
+    // Add a special light in the Imp area
+    if (m_renderer) {
+        Light impAreaLight = Light::createPointLight(
+            Vec2(impAreaCenterX, impAreaCenterY),
+            Color(255, 100, 0),  // Orange-red light for the Imp area
+            1.3f,                // Higher intensity
+            12.0f                // Larger radius
+        );
+        m_renderer->getLightingSystem().addLight(impAreaLight);
+    }
+    
     // Add lights to the ground level using the lighting system
     if (m_renderer) {
-        for (int i = 0; i < 10; i++) {
+        // Increased from 10 to 15 lights
+        for (int i = 0; i < 15; i++) {
             int x = rand() % m_map.getWidth();
             int y = rand() % m_map.getHeight();
             
@@ -1751,8 +1787,8 @@ void Engine::setupMap() {
                 Light groundLight = Light::createPointLight(
                     Vec2(x, y),
                     Color(r * 255, g * 255, b * 255),
-                    0.8f,                  // Intensity
-                    5.0f                   // Radius
+                    0.92f,                 // Intensity increased by 15%
+                    6.0f                   // Radius
                 );
                 m_renderer->getLightingSystem().addLight(groundLight);
             }
@@ -1796,24 +1832,54 @@ void Engine::createSpritesFromMap() {
             CellType cellType = m_map.getCell(x, y);
             
             if (cellType == CellType::Enemy) {
-                // Create an enemy sprite
-                double size = 0.8; // Standard enemy size
-                int textureId = m_enemyTexture; // Use the enemy texture
-                int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                // Randomly decide if this should be a regular enemy or an Imp (1/2 chance for Imp - increased from 1/3)
+                bool createImp = (rand() % 2 == 0);
                 
-                // Set up animation for the enemy
-                if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
-                    Sprite* enemy = m_spriteManager->getSprite(spriteId);
-                    if (enemy) {
-                        // Set up animation with 4 frames at 2 frames per second
-                        enemy->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
-                        
-                        // Set movement properties
-                        enemy->setMoveSpeed(1.5); // Units per second
-                        enemy->setTurnSpeed(2.0); // Radians per second
-                        
-                        // Set health
-                        enemy->setHealth(100.0);
+                if (createImp && !m_impTextureFrames.empty()) {
+                    // Create an Imp enemy sprite
+                    double size = 0.9; // Imps are slightly larger
+                    int textureId = m_impTexture; // Use the Imp texture
+                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
+                    
+                    // Set up animation for the Imp
+                    if (spriteId >= 0) {
+                        Sprite* imp = m_spriteManager->getSprite(spriteId);
+                        if (imp) {
+                            // Set up animation with frames at 2 frames per second
+                            imp->setAnimated(true, m_impTextureFrames.size(), 2.0);
+                            
+                            // Set movement properties
+                            imp->setMoveSpeed(2.0); // Units per second - faster than regular enemies
+                            imp->setTurnSpeed(2.5); // Radians per second
+                            
+                            // Set health - Imps are tougher
+                            imp->setHealth(150.0);
+                            
+                            // Randomly assign a movement type
+                            ImpMovementType movementType = static_cast<ImpMovementType>(rand() % 3);
+                            imp->setImpMovementType(movementType);
+                        }
+                    }
+                } else {
+                    // Create a regular enemy sprite
+                    double size = 0.8; // Standard enemy size
+                    int textureId = m_enemyTexture; // Use the enemy texture
+                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                    
+                    // Set up animation for the enemy
+                    if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
+                        Sprite* enemy = m_spriteManager->getSprite(spriteId);
+                        if (enemy) {
+                            // Set up animation with 4 frames at 2 frames per second
+                            enemy->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
+                            
+                            // Set movement properties
+                            enemy->setMoveSpeed(1.5); // Units per second
+                            enemy->setTurnSpeed(2.0); // Radians per second
+                            
+                            // Set health
+                            enemy->setHealth(100.0);
+                        }
                     }
                 }
                 
