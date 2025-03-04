@@ -9,6 +9,8 @@ Map::Map() : m_width(0), m_height(0) {
 Map::Map(int width, int height) : m_width(width), m_height(height) {
     m_cells.resize(width * height, CellType::Empty);
     m_wallTextures.resize(width * height, 0);  // Default texture ID is 0
+    m_cellElevation.resize(width * height, 0); // Default elevation is ground level (0)
+    m_stepHeight.resize(width * height, 0.0f); // Default step height is 0
 }
 
 bool Map::loadFromString(const std::string& mapStr) {
@@ -159,8 +161,15 @@ bool Map::isValidPosition(double x, double y) const {
         return false;
     }
     
-    // Check if cell is empty
-    return m_cells[cellY * m_width + cellX] == CellType::Empty;
+    // Get the cell type
+    CellType cellType = m_cells[cellY * m_width + cellX];
+    
+    // Check if cell is empty, stairs, or stair steps
+    return cellType == CellType::Empty || 
+           cellType == CellType::Stairs || 
+           cellType == CellType::StairStep1 || 
+           cellType == CellType::StairStep2 || 
+           cellType == CellType::StairStep3;
 }
 
 int Map::getWallTexture(int x, int y) const {
@@ -291,15 +300,66 @@ double Map::castRay(double startX, double startY, double dirX, double dirY,
     return perpWallDist;
 }
 
-bool Map::isSolid(int x, int y) const {
+int Map::getCellElevation(int x, int y) const {
     // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return true;  // Out of bounds is considered solid
+        return 0; // Default elevation for out of bounds
     }
     
-    // Get the cell type at the position
-    CellType cell = m_cells[y * m_width + x];
+    return m_cellElevation[y * m_width + x];
+}
+
+void Map::setCellElevation(int x, int y, int elevation) {
+    // Check bounds
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return; // Out of bounds, do nothing
+    }
     
-    // Return true for walls and doors
-    return (cell == CellType::Wall || cell == CellType::Door);
+    m_cellElevation[y * m_width + x] = elevation;
+}
+
+float Map::getStepHeight(int x, int y) const {
+    // Check bounds
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return 0.0f; // Default step height for out of bounds
+    }
+    
+    return m_stepHeight[y * m_width + x];
+}
+
+void Map::setStepHeight(int x, int y, float height) {
+    // Check bounds
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return; // Out of bounds, do nothing
+    }
+    
+    // Clamp height to 0.0-1.0
+    height = std::max(0.0f, std::min(height, 1.0f));
+    m_stepHeight[y * m_width + x] = height;
+}
+
+bool Map::isStairs(int x, int y) const {
+    // Check bounds
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false; // Out of bounds is not stairs
+    }
+    
+    return m_cells[y * m_width + x] == CellType::Stairs;
+}
+
+bool Map::isStairStep(int x, int y) const {
+    // Check bounds
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false; // Out of bounds is not a stair step
+    }
+    
+    CellType cell = m_cells[y * m_width + x];
+    return cell == CellType::StairStep1 || 
+           cell == CellType::StairStep2 || 
+           cell == CellType::StairStep3;
+}
+
+bool Map::isSolid(int x, int y) const {
+    CellType cell = getCell(x, y);
+    return cell == CellType::Wall || cell == CellType::Door || cell == CellType::ElevatedWall;
 } 

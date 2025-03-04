@@ -129,6 +129,12 @@ void Renderer::renderView(const Map& map, const Player& player) {
     // Calculate vertical offset based on vertical angle
     int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
     
+    // Get player's elevation level (determine from map cell)
+    int playerX = static_cast<int>(pos.x);
+    int playerY = static_cast<int>(pos.y);
+    int playerElevation = map.getCellElevation(playerX, playerY);
+    float playerStepHeight = map.getStepHeight(playerX, playerY);
+    
     // For each vertical strip of the screen
     for (int x = 0; x < m_screenWidth; x++) {
         // Calculate ray position and direction
@@ -167,6 +173,11 @@ void Renderer::renderView(const Map& map, const Player& player) {
         // Perform DDA
         bool hit = false;
         int side;
+        bool isElevatedWall = false;
+        bool isStairs = false;
+        bool isStairStep = false;
+        float stepHeight = 0.0f;
+        int rayElevation = playerElevation; // Start at player's elevation
         
         while (!hit) {
             // Jump to next map square
@@ -181,8 +192,42 @@ void Renderer::renderView(const Map& map, const Player& player) {
             }
             
             // Check if ray has hit a wall
-            if (map.isSolid(mapPos.x, mapPos.y)) {
+            CellType cellType = map.getCell(mapPos.x, mapPos.y);
+            int cellElevation = map.getCellElevation(mapPos.x, mapPos.y);
+            
+            // Check stair steps
+            if (cellType == CellType::StairStep1 || 
+                cellType == CellType::StairStep2 || 
+                cellType == CellType::StairStep3) {
+                
+                isStairStep = true;
+                stepHeight = map.getStepHeight(mapPos.x, mapPos.y);
                 hit = true;
+            }
+            // Check if we've hit stairs
+            else if (cellType == CellType::Stairs) {
+                isStairs = true;
+                hit = true;
+            }
+            // Check if we've hit a wall or elevated wall
+            else if (cellType == CellType::Wall) {
+                // Regular walls are hit regardless of elevation
+                hit = true;
+            }
+            else if (cellType == CellType::ElevatedWall) {
+                // Elevated walls are hit only when we're at the same elevation
+                if (rayElevation == cellElevation) {
+                    hit = true;
+                    isElevatedWall = true;
+                }
+            }
+            else if (cellType == CellType::Door) {
+                hit = true;
+            }
+            
+            // Update ray's elevation if we find stairs
+            if ((cellType == CellType::Stairs || isStairStep) && !hit) {
+                rayElevation = cellElevation;
             }
         }
         
@@ -200,14 +245,80 @@ void Renderer::renderView(const Map& map, const Player& player) {
         // Calculate wall height
         int lineHeight = static_cast<int>(m_screenHeight / perpWallDist);
         
+        // Apply height adjustment for elevated walls and stairs
+        int heightOffset = 0;
+        
+        if (isStairStep) {
+            // For stair steps, use the step height to create a smooth transition
+            float relativeHeight = stepHeight - playerStepHeight;
+            heightOffset = static_cast<int>(relativeHeight * m_screenHeight / 3);
+        }
+        else if (isElevatedWall && playerElevation == 0) {
+            // Looking up at an elevated wall from ground level
+            heightOffset = m_screenHeight / 3; // Move the wall higher
+        }
+        else if (!isElevatedWall && !isStairs && playerElevation == 1) {
+            // Looking down at a ground wall from elevated level
+            heightOffset = -m_screenHeight / 3; // Move the wall lower
+        }
+        
         // Apply vertical angle to wall placement
-        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + verticalOffset;
+        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
         if (drawStart < 0) drawStart = 0;
-        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + verticalOffset;
+        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
         if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
 
         // Get wall texture
-        int texNum = map.getWallTexture(mapPos.x, mapPos.y);
+        int texNum;
+        if (isStairs || isStairStep) {
+            // Skip texture lookup and directly render in white
+            // Draw the wall strip as bright white
+            SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
+            SDL_RenderDrawLine(m_renderer, x, drawStart, x, drawEnd);
+            
+            // Add a pattern to indicate it's a stair
+            if (isStairStep) {
+                // Calculate step spacing based on wall height
+                int stepSpacing = (drawEnd - drawStart) / 8;
+                if (stepSpacing < 3) stepSpacing = 3;
+                
+                // Draw horizontal lines to show stair steps
+                for (int y = drawStart; y < drawEnd; y += stepSpacing) {
+                    // Draw a thicker blue line for each step
+                    for (int thickness = 0; thickness < 3; thickness++) {
+                        int lineY = y + thickness;
+                        if (lineY < drawEnd) {
+                            SDL_SetRenderDrawColor(m_renderer, 100, 100, 255, 255); // Brighter blue
+                            SDL_RenderDrawLine(m_renderer, x, lineY, x, lineY);
+                        }
+                    }
+                }
+                
+                // Add diagonal stripes to make it look more like stairs
+                for (int y = drawStart; y < drawEnd; y++) {
+                    // Create diagonal pattern based on x and y
+                    if ((x + y) % 10 < 5) {
+                        SDL_SetRenderDrawColor(m_renderer, 255, 200, 100, 255); // Orange-ish
+                        SDL_RenderDrawPoint(m_renderer, x, y);
+                    }
+                }
+            }
+            else if (isStairs) {
+                // For stair entry points, draw a distinct pattern
+                SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 255); // Bright yellow
+                
+                // Draw a checkerboard pattern to make it stand out
+                for (int y = drawStart; y < drawEnd; y++) {
+                    if ((x + y) % 4 < 2) {
+                        SDL_RenderDrawPoint(m_renderer, x, y);
+                    }
+                }
+            }
+            
+            continue; // Skip the regular texture rendering
+        } else {
+            texNum = map.getWallTexture(mapPos.x, mapPos.y);
+        }
         const Texture* wallTexture = m_textureManager->getTexture(texNum);
         
         if (!wallTexture) {
@@ -432,10 +543,17 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
             };
             
             CellType cell = map.getCell(x, y);
+            int elevation = map.getCellElevation(x, y);
             
+            // Use different colors based on cell type and elevation
             switch (cell) {
                 case CellType::Wall:
                     SDL_SetRenderDrawColor(m_renderer, 128, 128, 128, 255);
+                    SDL_RenderFillRect(m_renderer, &cellRect);
+                    break;
+                case CellType::ElevatedWall:
+                    // Brighter color for elevated walls
+                    SDL_SetRenderDrawColor(m_renderer, 200, 200, 200, 255);
                     SDL_RenderFillRect(m_renderer, &cellRect);
                     break;
                 case CellType::Door:
@@ -449,6 +567,57 @@ void Renderer::renderMinimap(const Map& map, const Player& player) {
                 case CellType::Enemy:
                     SDL_SetRenderDrawColor(m_renderer, 255, 0, 0, 255);
                     SDL_RenderFillRect(m_renderer, &cellRect);
+                    break;
+                case CellType::Stairs:
+                    // Bright white color for stairs (entry point)
+                    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
+                    SDL_RenderFillRect(m_renderer, &cellRect);
+                    break;
+                case CellType::StairStep1:
+                case CellType::StairStep2:
+                case CellType::StairStep3:
+                    // Bright white with a pattern for stair steps
+                    SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
+                    SDL_RenderFillRect(m_renderer, &cellRect);
+                    
+                    // Add a pattern to distinguish different step levels
+                    if (cell == CellType::StairStep1) {
+                        SDL_SetRenderDrawColor(m_renderer, 200, 200, 255, 255); // Light blue tint
+                        SDL_Rect innerRect = { 
+                            cellRect.x + cellSize/4, 
+                            cellRect.y + cellSize/4, 
+                            cellSize/2, 
+                            cellSize/2 
+                        };
+                        SDL_RenderFillRect(m_renderer, &innerRect);
+                    }
+                    else if (cell == CellType::StairStep2) {
+                        SDL_SetRenderDrawColor(m_renderer, 255, 200, 200, 255); // Light red tint
+                        SDL_Rect innerRect = { 
+                            cellRect.x + cellSize/4, 
+                            cellRect.y + cellSize/4, 
+                            cellSize/2, 
+                            cellSize/2 
+                        };
+                        SDL_RenderFillRect(m_renderer, &innerRect);
+                    }
+                    else if (cell == CellType::StairStep3) {
+                        SDL_SetRenderDrawColor(m_renderer, 200, 255, 200, 255); // Light green tint
+                        SDL_Rect innerRect = { 
+                            cellRect.x + cellSize/4, 
+                            cellRect.y + cellSize/4, 
+                            cellSize/2, 
+                            cellSize/2 
+                        };
+                        SDL_RenderFillRect(m_renderer, &innerRect);
+                    }
+                    break;
+                case CellType::Empty:
+                    if (elevation > 0) {
+                        // Light blue for elevated empty spaces
+                        SDL_SetRenderDrawColor(m_renderer, 100, 149, 237, 255);
+                        SDL_RenderFillRect(m_renderer, &cellRect);
+                    }
                     break;
                 default:
                     break;

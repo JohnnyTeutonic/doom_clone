@@ -47,64 +47,166 @@ void Player::update(double deltaTime, const Map& map) {
 }
 
 void Player::moveForward(double deltaTime, const Map& map) {
-    double dx = m_direction.x * m_moveSpeed * deltaTime;
-    double dy = m_direction.y * m_moveSpeed * deltaTime;
+    // Calculate new position
+    double newX = m_position.x + m_direction.x * m_moveSpeed * deltaTime;
+    double newY = m_position.y + m_direction.y * m_moveSpeed * deltaTime;
     
-    // Check collision for X movement
-    if (map.isValidPosition(m_position.x + dx, m_position.y)) {
-        m_position.x += dx;
+    // Check for valid position with collision detection
+    if (map.isValidPosition(newX, m_position.y)) {
+        m_position.x = newX;
+    }
+    if (map.isValidPosition(m_position.x, newY)) {
+        m_position.y = newY;
     }
     
-    // Check collision for Y movement
-    if (map.isValidPosition(m_position.x, m_position.y + dy)) {
-        m_position.y += dy;
+    // Check for stairs and stair steps to update elevation and camera angle
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    CellType currentCell = map.getCell(currentX, currentY);
+    
+    // Handle stairs and stair steps
+    if (map.isStairs(currentX, currentY) || map.isStairStep(currentX, currentY)) {
+        float currentStepHeight = map.getStepHeight(currentX, currentY);
+        
+        // Look ahead to see if we should change vertical angle
+        int lookAheadX = static_cast<int>(m_position.x + m_direction.x * 0.5);
+        int lookAheadY = static_cast<int>(m_position.y + m_direction.y * 0.5);
+        CellType lookAheadCell = map.getCell(lookAheadX, lookAheadY);
+        
+        // Only adjust vertical angle when moving between different step heights
+        if (map.isStairStep(lookAheadX, lookAheadY) || map.isStairs(lookAheadX, lookAheadY)) {
+            float lookAheadStepHeight = map.getStepHeight(lookAheadX, lookAheadY);
+            
+            // Calculate a smooth vertical angle based on step height difference
+            if (lookAheadStepHeight > currentStepHeight) {
+                // Going up
+                m_verticalAngle = (lookAheadStepHeight - currentStepHeight) * m_maxVerticalAngle * 0.6;
+            } else if (lookAheadStepHeight < currentStepHeight) {
+                // Going down
+                m_verticalAngle = (lookAheadStepHeight - currentStepHeight) * m_maxVerticalAngle * 0.6;
+            }
+        }
+    } else {
+        // When not on stairs, gradually return vertical angle to zero
+        if (m_verticalAngle > 0.01) {
+            m_verticalAngle -= m_verticalLookSpeed * deltaTime * 2.0;
+            if (m_verticalAngle < 0) m_verticalAngle = 0;
+        } else if (m_verticalAngle < -0.01) {
+            m_verticalAngle += m_verticalLookSpeed * deltaTime * 2.0;
+            if (m_verticalAngle > 0) m_verticalAngle = 0;
+        }
     }
 }
 
 void Player::moveBackward(double deltaTime, const Map& map) {
-    double dx = m_direction.x * m_moveSpeed * deltaTime;
-    double dy = m_direction.y * m_moveSpeed * deltaTime;
+    // Calculate new position
+    double newX = m_position.x - m_direction.x * m_moveSpeed * deltaTime;
+    double newY = m_position.y - m_direction.y * m_moveSpeed * deltaTime;
     
-    // Check collision for X movement
-    if (map.isValidPosition(m_position.x - dx, m_position.y)) {
-        m_position.x -= dx;
+    // Check for valid position with collision detection
+    if (map.isValidPosition(newX, m_position.y)) {
+        m_position.x = newX;
+    }
+    if (map.isValidPosition(m_position.x, newY)) {
+        m_position.y = newY;
     }
     
-    // Check collision for Y movement
-    if (map.isValidPosition(m_position.x, m_position.y - dy)) {
-        m_position.y -= dy;
+    // Check for stairs and stair steps to update elevation and camera angle
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    CellType currentCell = map.getCell(currentX, currentY);
+    
+    // Handle stairs and stair steps (going backward)
+    if (map.isStairs(currentX, currentY) || map.isStairStep(currentX, currentY)) {
+        float currentStepHeight = map.getStepHeight(currentX, currentY);
+        
+        // Look behind to see if we should change vertical angle
+        int lookBehindX = static_cast<int>(m_position.x - m_direction.x * 0.5);
+        int lookBehindY = static_cast<int>(m_position.y - m_direction.y * 0.5);
+        CellType lookBehindCell = map.getCell(lookBehindX, lookBehindY);
+        
+        // Only adjust vertical angle when moving between different step heights
+        if (map.isStairStep(lookBehindX, lookBehindY) || map.isStairs(lookBehindX, lookBehindY)) {
+            float lookBehindStepHeight = map.getStepHeight(lookBehindX, lookBehindY);
+            
+            // Calculate a smooth vertical angle based on step height difference (reversed since going backward)
+            if (lookBehindStepHeight > currentStepHeight) {
+                // Going down (when moving backward)
+                m_verticalAngle = (currentStepHeight - lookBehindStepHeight) * m_maxVerticalAngle * 0.6;
+            } else if (lookBehindStepHeight < currentStepHeight) {
+                // Going up (when moving backward)
+                m_verticalAngle = (currentStepHeight - lookBehindStepHeight) * m_maxVerticalAngle * 0.6;
+            }
+        }
+    } else {
+        // When not on stairs, gradually return vertical angle to zero
+        if (m_verticalAngle > 0.01) {
+            m_verticalAngle -= m_verticalLookSpeed * deltaTime * 2.0;
+            if (m_verticalAngle < 0) m_verticalAngle = 0;
+        } else if (m_verticalAngle < -0.01) {
+            m_verticalAngle += m_verticalLookSpeed * deltaTime * 2.0;
+            if (m_verticalAngle > 0) m_verticalAngle = 0;
+        }
     }
 }
 
 void Player::strafeLeft(double deltaTime, const Map& map) {
-    // Move perpendicular to the direction (to the left)
-    double dx = -m_direction.y * m_moveSpeed * deltaTime;
-    double dy = m_direction.x * m_moveSpeed * deltaTime;
+    // Calculate new position (perpendicular to direction vector)
+    double newX = m_position.x - m_plane.x * m_moveSpeed * deltaTime;
+    double newY = m_position.y - m_plane.y * m_moveSpeed * deltaTime;
     
-    // Check collision for X movement
-    if (map.isValidPosition(m_position.x + dx, m_position.y)) {
-        m_position.x += dx;
+    // Check for valid position with collision detection
+    if (map.isValidPosition(newX, m_position.y)) {
+        m_position.x = newX;
+    }
+    if (map.isValidPosition(m_position.x, newY)) {
+        m_position.y = newY;
     }
     
-    // Check collision for Y movement
-    if (map.isValidPosition(m_position.x, m_position.y + dy)) {
-        m_position.y += dy;
+    // Check if we're on stairs and update elevation accordingly
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    if (map.isStairs(currentX, currentY)) {
+        // Handle elevation changes similarly to forward/backward movement
+        int stairElevation = map.getCellElevation(currentX, currentY);
+        int lookSideX = static_cast<int>(m_position.x - m_plane.x * 0.5);
+        int lookSideY = static_cast<int>(m_position.y - m_plane.y * 0.5);
+        int lookSideElevation = map.getCellElevation(lookSideX, lookSideY);
+        
+        if (lookSideElevation != stairElevation) {
+            double targetAngle = (lookSideElevation > stairElevation) ? m_maxVerticalAngle / 2 : -m_maxVerticalAngle / 2;
+            m_verticalAngle = targetAngle;
+        }
     }
 }
 
 void Player::strafeRight(double deltaTime, const Map& map) {
-    // Move perpendicular to the direction (to the right)
-    double dx = m_direction.y * m_moveSpeed * deltaTime;
-    double dy = -m_direction.x * m_moveSpeed * deltaTime;
+    // Calculate new position (perpendicular to direction vector)
+    double newX = m_position.x + m_plane.x * m_moveSpeed * deltaTime;
+    double newY = m_position.y + m_plane.y * m_moveSpeed * deltaTime;
     
-    // Check collision for X movement
-    if (map.isValidPosition(m_position.x + dx, m_position.y)) {
-        m_position.x += dx;
+    // Check for valid position with collision detection
+    if (map.isValidPosition(newX, m_position.y)) {
+        m_position.x = newX;
+    }
+    if (map.isValidPosition(m_position.x, newY)) {
+        m_position.y = newY;
     }
     
-    // Check collision for Y movement
-    if (map.isValidPosition(m_position.x, m_position.y + dy)) {
-        m_position.y += dy;
+    // Check if we're on stairs and update elevation accordingly
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    if (map.isStairs(currentX, currentY)) {
+        // Handle elevation changes similarly to forward/backward movement
+        int stairElevation = map.getCellElevation(currentX, currentY);
+        int lookSideX = static_cast<int>(m_position.x + m_plane.x * 0.5);
+        int lookSideY = static_cast<int>(m_position.y + m_plane.y * 0.5);
+        int lookSideElevation = map.getCellElevation(lookSideX, lookSideY);
+        
+        if (lookSideElevation != stairElevation) {
+            double targetAngle = (lookSideElevation > stairElevation) ? m_maxVerticalAngle / 2 : -m_maxVerticalAngle / 2;
+            m_verticalAngle = targetAngle;
+        }
     }
 }
 

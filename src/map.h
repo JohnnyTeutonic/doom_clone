@@ -11,7 +11,12 @@ enum class CellType {
     Wall = 1,
     Door = 2,
     Item = 3,
-    Enemy = 4
+    Enemy = 4,
+    Stairs = 5,        // Stairs entry point
+    ElevatedWall = 6,  // Wall on the elevated level
+    StairStep1 = 7,    // First step of stairs (25% elevation)
+    StairStep2 = 8,    // Second step of stairs (50% elevation)
+    StairStep3 = 9     // Third step of stairs (75% elevation)
 };
 
 class Map {
@@ -20,6 +25,8 @@ private:
     int m_height;
     std::vector<CellType> m_cells;
     std::vector<int> m_wallTextures;  // texture ID for each wall cell
+    std::vector<int> m_cellElevation; // Elevation level for each cell (0=ground, 1=elevated)
+    std::vector<float> m_stepHeight;  // Fractional height for stairs (0.0-1.0)
 
 public:
     Map();
@@ -48,6 +55,18 @@ public:
     // Wall texture access
     int getWallTexture(int x, int y) const;
     void setWallTexture(int x, int y, int textureId);
+    
+    // Elevation access
+    int getCellElevation(int x, int y) const;
+    void setCellElevation(int x, int y, int elevation);
+    
+    // Get step height for stairs (0.0-1.0)
+    float getStepHeight(int x, int y) const;
+    void setStepHeight(int x, int y, float height);
+    
+    // Check if a cell is a stair or stair step
+    bool isStairs(int x, int y) const;
+    bool isStairStep(int x, int y) const;
     
     // Find a random empty position
     Vec2 getRandomEmptyPosition() const;

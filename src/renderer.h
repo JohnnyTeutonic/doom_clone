@@ -3,6 +3,11 @@
 
 #include <SDL2/SDL.h>
 #include <vector>
+#include <string>
+#include <cmath>
+#include <algorithm>
+#include <limits>
+#include <iostream>
 #include "utils.h"
 #include "map.h"
 #include "player.h"
@@ -21,6 +26,10 @@ enum class PerformanceLevel {
     High      // Full lighting effects (may impact performance)
 };
 
+// Forward declarations
+class SpriteManager;
+class ProjectileManager;
+
 // Renderer class for raycasting
 class Renderer {
 private:
@@ -28,6 +37,7 @@ private:
     SDL_Renderer* m_renderer;
     int m_screenWidth;
     int m_screenHeight;
+    bool m_fullscreen;
     
     // Rendering buffers
     std::vector<double> m_zBuffer;  // Depth buffer for sprite rendering
@@ -57,6 +67,9 @@ private:
     const Vec2 m_normalRight{1.0, 0.0};
     const Vec2 m_normalUp{0.0, -1.0};
     const Vec2 m_normalDown{0.0, 1.0};
+    
+    // Wall texture variations for different wall types
+    std::vector<int> m_wallTextureVariations;
     
     // Calculate surface normal for lighting - optimized to use pre-calculated normals
     Vec2 calculateSurfaceNormal(bool side, const Vec2& rayDir) const {
@@ -90,6 +103,11 @@ public:
     SpriteManager* getSpriteManager() const { return m_spriteManager; }
     ProjectileManager* getProjectileManager() const { return m_projectileManager; }
     LightingSystem& getLightingSystem() { return m_lightingSystem; }
+    
+    // Add wall texture variations
+    void addWallTextureVariation(int textureId) { m_wallTextureVariations.push_back(textureId); }
+    void clearWallTextureVariations() { m_wallTextureVariations.clear(); }
+    const std::vector<int>& getWallTextureVariations() const { return m_wallTextureVariations; }
     
     // Render a frame
     void render(const Map& map, const Player& player, double deltaTime, double recoil = 0.0, double flashIntensity = 0.0);
