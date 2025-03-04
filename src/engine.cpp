@@ -354,10 +354,10 @@ void Engine::processInput() {
     if (keyState[SDL_SCANCODE_S]) {
         m_player.moveBackward(moveSpeed, m_map);
     }
-    if (keyState[SDL_SCANCODE_A]) {
+    if (keyState[SDL_SCANCODE_D]) {
         m_player.rotateLeft(rotSpeed);
     }
-    if (keyState[SDL_SCANCODE_D]) {
+    if (keyState[SDL_SCANCODE_A]) {
         m_player.rotateRight(rotSpeed);
     }
     

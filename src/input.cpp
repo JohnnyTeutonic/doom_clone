@@ -20,8 +20,8 @@ void InputHandler::init() {
     // Set up default key bindings
     bindKey(SDL_SCANCODE_W, InputAction::MoveForward);
     bindKey(SDL_SCANCODE_S, InputAction::MoveBackward);
-    bindKey(SDL_SCANCODE_A, InputAction::StrafeLeft);
-    bindKey(SDL_SCANCODE_D, InputAction::StrafeRight);
+    bindKey(SDL_SCANCODE_D, InputAction::StrafeLeft);
+    bindKey(SDL_SCANCODE_A, InputAction::StrafeRight);
     bindKey(SDL_SCANCODE_LEFT, InputAction::RotateLeft);
     bindKey(SDL_SCANCODE_RIGHT, InputAction::RotateRight);
     bindKey(SDL_SCANCODE_SPACE, InputAction::Fire);
