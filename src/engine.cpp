@@ -399,11 +399,11 @@ void Engine::processInput() {
         m_player.rotateLeft(rotSpeed);
     }
     
-    // Handle vertical looking with Page Up and Page Down
-    if (keyState[SDL_SCANCODE_PAGEUP]) {
+    // Handle vertical looking with Up and Down arrow keys
+    if (keyState[SDL_SCANCODE_UP]) {
         m_player.lookUp(m_deltaTime);
     }
-    if (keyState[SDL_SCANCODE_PAGEDOWN]) {
+    if (keyState[SDL_SCANCODE_DOWN]) {
         m_player.lookDown(m_deltaTime);
     }
     
