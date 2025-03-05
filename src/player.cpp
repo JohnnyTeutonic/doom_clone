@@ -30,9 +30,10 @@ Player::Player()
     , m_powerUpDuration(0.0)
     , m_isJumping(false)
     , m_verticalVelocity(0.0)
-    , m_jumpForce(12.0)     // Increased jump force for better feel
-    , m_gravity(30.0)      // Increased gravity for snappier jumps
+    , m_jumpForce(40.0)     // Increased for more immediate initial jump
+    , m_gravity(60.0)      // Increased for faster fall and more responsive feel
     , m_groundLevel(0.0)   // Ground level reference
+    , m_jumpHeight(0.0)    // Initialize jump height
 {
 }
 
@@ -1161,26 +1162,44 @@ void Player::jump() {
     if (isOnGround()) {
         m_isJumping = true;
         m_verticalVelocity = m_jumpForce;
+        m_jumpHeight = 0.001; // Tiny initial offset to get off ground immediately
+        std::cout << "Jump initiated! Velocity: " << m_verticalVelocity << std::endl;
     }
 }
 
 void Player::updateJump(double deltaTime) {
-    if (m_isJumping) {
-        // Apply gravity
-        m_verticalVelocity -= m_gravity * deltaTime;
-        
-        // Update vertical position
-        m_verticalAngle += m_verticalVelocity * deltaTime;
-        
-        // Check if we've hit the ground
-        if (m_verticalAngle <= m_groundLevel) {
-            m_verticalAngle = m_groundLevel;
-            m_verticalVelocity = 0.0;
-            m_isJumping = false;
-        }
+    // Cap deltaTime to prevent physics glitches
+    deltaTime = std::min(deltaTime, 0.033); // Cap at ~30 FPS equivalent
+    
+    // Apply gravity and update position even if not actively jumping
+    m_verticalVelocity -= m_gravity * deltaTime;
+    
+    // Update jump height based on velocity with smoothing
+    double oldHeight = m_jumpHeight;
+    m_jumpHeight += m_verticalVelocity * deltaTime;
+    
+    // Add a small amount of air control (slight upward boost at jump start)
+    if (m_isJumping && m_jumpHeight < 0.1) {
+        m_verticalVelocity *= 1.1; // Small boost at the start
+    }
+    
+    // Add slight air resistance
+    m_verticalVelocity *= (1.0 - 0.1 * deltaTime);
+    
+    // Check for ground collision with bounce damping
+    if (m_jumpHeight <= m_groundLevel) {
+        m_jumpHeight = m_groundLevel;
+        m_verticalVelocity = 0.0;
+        m_isJumping = false;
+    }
+    
+    // Debug output only when values change significantly
+    if (m_isJumping || fabs(m_verticalVelocity) > 0.1 || fabs(m_jumpHeight - oldHeight) > 0.001) {
+        std::cout << "Jump Update - Velocity: " << m_verticalVelocity 
+                  << ", Height: " << m_jumpHeight << std::endl;
     }
 }
 
 bool Player::isOnGround() const {
-    return !m_isJumping && m_verticalAngle <= m_groundLevel;
+    return m_jumpHeight <= m_groundLevel && m_verticalVelocity <= 0;
 } 

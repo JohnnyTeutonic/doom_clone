@@ -16,7 +16,8 @@ struct PlayerData {
     float dirY;
     float planeX;
     float planeY;
-    float verticalAngle;  // Added for jumping support
+    float verticalAngle;  // Look up/down angle
+    float jumpHeight;     // Current jump height
 };
 
 // Forward declaration of CUDA wrapper function

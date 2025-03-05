@@ -77,6 +77,7 @@ private:
     double m_jumpForce;
     double m_gravity;
     double m_groundLevel;
+    double m_jumpHeight;     // Current height of jump (separate from look angle)
     
 public:
     Player();
@@ -130,6 +131,7 @@ public:
     double getVerticalAngle() const { return m_verticalAngle; }
     double getHealth() const { return m_health; }
     int getAmmo() const { return m_ammo; }
+    double getJumpHeight() const { return m_jumpHeight; }
     
     // Setters
     void setPosition(const Vec2& position) { m_position = position; }

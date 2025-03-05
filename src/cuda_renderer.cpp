@@ -320,7 +320,8 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
     hostPlayerData.dirY = player.getDirY();
     hostPlayerData.planeX = player.getPlaneX();
     hostPlayerData.planeY = player.getPlaneY();
-    hostPlayerData.verticalAngle = player.getVerticalAngle();  // Added for jumping support
+    hostPlayerData.verticalAngle = player.getVerticalAngle();
+    hostPlayerData.jumpHeight = player.getJumpHeight();
     
     cudaMemcpy(m_devicePlayerData, &hostPlayerData, sizeof(PlayerData), cudaMemcpyHostToDevice);
 }

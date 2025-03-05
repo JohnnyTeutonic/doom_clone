@@ -128,15 +128,17 @@ void Renderer::renderView(const Map& map, const Player& player) {
     // Clear the z-buffer
     std::fill(m_zBuffer.begin(), m_zBuffer.end(), std::numeric_limits<double>::max());
     
-    // Get player position, direction, and vertical angle
+    // Get player position, direction, and vertical angles
     const Vec2& pos = player.getPosition();
     const Vec2& dir = player.getDirection();
     const Vec2& plane = player.getPlane();
-    double verticalAngle = player.getVerticalAngle();  // Get the vertical look angle
+    double verticalAngle = player.getVerticalAngle();  // Look up/down angle
+    double jumpHeight = player.getJumpHeight();        // Current jump height
     
     // Calculate vertical offset based on both looking angle and jumping
-    // Scale the jumping effect to be more noticeable
-    int verticalOffset = static_cast<int>((verticalAngle * 2.0) * m_screenHeight / 2);
+    int lookOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
+    int jumpOffset = static_cast<int>(jumpHeight * m_screenHeight);  // Scale jump height to screen space
+    int totalVerticalOffset = lookOffset + jumpOffset;
     
     // Get player's elevation level (determine from map cell)
     int playerX = static_cast<int>(pos.x);
@@ -151,7 +153,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
         Vec2 rayDir = dir + plane * cameraX;
         
         // Apply vertical offset to wall and sprite rendering
-        int effectiveVerticalOffset = verticalOffset;
+        int effectiveVerticalOffset = totalVerticalOffset;
         
         // Calculate which box of the map we're in
         Vec2 mapPos(static_cast<int>(pos.x), static_cast<int>(pos.y));
@@ -432,15 +434,15 @@ void Renderer::renderView(const Map& map, const Player& player) {
             int rowSkip = 1; // Start with rendering every row
             
             // For each horizontal line on the screen from the middle down to the bottom
-            for (int y = m_screenHeight / 2 + verticalOffset; y < m_screenHeight; y += rowSkip) {
+            for (int y = m_screenHeight / 2 + totalVerticalOffset; y < m_screenHeight; y += rowSkip) {
                 // Increase row skipping as we get further from horizon
-                if (y > m_screenHeight / 2 + verticalOffset + 50) rowSkip = 2;
-                if (y > m_screenHeight / 2 + verticalOffset + 100) rowSkip = 4;
+                if (y > m_screenHeight / 2 + totalVerticalOffset + 50) rowSkip = 2;
+                if (y > m_screenHeight / 2 + totalVerticalOffset + 100) rowSkip = 4;
                 
                 // Calculate the ray direction for this row
                 // Current y position compared to the center of the screen (horizon)
                 float posZ = 0.5 * m_screenHeight; // Player's view height
-                float rowDistance = posZ / (y - m_screenHeight / 2 - verticalOffset);
+                float rowDistance = posZ / (y - m_screenHeight / 2 - totalVerticalOffset);
                 
                 // Calculate the real world step vector we have to add for each x
                 float floorStepX = rowDistance * (2.0 * plane.x) / m_screenWidth;
@@ -502,7 +504,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
                     
                     // Draw ceiling pixels for this step only if ceiling rendering is enabled
                     if (m_showCeilings) {
-                        int ceilingY = m_screenHeight - y - 1 + 2 * verticalOffset;
+                        int ceilingY = m_screenHeight - y - 1 + 2 * totalVerticalOffset;
                         if (ceilingY >= 0 && ceilingY < m_screenHeight) {
                             SDL_SetRenderDrawColor(m_renderer, ceilingColor.r, ceilingColor.g, ceilingColor.b, ceilingColor.a);
                             for (int i = 0; i < step && x + i < m_screenWidth; i++) {

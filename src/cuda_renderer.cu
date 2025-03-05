@@ -37,16 +37,15 @@ extern "C" __global__ void raycastKernel(
     float planeY = playerData->planeY;
     float verticalAngle = playerData->verticalAngle;
     
-    // Calculate vertical offset for jumping
-    int verticalOffset = static_cast<int>((verticalAngle * 2.0f) * screenHeight / 2);
+    // Calculate total vertical offset from both look angle and jump height
+    float lookOffset = playerData->verticalAngle * screenHeight / 2.0f;
+    float jumpOffset = playerData->jumpHeight * screenHeight * 0.75f;  // Reduced scaling for more natural jump height
+    float totalVerticalOffset = lookOffset + jumpOffset;
     
     // Calculate ray position and direction
     float cameraX = 2.0f * x / static_cast<float>(screenWidth) - 1.0f;
     float rayDirX = dirX + planeX * cameraX;
     float rayDirY = dirY + planeY * cameraX;
-    
-    // Apply vertical offset to drawing calculations
-    int effectiveY = y - verticalOffset;
     
     // Map position
     int mapX = static_cast<int>(posX);
@@ -135,16 +134,16 @@ extern "C" __global__ void raycastKernel(
         perpWallDist = (sideDistY - deltaDistY);
     }
     
-    // Save z-buffer value
-    zBuffer[effectiveY * screenWidth + x] = perpWallDist;
+    // Save z-buffer value - use original y coordinate
+    zBuffer[y * screenWidth + x] = perpWallDist;
     
     // Calculate height of line to draw on screen
     int lineHeight = static_cast<int>(screenHeight / perpWallDist);
     
-    // Calculate lowest and highest pixel to fill in current stripe
-    int drawStart = -lineHeight / 2 + screenHeight / 2;
+    // Calculate drawing boundaries with vertical offset
+    int drawStart = -lineHeight / 2 + screenHeight / 2 + static_cast<int>(totalVerticalOffset);
     if (drawStart < 0) drawStart = 0;
-    int drawEnd = lineHeight / 2 + screenHeight / 2;
+    int drawEnd = lineHeight / 2 + screenHeight / 2 + static_cast<int>(totalVerticalOffset);
     if (drawEnd >= screenHeight) drawEnd = screenHeight - 1;
     
     // Texturing calculations
@@ -281,8 +280,11 @@ extern "C" __global__ void raycastKernel(
         
         // Draw floor and ceiling from drawEnd to bottom of screen
         for (int i = drawEnd + 1; i < screenHeight; i++) {
-            // Current distance from camera to floor
-            float currentDist = screenHeight / (2.0f * i - screenHeight);
+            // Adjust i for the vertical offset when calculating distances
+            float adjustedI = i - totalVerticalOffset;
+            
+            // Current distance from camera to floor using adjusted i
+            float currentDist = screenHeight / (2.0f * adjustedI - screenHeight);
             
             // Weight for interpolation between wall position and player position
             float weight = currentDist / perpWallDist;
@@ -358,10 +360,10 @@ extern "C" __global__ void raycastKernel(
             
             ceilingColor = (0xFF << 24) | (cr << 16) | (cg << 8) | cb;
             
-            // Draw floor pixel
+            // Draw floor pixel using original i coordinate
             frameBuffer[i * screenWidth + x] = floorColor;
             
-            // Draw ceiling pixel (symmetrical)
+            // Draw ceiling pixel using original coordinates
             int ceilingY = screenHeight - i - 1;
             if (ceilingY >= 0 && ceilingY < drawStart) {
                 frameBuffer[ceilingY * screenWidth + x] = ceilingColor;
