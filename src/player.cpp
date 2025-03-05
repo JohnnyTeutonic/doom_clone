@@ -31,8 +31,8 @@ Player::Player()
     , m_powerUpDuration(0.0)
     , m_isJumping(false)
     , m_verticalVelocity(0.0)
-    , m_jumpForce(40.0)     // Increased for more immediate initial jump
-    , m_gravity(60.0)      // Increased for faster fall and more responsive feel
+    , m_jumpForce(8.0)     // DOOM-style jump force - less bouncy, more controlled
+    , m_gravity(20.0)      // DOOM-style gravity - gentler for a more predictable arc
     , m_groundLevel(0.0)   // Ground level reference
     , m_jumpHeight(0.0)    // Initialize jump height
 {
@@ -1162,11 +1162,15 @@ void Player::updatePowerUps(double deltaTime) {
 }
 
 void Player::jump() {
+    // Only allow jump if we're on the ground
     if (isOnGround()) {
         m_isJumping = true;
+        // DOOM-style jumping has a strong initial upward force
         m_verticalVelocity = m_jumpForce;
         m_jumpHeight = 0.001; // Tiny initial offset to get off ground immediately
-        std::cout << "Jump initiated! Velocity: " << m_verticalVelocity << std::endl;
+        
+        // In DOOM, there's a distinctive jump sound
+        std::cout << "Player jumped! Initial velocity: " << m_verticalVelocity << std::endl;
     }
 }
 
@@ -1174,32 +1178,37 @@ void Player::updateJump(double deltaTime) {
     // Cap deltaTime to prevent physics glitches
     deltaTime = std::min(deltaTime, 0.033); // Cap at ~30 FPS equivalent
     
-    // Apply gravity and update position even if not actively jumping
+    // Apply gravity and update position
     m_verticalVelocity -= m_gravity * deltaTime;
     
-    // Update jump height based on velocity with smoothing
+    // Update jump height based on velocity
     double oldHeight = m_jumpHeight;
     m_jumpHeight += m_verticalVelocity * deltaTime;
     
-    // Add a small amount of air control (slight upward boost at jump start)
-    if (m_isJumping && m_jumpHeight < 0.1) {
-        m_verticalVelocity *= 1.1; // Small boost at the start
+    // DOOM-style: Less air control, more predictable arc
+    // Add a slight constant downward acceleration for more DOOM-like feel
+    if (m_isJumping && m_jumpHeight > 0.1) {
+        m_verticalVelocity -= 5.0 * deltaTime; // Extra downward acceleration for faster drop
     }
     
-    // Add slight air resistance
-    m_verticalVelocity *= (1.0 - 0.1 * deltaTime);
+    // Add slight air resistance - less than before for more DOOM-like physics
+    m_verticalVelocity *= (1.0 - 0.05 * deltaTime);
     
-    // Check for ground collision with bounce damping
+    // Check for ground collision
     if (m_jumpHeight <= m_groundLevel) {
         m_jumpHeight = m_groundLevel;
         m_verticalVelocity = 0.0;
         m_isJumping = false;
+        
+        // DOOM-style: Add a slight landing sound/effect
+        if (oldHeight > m_groundLevel + 0.1) { // Only if falling from a significant height
+            std::cout << "Player landed from jump" << std::endl;
+        }
     }
     
     // Debug output only when values change significantly
     if (m_isJumping || fabs(m_verticalVelocity) > 0.1 || fabs(m_jumpHeight - oldHeight) > 0.001) {
-        std::cout << "Jump Update - Velocity: " << m_verticalVelocity 
-                  << ", Height: " << m_jumpHeight << std::endl;
+        std::cout << "Jump Height: " << m_jumpHeight << ", Velocity: " << m_verticalVelocity << std::endl;
     }
 }
 

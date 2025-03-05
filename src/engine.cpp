@@ -2664,9 +2664,12 @@ void Engine::handlePlayingInput() {
         m_player.strafeRight(m_deltaTime, m_map);
     }
     
-    // Jumping
-    if (keyboardState[SDL_SCANCODE_SPACE]) {
+    // Jumping - DOOM-style: Jump only on key press, not while held down
+    if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
         m_player.jump();
+        m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
+    } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
+        m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
     }
     
     // Weapon firing
