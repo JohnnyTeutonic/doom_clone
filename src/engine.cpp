@@ -2567,6 +2567,47 @@ void Engine::handlePlayingInput() {
     // Get keyboard state
     const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
     
+    // Process mouse look for both vertical and horizontal movement
+    int mouseX, mouseY;
+    m_inputHandler.getMouseMotion(mouseX, mouseY);
+    
+    // Vertical mouse movement (look up/down)
+    if (mouseY != 0) {
+        // Pass Y movement to player's vertical angle setter
+        m_player.setVerticalAngle(static_cast<double>(mouseY));
+    }
+    
+    // Horizontal mouse movement (turn left/right)
+    if (mouseX != 0) {
+        // Rotate based on X mouse movement
+        // Negative mouseX = turn left, positive mouseX = turn right
+        double rotationAmount = static_cast<double>(mouseX) * 0.003;  // Scale factor for sensitivity
+        double oldDirX = m_player.getDirX();
+        double oldDirY = m_player.getDirY();
+        double oldPlaneX = m_player.getPlaneX();
+        double oldPlaneY = m_player.getPlaneY();
+        
+        // Rotation matrix
+        double cosRot = cos(-rotationAmount);  // Negative because mouseX right should rotate right
+        double sinRot = sin(-rotationAmount);
+        
+        // Update player direction vector
+        Vec2 newDir(
+            oldDirX * cosRot - oldDirY * sinRot,
+            oldDirX * sinRot + oldDirY * cosRot
+        );
+        
+        // Update player camera plane
+        Vec2 newPlane(
+            oldPlaneX * cosRot - oldPlaneY * sinRot,
+            oldPlaneX * sinRot + oldPlaneY * cosRot
+        );
+        
+        // Set the new direction and plane
+        m_player.setDirection(newDir);
+        m_player.setPlane(newPlane);
+    }
+    
     // Movement
     if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
         m_player.moveForward(m_deltaTime, m_map);
@@ -2674,6 +2715,9 @@ void Engine::handlePlayingInput() {
             std::cout << "Weapon projectile creation failed" << std::endl;
         }
     }
+    
+    // Reset mouse movement deltas so they don't accumulate
+    m_inputHandler.resetMouseRel();
 }
 
 void Engine::handleMainMenuInput() {

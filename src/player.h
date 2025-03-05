@@ -43,10 +43,11 @@ private:
     double m_health;      // Player health
     int m_ammo;           // Ammo count
     
-    // Vertical look angle (in radians)
-    double m_verticalAngle;
-    double m_verticalLookSpeed;
-    double m_maxVerticalAngle;    // Maximum up/down look angle (in radians)
+    // Vertical look properties
+    double m_verticalAngle;      // Look up/down angle (in radians)
+    double m_lookAngle;          // For mouse look only
+    double m_verticalLookSpeed;  // Speed of looking up/down
+    double m_maxVerticalAngle;   // Maximum up/down look angle (in radians)
     
     // Weapon system
     WeaponType m_currentWeapon;
@@ -101,6 +102,7 @@ public:
     // Look up/down methods
     void lookUp(double deltaTime);
     void lookDown(double deltaTime);
+    double getVerticalAngle() const { return m_verticalAngle; }
     
     // Weapon methods
     bool fire();
@@ -128,7 +130,6 @@ public:
     const Vec2& getPlane() const { return m_plane; }
     double getPlaneX() const { return m_plane.x; }
     double getPlaneY() const { return m_plane.y; }
-    double getVerticalAngle() const { return m_verticalAngle; }
     double getHealth() const { return m_health; }
     int getAmmo() const { return m_ammo; }
     double getJumpHeight() const { return m_jumpHeight; }
@@ -138,10 +139,10 @@ public:
     void setDirection(const Vec2& direction) { m_direction = direction.normalized(); }
     void setMoveSpeed(double speed) { m_moveSpeed = speed; }
     void setRotSpeed(double speed) { m_rotSpeed = speed; }
-    void setVerticalAngle(double angle);
-    void setVerticalLookSpeed(double speed) { m_verticalLookSpeed = speed; }
     void setHealth(double health) { m_health = health; }
     void setAmmo(int ammo) { m_ammo = ammo; }
+    void setVerticalLookSpeed(double speed) { m_verticalLookSpeed = speed; }
+    void setPlane(const Vec2& plane) { m_plane = plane; }
     void setProjectileManager(ProjectileManager* manager) { m_projectileManager = manager; }
     void setSpriteManager(SpriteManager* manager) { m_spriteManager = manager; }
     
@@ -165,6 +166,21 @@ public:
     void jump();
     void updateJump(double deltaTime);
     bool isOnGround() const;
+
+    // Add getter for combined vertical offset
+    double getVerticalOffset() const { 
+        return m_verticalAngle + m_lookAngle + m_jumpHeight; 
+    }
+
+    // Update vertical angle setter to only affect look angle
+    void setVerticalAngle(double angle) {
+        // Scale for mouse sensitivity and clamp
+        double scaledAngle = angle * m_verticalLookSpeed * 0.001;
+        // Manual clamping implementation
+        if (scaledAngle < -m_maxVerticalAngle) scaledAngle = -m_maxVerticalAngle;
+        if (scaledAngle > m_maxVerticalAngle) scaledAngle = m_maxVerticalAngle;
+        m_lookAngle = scaledAngle;
+    }
 };
 
 #endif // PLAYER_H 

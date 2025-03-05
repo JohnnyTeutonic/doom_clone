@@ -12,8 +12,9 @@ Player::Player()
     , m_rotSpeed(3.0)
     , m_health(100.0)
     , m_ammo(50)
-    , m_verticalAngle(0.0)
-    , m_verticalLookSpeed(2.0)
+    , m_verticalAngle(0.0)  // For stairs and world effects
+    , m_lookAngle(0.0)      // For mouse look
+    , m_verticalLookSpeed(3.0)
     , m_maxVerticalAngle(M_PI / 4.0)  // 45 degrees up/down
     , m_projectileManager(nullptr)
     , m_spriteManager(nullptr)
@@ -44,8 +45,9 @@ void Player::init(double x, double y, double dirX, double dirY) {
     // Set camera plane perpendicular to direction (for 66 degree FOV)
     m_plane = Vec2(-m_direction.y, m_direction.x) * 0.66;
     
-    // Reset vertical angle and jumping state
+    // Reset angles and jumping state
     m_verticalAngle = 0.0;
+    m_lookAngle = 0.0;
     m_verticalVelocity = 0.0;
     m_isJumping = false;
     
@@ -504,24 +506,25 @@ void Player::rotateRight(double deltaTime) {
 }
 
 void Player::lookUp(double deltaTime) {
-    // Adjust vertical angle, clamping to prevent looking too far up
-    m_verticalAngle += m_verticalLookSpeed * deltaTime;
-    if (m_verticalAngle > m_maxVerticalAngle) {
-        m_verticalAngle = m_maxVerticalAngle;
+    // For mouse movement, we don't want to multiply by deltaTime
+    // as mouse input already gives us a delta
+    m_lookAngle += m_verticalLookSpeed;
+    
+    // Clamp to maximum look angle
+    if (m_lookAngle > m_maxVerticalAngle) {
+        m_lookAngle = m_maxVerticalAngle;
     }
 }
 
 void Player::lookDown(double deltaTime) {
-    // Adjust vertical angle, clamping to prevent looking too far down
-    m_verticalAngle -= m_verticalLookSpeed * deltaTime;
-    if (m_verticalAngle < -m_maxVerticalAngle) {
-        m_verticalAngle = -m_maxVerticalAngle;
+    // For mouse movement, we don't want to multiply by deltaTime
+    // as mouse input already gives us a delta
+    m_lookAngle -= m_verticalLookSpeed;
+    
+    // Clamp to maximum look angle
+    if (m_lookAngle < -m_maxVerticalAngle) {
+        m_lookAngle = -m_maxVerticalAngle;
     }
-}
-
-void Player::setVerticalAngle(double angle) {
-    // Clamp the vertical angle to the allowed range
-    m_verticalAngle = std::max(-m_maxVerticalAngle, std::min(angle, m_maxVerticalAngle));
 }
 
 void Player::setCurrentWeapon(WeaponType weapon) {

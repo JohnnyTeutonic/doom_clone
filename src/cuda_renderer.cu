@@ -35,12 +35,10 @@ extern "C" __global__ void raycastKernel(
     float dirY = playerData->dirY;
     float planeX = playerData->planeX;
     float planeY = playerData->planeY;
-    float verticalAngle = playerData->verticalAngle;
+    float verticalAngle = playerData->verticalAngle;  // This is now the total offset
     
-    // Calculate total vertical offset from both look angle and jump height
-    float lookOffset = playerData->verticalAngle * screenHeight / 2.0f;
-    float jumpOffset = playerData->jumpHeight * screenHeight * 0.75f;  // Reduced scaling for more natural jump height
-    float totalVerticalOffset = lookOffset + jumpOffset;
+    // Calculate vertical offset for rendering
+    float totalVerticalOffset = verticalAngle * screenHeight / 2.0f;  // Scale to screen space
     
     // Calculate ray position and direction
     float cameraX = 2.0f * x / static_cast<float>(screenWidth) - 1.0f;

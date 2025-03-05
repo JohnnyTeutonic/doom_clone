@@ -132,13 +132,12 @@ void Renderer::renderView(const Map& map, const Player& player) {
     const Vec2& pos = player.getPosition();
     const Vec2& dir = player.getDirection();
     const Vec2& plane = player.getPlane();
-    double verticalAngle = player.getVerticalAngle();  // Look up/down angle
-    double jumpHeight = player.getJumpHeight();        // Current jump height
     
-    // Calculate vertical offset based on both looking angle and jumping
-    int lookOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
-    int jumpOffset = static_cast<int>(jumpHeight * m_screenHeight);  // Scale jump height to screen space
-    int totalVerticalOffset = lookOffset + jumpOffset;
+    // Use the combined vertical offset value that includes look angle, world effects, and jump height
+    double totalVerticalOffset = player.getVerticalOffset();
+    
+    // Calculate screen-space vertical offset
+    int screenSpaceOffset = static_cast<int>(totalVerticalOffset * m_screenHeight / 2);
     
     // Get player's elevation level (determine from map cell)
     int playerX = static_cast<int>(pos.x);
@@ -153,7 +152,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
         Vec2 rayDir = dir + plane * cameraX;
         
         // Apply vertical offset to wall and sprite rendering
-        int effectiveVerticalOffset = totalVerticalOffset;
+        int effectiveVerticalOffset = screenSpaceOffset;
         
         // Calculate which box of the map we're in
         Vec2 mapPos(static_cast<int>(pos.x), static_cast<int>(pos.y));
@@ -434,15 +433,15 @@ void Renderer::renderView(const Map& map, const Player& player) {
             int rowSkip = 1; // Start with rendering every row
             
             // For each horizontal line on the screen from the middle down to the bottom
-            for (int y = m_screenHeight / 2 + totalVerticalOffset; y < m_screenHeight; y += rowSkip) {
+            for (int y = m_screenHeight / 2 + screenSpaceOffset; y < m_screenHeight; y += rowSkip) {
                 // Increase row skipping as we get further from horizon
-                if (y > m_screenHeight / 2 + totalVerticalOffset + 50) rowSkip = 2;
-                if (y > m_screenHeight / 2 + totalVerticalOffset + 100) rowSkip = 4;
+                if (y > m_screenHeight / 2 + screenSpaceOffset + 50) rowSkip = 2;
+                if (y > m_screenHeight / 2 + screenSpaceOffset + 100) rowSkip = 4;
                 
                 // Calculate the ray direction for this row
                 // Current y position compared to the center of the screen (horizon)
                 float posZ = 0.5 * m_screenHeight; // Player's view height
-                float rowDistance = posZ / (y - m_screenHeight / 2 - totalVerticalOffset);
+                float rowDistance = posZ / (y - m_screenHeight / 2 - screenSpaceOffset);
                 
                 // Calculate the real world step vector we have to add for each x
                 float floorStepX = rowDistance * (2.0 * plane.x) / m_screenWidth;
@@ -504,7 +503,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
                     
                     // Draw ceiling pixels for this step only if ceiling rendering is enabled
                     if (m_showCeilings) {
-                        int ceilingY = m_screenHeight - y - 1 + 2 * totalVerticalOffset;
+                        int ceilingY = m_screenHeight - y - 1 + 2 * screenSpaceOffset;
                         if (ceilingY >= 0 && ceilingY < m_screenHeight) {
                             SDL_SetRenderDrawColor(m_renderer, ceilingColor.r, ceilingColor.g, ceilingColor.b, ceilingColor.a);
                             for (int i = 0; i < step && x + i < m_screenWidth; i++) {
@@ -534,10 +533,10 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
     const Vec2& pos = player.getPosition();
     const Vec2& dir = player.getDirection();
     const Vec2& plane = player.getPlane();
-    double verticalAngle = player.getVerticalAngle();
     
-    // Calculate vertical offset based on vertical angle
-    int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
+    // Use the combined vertical offset
+    double totalVerticalOffset = player.getVerticalOffset();
+    int verticalOffsetPixels = static_cast<int>(totalVerticalOffset * m_screenHeight / 2);
     
     // Get all active sprites
     std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
@@ -568,15 +567,15 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
         double transformX = invDet * (dir.y * spritePos.x - dir.x * spritePos.y);
         double transformY = invDet * (-plane.y * spritePos.x + plane.x * spritePos.y);
         
-        // Calculate sprite screen position
-        int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
+        // Calculate screen position
+        int screenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
         
         // Calculate sprite height and width on screen
         int spriteHeight = abs(static_cast<int>(m_screenHeight / transformY));
         int spriteWidth = spriteHeight;  // Assuming square sprites
         
         // Apply vertical offset
-        int verticalOffsetPixels = static_cast<int>(verticalAngle * m_screenHeight / 2);
+        int verticalOffsetPixels = static_cast<int>(totalVerticalOffset * m_screenHeight / 2);
         
         // Calculate drawing boundaries
         int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffsetPixels;
@@ -584,9 +583,9 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
         int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffsetPixels;
         if (drawEndY >= m_screenHeight) drawEndY = m_screenHeight - 1;
         
-        int drawStartX = -spriteWidth / 2 + spriteScreenX;
+        int drawStartX = -spriteWidth / 2 + screenX;
         if (drawStartX < 0) drawStartX = 0;
-        int drawEndX = spriteWidth / 2 + spriteScreenX;
+        int drawEndX = spriteWidth / 2 + screenX;
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
         // Get sprite texture

@@ -320,8 +320,8 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
     hostPlayerData.dirY = player.getDirY();
     hostPlayerData.planeX = player.getPlaneX();
     hostPlayerData.planeY = player.getPlaneY();
-    hostPlayerData.verticalAngle = player.getVerticalAngle();
-    hostPlayerData.jumpHeight = player.getJumpHeight();
+    hostPlayerData.verticalAngle = player.getVerticalOffset();  // Use combined offset
+    hostPlayerData.jumpHeight = 0.0f;  // No longer needed as it's included in verticalOffset
     
     cudaMemcpy(m_devicePlayerData, &hostPlayerData, sizeof(PlayerData), cudaMemcpyHostToDevice);
 }
