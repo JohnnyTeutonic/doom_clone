@@ -124,6 +124,12 @@ public:
     // Render sprites
     void renderSprites(const Player& player);
     
+    // Render sprites with map for sector culling
+    void renderSprites(const Map& map, const Player& player);
+    
+    // Render UI elements
+    void renderUI(const Player& player);
+    
     // Render projectiles
     void renderProjectiles(const Player& player);
     

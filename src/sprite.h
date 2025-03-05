@@ -101,8 +101,12 @@ public:
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
+    double getX() const { return m_position.x; }
+    double getY() const { return m_position.y; }
     const Vec2& getDirection() const { return m_direction; }
     double getSize() const { return m_size; }
+    int getWidth() const { return static_cast<int>(m_size * 64); }  // Assuming 64x64 texture
+    int getHeight() const { return static_cast<int>(m_size * 64); } // Assuming 64x64 texture
     int getTextureId() const { return m_textureId; }
     SpriteType getType() const { return m_type; }
     bool isVisible() const { return m_isVisible; }
@@ -168,8 +172,16 @@ private:
     std::vector<Sprite> m_sprites;
     const TextureManager* m_textureManager;
     
+    // Singleton instance
+    static SpriteManager* s_instance;
+    
 public:
     SpriteManager(const TextureManager* textureManager);
+    ~SpriteManager();
+    
+    // Singleton access
+    static SpriteManager* getInstance() { return s_instance; }
+    static void setInstance(SpriteManager* instance) { s_instance = instance; }
     
     // Add a new sprite and return its ID
     int addSprite(double x, double y, double size, int textureId, SpriteType type);
@@ -187,7 +199,13 @@ public:
     Sprite* getSprite(int id);
     
     // Get all sprites
-    const std::vector<Sprite>& getSprites() const { return m_sprites; }
+    std::vector<Sprite*> getSprites() const {
+        std::vector<Sprite*> spritePointers;
+        for (size_t i = 0; i < m_sprites.size(); ++i) {
+            spritePointers.push_back(const_cast<Sprite*>(&m_sprites[i]));
+        }
+        return spritePointers;
+    }
     
     // Get active sprites (for rendering optimization)
     std::vector<Sprite*> getActiveSprites();

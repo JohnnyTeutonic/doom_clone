@@ -362,6 +362,15 @@ const Texture* TextureManager::getTexture(int id) const {
     return m_textures[id].get();
 }
 
+SDL_Texture* TextureManager::getSDLTexture(int id) const {
+    const Texture* texture = getTexture(id);
+    if (!texture) {
+        return nullptr;
+    }
+    
+    return texture->getSDLTexture();
+}
+
 void TextureManager::initDefaultTextures() {
     // Create default wall textures
     // Brick texture (red)

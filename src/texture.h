@@ -103,6 +103,9 @@ public:
     // Get a texture by ID
     const Texture* getTexture(int id) const;
     
+    // Get an SDL_Texture by ID
+    SDL_Texture* getSDLTexture(int id) const;
+    
     // Initialize default textures
     void initDefaultTextures();
 };

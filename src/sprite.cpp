@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <iostream>
 
+// Initialize static instance
+SpriteManager* SpriteManager::s_instance = nullptr;
+
 // Sprite implementation
 Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
     : m_position(x, y)
@@ -758,6 +761,16 @@ void Sprite::applyItemEffect(Player* player) {
 SpriteManager::SpriteManager(const TextureManager* textureManager)
     : m_textureManager(textureManager)
 {
+    // Set the singleton instance
+    s_instance = this;
+}
+
+SpriteManager::~SpriteManager()
+{
+    // Clear the singleton instance if it's this instance
+    if (s_instance == this) {
+        s_instance = nullptr;
+    }
 }
 
 int SpriteManager::addSprite(double x, double y, double size, int textureId, SpriteType type) {

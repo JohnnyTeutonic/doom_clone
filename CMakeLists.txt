@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
-project(DoomClone VERSION 1.0)
+project(DoomClone VERSION 1.0 LANGUAGES CXX CUDA)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Set CUDA standard
+set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -14,6 +18,10 @@ if(WIN32)
 else()
     set(PLATFORM_UNIX TRUE)
 endif()
+
+# Find CUDA
+find_package(CUDA REQUIRED)
+include_directories(${CUDA_INCLUDE_DIRS})
 
 # Find SDL2 and related packages
 if(PLATFORM_WINDOWS)
@@ -48,6 +56,11 @@ else()
     endif()
 endif()
 
+# CUDA source files
+set(CUDA_SOURCES
+    src/cuda_renderer.cu
+)
+
 # Source files
 set(SOURCES
     src/main.cpp
@@ -61,6 +74,7 @@ set(SOURCES
     src/input.cpp
     src/utils.cpp
     src/audio.cpp
+    src/cuda_renderer.cpp
 )
 
 # Header files
@@ -76,19 +90,25 @@ set(HEADERS
     src/utils.h
     src/lighting.h
     src/audio.h
+    src/cuda_renderer.h
 )
 
 # Define executable
-add_executable(doom_clone ${SOURCES} ${HEADERS})
+add_executable(doom_clone ${SOURCES} ${CUDA_SOURCES} ${HEADERS})
+
+# Set CUDA specific flags
+set_target_properties(doom_clone PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
 
 # Define compile options
 if(PLATFORM_WINDOWS)
     target_compile_definitions(doom_clone PRIVATE PLATFORM_WINDOWS)
     # Direct linking for MinGW/Windows
-    target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer)
+    target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
 else()
     target_compile_definitions(doom_clone PRIVATE PLATFORM_UNIX)
-    target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m)
+    target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
 endif()
 
 # Copy assets to build directory

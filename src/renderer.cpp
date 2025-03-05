@@ -91,7 +91,7 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
     
     // Render sprites if we have a sprite manager
     if (m_spriteManager) {
-        renderSprites(player);
+        renderSprites(map, player);
     }
     
     // Render projectiles if we have a projectile manager
@@ -202,6 +202,12 @@ void Renderer::renderView(const Map& map, const Player& player) {
             // Check if ray has hit a wall
             CellType cellType = map.getCell(mapPos.x, mapPos.y);
             int cellElevation = map.getCellElevation(mapPos.x, mapPos.y);
+            
+            // Skip cells in invisible sectors (sector culling)
+            int cellSector = map.getSectorAt(mapPos.x, mapPos.y);
+            if (cellSector >= 0 && !map.isSectorVisible(cellSector)) {
+                continue;
+            }
             
             // Check stair steps
             if (cellType == CellType::StairStep1 || 
@@ -515,7 +521,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
     }
 }
 
-void Renderer::renderSprites(const Player& player) {
+void Renderer::renderSprites(const Map& map, const Player& player) {
     if (!m_spriteManager || !m_textureManager) return;
     
     // Get player position and direction
@@ -542,6 +548,12 @@ void Renderer::renderSprites(const Player& player) {
     for (const Sprite* sprite : sprites) {
         if (!sprite->isVisible() || !sprite->isActive()) continue;
         
+        // Skip sprites in invisible sectors (sector culling)
+        int spriteSectorId = map.getSectorAt(sprite->getPosition().x, sprite->getPosition().y);
+        if (spriteSectorId >= 0 && !map.isSectorVisible(spriteSectorId)) {
+            continue;
+        }
+        
         // Translate sprite position relative to player
         Vec2 spritePos = sprite->getPosition() - pos;
         
@@ -550,21 +562,20 @@ void Renderer::renderSprites(const Player& player) {
         double transformX = invDet * (dir.y * spritePos.x - dir.x * spritePos.y);
         double transformY = invDet * (-plane.y * spritePos.x + plane.x * spritePos.y);
         
-        // Skip sprites behind the player
-        if (transformY <= 0) continue;
-        
         // Calculate sprite screen position
         int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
         
         // Calculate sprite height and width on screen
-        double spriteSize = sprite->getSize();
-        int spriteHeight = abs(static_cast<int>(m_screenHeight / transformY * spriteSize));
-        int spriteWidth = abs(static_cast<int>(m_screenHeight / transformY * spriteSize));
+        int spriteHeight = abs(static_cast<int>(m_screenHeight / transformY));
+        int spriteWidth = spriteHeight;  // Assuming square sprites
         
-        // Calculate drawing bounds
-        int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
+        // Apply vertical offset
+        int verticalOffsetPixels = static_cast<int>(verticalAngle * m_screenHeight / 2);
+        
+        // Calculate drawing boundaries
+        int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffsetPixels;
         if (drawStartY < 0) drawStartY = 0;
-        int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
+        int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffsetPixels;
         if (drawEndY >= m_screenHeight) drawEndY = m_screenHeight - 1;
         
         int drawStartX = -spriteWidth / 2 + spriteScreenX;
@@ -573,86 +584,19 @@ void Renderer::renderSprites(const Player& player) {
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
         // Get sprite texture
-        int textureId = sprite->getTextureId();
-        
-        // For animated sprites, get the current frame
-        if (sprite->getType() == SpriteType::ImpEnemy) {
-            int currentFrame = sprite->getCurrentFrame();
-            
-            // Use the engine reference to get Imp texture frames
-            if (m_engine && currentFrame >= 0) {
-                const std::vector<int>& impTextureFrames = m_engine->getImpTextureFrames();
-                if (!impTextureFrames.empty() && currentFrame < static_cast<int>(impTextureFrames.size())) {
-                    textureId = impTextureFrames[currentFrame];
-                }
-            }
-        } else if (sprite->getType() == SpriteType::Enemy) {
-            int currentFrame = sprite->getCurrentFrame();
-            
-            // Use the engine reference to get Enemy texture frames
-            if (m_engine && currentFrame >= 0) {
-                const std::vector<int>& enemyTextureFrames = m_engine->getEnemyTextureFrames();
-                if (!enemyTextureFrames.empty() && currentFrame < static_cast<int>(enemyTextureFrames.size())) {
-                    textureId = enemyTextureFrames[currentFrame];
-                }
-            }
-        }
-        
-        // Get the texture
-        const Texture* texture = m_textureManager->getTexture(textureId);
+        const Texture* texture = m_textureManager->getTexture(sprite->getTextureId());
         if (!texture) continue;
         
-        // Optimization: Pre-calculate lighting based on distance (fake lighting for sprites)
-        double distanceShade = 1.0 - std::min(1.0, transformY / 15.0);
+        // Draw the sprite
+        SDL_Texture* sdlTexture = texture->getSDLTexture();
+        if (!sdlTexture) continue;
         
-        // Adjust shading based on performance level
-        if (m_performanceLevel == PerformanceLevel::High) {
-            // For high quality, use slightly more accurate lighting calculation
-            Vec2 spriteNormal = (pos - sprite->getPosition()).normalized();
-            Color lighting = m_lightingSystem.calculateLighting(sprite->getPosition(), spriteNormal, pos);
-            distanceShade *= (lighting.r + lighting.g + lighting.b) / (3.0 * 255.0);
-        }
+        // Set up source and destination rectangles
+        SDL_Rect srcRect = {0, 0, texture->getWidth(), texture->getHeight()};
+        SDL_Rect dstRect = {drawStartX, drawStartY, drawEndX - drawStartX, drawEndY - drawStartY};
         
-        // Draw the sprite directly to the screen
-        for (int x = drawStartX; x < drawEndX; x++) {
-            // Check if sprite is in front of the wall
-            if (transformY > 0 && x >= 0 && x < m_screenWidth && transformY < m_zBuffer[x]) {
-                // Calculate texture x coordinate
-                double texX = (x - (-spriteWidth / 2 + spriteScreenX)) / static_cast<double>(spriteWidth);
-                texX = std::max(0.0, std::min(0.999, texX)); // Clamp to [0, 0.999]
-                
-                // For medium/high quality, determine pixel lighting frequency
-                int pixelStride = 1; // Default render every pixel
-                if (m_performanceLevel == PerformanceLevel::Low) {
-                    pixelStride = transformY < 5.0 ? 1 : 2; // Skip pixels for distant sprites
-                }
-                
-                // Draw vertical stripe
-                for (int y = drawStartY; y < drawEndY; y += pixelStride) {
-                    // Calculate texture y coordinate
-                    double texY = (y - drawStartY) / static_cast<double>(drawEndY - drawStartY);
-                    texY = std::max(0.0, std::min(0.999, texY)); // Clamp to [0, 0.999]
-                    
-                    // Get pixel color from texture
-                    Color color = texture->getPixelNormalized(texX, texY);
-                    
-                    // Skip transparent pixels
-                    if (color.a < 128) continue;
-                    
-                    // Apply pre-calculated distance-based shading
-                    color = color.withLighting(distanceShade);
-                    
-                    // Draw the pixel
-                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                    SDL_RenderDrawPoint(m_renderer, x, y);
-                    
-                    // Fill in skipped pixels with the same color if using stride > 1
-                    for (int i = 1; i < pixelStride && y + i < drawEndY; i++) {
-                        SDL_RenderDrawPoint(m_renderer, x, y + i);
-                    }
-                }
-            }
-        }
+        // Render the sprite
+        SDL_RenderCopy(m_renderer, sdlTexture, &srcRect, &dstRect);
     }
 }
 
@@ -1413,5 +1357,31 @@ void Renderer::DrawArrow(const SDL_Rect& rect, int direction) {
             SDL_RenderDrawLine(m_renderer, centerX - size, centerY, centerX + size/2, centerY + size/2);
             SDL_RenderDrawLine(m_renderer, centerX - size, centerY, centerX + size/2, centerY);
             break;
+    }
+}
+
+void Renderer::renderUI(const Player& player) {
+    // Render HUD
+    renderHUD(player);
+    
+    // Render FPS counter if enabled
+    if (m_showFPS) {
+        // Calculate FPS
+        m_frameCount++;
+        double currentTime = SDL_GetTicks() / 1000.0;
+        if (currentTime - m_fpsTimer >= 1.0) {
+            m_fps = m_frameCount / (currentTime - m_fpsTimer);
+            m_frameCount = 0;
+            m_fpsTimer = currentTime;
+        }
+        
+        // Render FPS text
+        std::string fpsText = "FPS: " + std::to_string(static_cast<int>(m_fps));
+        renderText(fpsText, 10, 10, Color(255, 255, 255, 255));
+    }
+    
+    // Render minimap if enabled
+    if (m_showMinimap && m_engine) {
+        renderMinimap(m_engine->getMap(), player);
     }
 } 

@@ -78,6 +78,9 @@ public:
     // Process SDL events
     bool processEvent(const SDL_Event& event);
     
+    // Handle SDL events
+    bool handleEvent(const SDL_Event& event);
+    
     // Key state methods
     bool isKeyDown(SDL_Scancode key) const;
     bool isKeyPressed(SDL_Scancode key) const;  // Key was just pressed this frame
@@ -90,6 +93,9 @@ public:
     
     void getMousePosition(int& x, int& y) const;
     void getMouseMotion(int& x, int& y) const;
+    int getMouseRelX() const { return m_mouseRelX; }
+    int getMouseRelY() const { return m_mouseRelY; }
+    void resetMouseRel() { m_mouseRelX = 0; m_mouseRelY = 0; }
     
     // Action state methods
     bool isActionActive(InputAction action) const;

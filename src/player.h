@@ -112,8 +112,14 @@ public:
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
+    double getX() const { return m_position.x; }
+    double getY() const { return m_position.y; }
     const Vec2& getDirection() const { return m_direction; }
+    double getDirX() const { return m_direction.x; }
+    double getDirY() const { return m_direction.y; }
     const Vec2& getPlane() const { return m_plane; }
+    double getPlaneX() const { return m_plane.x; }
+    double getPlaneY() const { return m_plane.y; }
     double getVerticalAngle() const { return m_verticalAngle; }
     double getHealth() const { return m_health; }
     int getAmmo() const { return m_ammo; }

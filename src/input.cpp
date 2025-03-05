@@ -53,15 +53,13 @@ void InputHandler::update() {
     m_mouseRelY = 0;
 }
 
-bool InputHandler::processEvent(const SDL_Event& event) {
+bool InputHandler::handleEvent(const SDL_Event& event) {
     switch (event.type) {
         case SDL_KEYDOWN:
-            std::cout << "Key pressed: " << SDL_GetScancodeName(event.key.keysym.scancode) << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
             m_keyStates[event.key.keysym.scancode] = true;
             return true;
             
         case SDL_KEYUP:
-            std::cout << "Key released: " << SDL_GetScancodeName(event.key.keysym.scancode) << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
             m_keyStates[event.key.keysym.scancode] = false;
             return true;
             
@@ -89,10 +87,9 @@ bool InputHandler::processEvent(const SDL_Event& event) {
             else if (event.button.button == SDL_BUTTON_MIDDLE)
                 m_middleMouseButton = false;
             return true;
-            
-        default:
-            return false; // Event not handled
     }
+    
+    return false;
 }
 
 bool InputHandler::isKeyDown(SDL_Scancode key) const {

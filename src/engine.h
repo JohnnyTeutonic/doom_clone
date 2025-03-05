@@ -18,6 +18,7 @@ class InputHandler;
 class Map;
 class Player;
 class AudioSystem;
+class CudaRenderer;
 
 #include "renderer.h"
 #include "map.h"
@@ -28,6 +29,7 @@ class AudioSystem;
 #include "input.h"
 #include "utils.h"
 #include "audio.h"
+#include "cuda_renderer.h"
 
 // Game states
 enum class GameState {
@@ -61,6 +63,7 @@ public:
     TextureManager& getTextureManager() { return *m_textureManager; }
     SpriteManager& getSpriteManager() { return *m_spriteManager; }
     InputHandler& getInputHandler() { return m_inputHandler; }
+    const Map& getMap() const { return m_map; }
     Map& getMap() { return m_map; }
     Player& getPlayer() { return m_player; }
     
@@ -150,6 +153,7 @@ private:
     // Notification system
     std::string m_notificationText;
     double m_notificationTimer;
+    double m_notificationDuration;
     
     // Font handling
     TTF_Font* m_font;
@@ -166,11 +170,17 @@ private:
     // Mouse state tracking
     bool m_prevMouseLeftDown;
     
+    // CUDA renderer
+    CudaRenderer* m_cudaRenderer;
+    bool m_useCuda;
+    
     // Private methods
     void setupMap();
     void setupPlayer();
     void setupInput();
     void renderNotification();
+    void renderMainMenu();
+    void renderPauseOverlay();
 };
 
 #endif // ENGINE_H 

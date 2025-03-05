@@ -153,6 +153,54 @@ src/audio.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.s
 .PHONY : src/audio.cpp.s
 
+src/cuda_renderer.o: src/cuda_renderer.cpp.o
+.PHONY : src/cuda_renderer.o
+
+# target to build an object file
+src/cuda_renderer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.o
+.PHONY : src/cuda_renderer.cpp.o
+
+src/cuda_renderer.i: src/cuda_renderer.cpp.i
+.PHONY : src/cuda_renderer.i
+
+# target to preprocess a source file
+src/cuda_renderer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.i
+.PHONY : src/cuda_renderer.cpp.i
+
+src/cuda_renderer.s: src/cuda_renderer.cpp.s
+.PHONY : src/cuda_renderer.s
+
+# target to generate assembly for a file
+src/cuda_renderer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.s
+.PHONY : src/cuda_renderer.cpp.s
+
+src/cuda_renderer.o: src/cuda_renderer.cu.o
+.PHONY : src/cuda_renderer.o
+
+# target to build an object file
+src/cuda_renderer.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.o
+.PHONY : src/cuda_renderer.cu.o
+
+src/cuda_renderer.i: src/cuda_renderer.cu.i
+.PHONY : src/cuda_renderer.i
+
+# target to preprocess a source file
+src/cuda_renderer.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.i
+.PHONY : src/cuda_renderer.cu.i
+
+src/cuda_renderer.s: src/cuda_renderer.cu.s
+.PHONY : src/cuda_renderer.s
+
+# target to generate assembly for a file
+src/cuda_renderer.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.s
+.PHONY : src/cuda_renderer.cu.s
+
 src/engine.o: src/engine.cpp.o
 .PHONY : src/engine.o
 
@@ -405,6 +453,12 @@ help:
 	@echo "... src/audio.o"
 	@echo "... src/audio.i"
 	@echo "... src/audio.s"
+	@echo "... src/cuda_renderer.o"
+	@echo "... src/cuda_renderer.i"
+	@echo "... src/cuda_renderer.s"
+	@echo "... src/cuda_renderer.o"
+	@echo "... src/cuda_renderer.i"
+	@echo "... src/cuda_renderer.s"
 	@echo "... src/engine.o"
 	@echo "... src/engine.i"
 	@echo "... src/engine.s"

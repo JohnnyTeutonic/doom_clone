@@ -6,41 +6,76 @@
 Engine::Engine(int screenWidth, int screenHeight)
     : m_window(nullptr)
     , m_sdlRenderer(nullptr)
+    , m_running(false)
+    , m_screenWidth(screenWidth)
+    , m_screenHeight(screenHeight)
+    , m_targetFPS(60)
+    , m_deltaTime(0.0)
+    , m_fullscreen(false)
+    , m_gameState(GameState::MainMenu)
     , m_renderer(nullptr)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_gameState(GameState::MainMenu)
-    , m_running(false)
-    , m_screenWidth(screenWidth)
-    , m_screenHeight(screenHeight)
-    , m_lastFrameTime(0)
-    , m_deltaTime(0.0)
-    , m_weaponRecoil(0.0)
-    , m_flashIntensity(0.0)
-    , m_weaponRecoilRecovery(5.0)
-    , m_flashDecay(3.0)
-    , m_fullscreen(false)
-    , m_targetFPS(60)
-    , m_frameTime(1.0 / 60.0)
+    , m_audioSystem(nullptr)
     , m_wallTexture(-1)
     , m_floorTexture(-1)
     , m_ceilingTexture(-1)
-    , m_enemyTexture(-1)
-    , m_impTexture(-1)
-    , m_weaponTexture(-1)
     , m_bulletTexture(-1)
+    , m_enemyTexture(-1)
+    , m_weaponTexture(-1)
     , m_machineGunTexture(-1)
+    , m_impTexture(-1)
     , m_currentWeaponTexture(-1)
+    , m_weaponRecoil(0.0)
+    , m_flashIntensity(0.0)
     , m_notificationTimer(0.0)
-    , m_font(nullptr)
+    , m_notificationDuration(0.0)
     , m_notificationTexture(nullptr)
-    , m_audioSystem(nullptr)
-    , m_musicEnabled(true)
     , m_prevMouseLeftDown(false)
+    , m_cudaRenderer(nullptr)
+    , m_useCuda(false)
 {
-    // Initialize random seed
-    srand(static_cast<unsigned int>(time(nullptr)));
+    // Initialize SDL
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+        std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+        return;
+    }
+    
+    // Check if CUDA is available
+    m_useCuda = CudaRenderer::isCudaAvailable();
+    
+    if (m_useCuda) {
+        std::cout << "CUDA is available, using CUDA renderer" << std::endl;
+    } else {
+        std::cout << "CUDA is not available, using CPU renderer" << std::endl;
+    }
+    
+    // We'll initialize the managers in the init method after creating the SDL renderer
+    m_renderer = new Renderer();
+    
+    // Initialize projectile manager
+    m_projectileManager = new ProjectileManager();
+    
+    // Initialize audio system
+    m_audioSystem = new AudioSystem();
+    
+    // Initialize input handler
+    m_inputHandler.init();
+    
+    // Initialize map with default size
+    m_map = Map(50, 50);
+    
+    // Initialize notification system
+    m_notificationText = "";
+    m_notificationTimer = 0.0;
+    m_notificationDuration = 0.0;
+    m_notificationTexture = nullptr;
+    
+    // Initialize key state tracking
+    for (int i = 0; i < SDL_NUM_SCANCODES; i++) {
+        m_prevKeyboardState[static_cast<SDL_Scancode>(i)] = false;
+    }
 }
 
 Engine::~Engine() {
@@ -139,14 +174,29 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     std::cout << "Texture manager created: " << m_textureManager << std::endl;
     
     // Initialize renderer
-    m_renderer = new Renderer();
     m_renderer->init(m_screenWidth, m_screenHeight, m_fullscreen);
     m_renderer->setSDLRenderer(m_sdlRenderer);
     m_renderer->setTextureManager(m_textureManager);
+    m_renderer->setSpriteManager(m_spriteManager);
+    m_renderer->setProjectileManager(m_projectileManager);
     m_renderer->setEngine(this);  // Set the engine reference
     std::cout << "Renderer initialized: " << m_renderer << std::endl;
     
+    // Initialize CUDA renderer if available
+    if (m_useCuda) {
+        m_cudaRenderer = new CudaRenderer();
+        if (!m_cudaRenderer->init(screenWidth, screenHeight, m_sdlRenderer, m_textureManager)) {
+            std::cerr << "Failed to initialize CUDA renderer, falling back to CPU renderer" << std::endl;
+            m_useCuda = false;
+            delete m_cudaRenderer;
+            m_cudaRenderer = nullptr;
+        }
+    }
+    
     // Create sprite manager
+    if (m_spriteManager) {
+        delete m_spriteManager;
+    }
     m_spriteManager = new SpriteManager(m_textureManager);
     std::cout << "Sprite manager created: " << m_spriteManager << std::endl;
     
@@ -257,7 +307,67 @@ void Engine::run() {
 
 void Engine::shutdown() {
     std::cout << "Shutting down engine..." << std::endl;
-    m_renderer->cleanup();
+    
+    // Clean up renderer
+    if (m_renderer) {
+        m_renderer->cleanup();
+        delete m_renderer;
+        m_renderer = nullptr;
+    }
+    
+    // Clean up CUDA renderer
+    if (m_cudaRenderer) {
+        m_cudaRenderer->cleanup();
+        delete m_cudaRenderer;
+        m_cudaRenderer = nullptr;
+    }
+    
+    // Clean up texture manager
+    if (m_textureManager) {
+        delete m_textureManager;
+        m_textureManager = nullptr;
+    }
+    
+    // Clean up sprite manager
+    if (m_spriteManager) {
+        delete m_spriteManager;
+        m_spriteManager = nullptr;
+    }
+    
+    // Clean up projectile manager
+    if (m_projectileManager) {
+        delete m_projectileManager;
+        m_projectileManager = nullptr;
+    }
+    
+    // Clean up audio system
+    if (m_audioSystem) {
+        m_audioSystem->cleanup();
+        delete m_audioSystem;
+        m_audioSystem = nullptr;
+    }
+    
+    // Clean up SDL resources
+    if (m_sdlRenderer) {
+        SDL_DestroyRenderer(m_sdlRenderer);
+        m_sdlRenderer = nullptr;
+    }
+    
+    if (m_window) {
+        SDL_DestroyWindow(m_window);
+        m_window = nullptr;
+    }
+    
+    // Clean up notification texture
+    if (m_notificationTexture) {
+        SDL_DestroyTexture(m_notificationTexture);
+        m_notificationTexture = nullptr;
+    }
+    
+    // Quit SDL
+    SDL_Quit();
+    
+    std::cout << "Engine shutdown complete" << std::endl;
 }
 
 void Engine::setState(GameState state) {
@@ -305,294 +415,145 @@ void Engine::restartGame() {
 }
 
 void Engine::processInput() {
-    // Process SDL events
+    // Handle SDL events
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // Let the input handler process the event first
+        m_inputHandler.handleEvent(event);
+        
+        // Handle quit events
         if (event.type == SDL_QUIT) {
             m_running = false;
         }
         
-        // Let the input handler process the event
-        m_inputHandler.processEvent(event);
+        // Handle key events for game state changes
+        if (event.type == SDL_KEYDOWN) {
+            switch (event.key.keysym.sym) {
+                case SDLK_ESCAPE:
+                    if (m_gameState == GameState::Playing) {
+                        setState(GameState::Paused);
+                    } else if (m_gameState == GameState::Paused) {
+                        setState(GameState::Playing);
+                    } else if (m_gameState == GameState::MainMenu) {
+                        m_running = false;
+                    }
+                    break;
+                    
+                case SDLK_RETURN:
+                    if (m_gameState == GameState::MainMenu) {
+                        setState(GameState::Playing);
+                    } else if (m_gameState == GameState::GameOver || m_gameState == GameState::Victory) {
+                        setState(GameState::MainMenu);
+                    }
+                    break;
+                    
+                case SDLK_r:
+                    if (m_gameState == GameState::GameOver) {
+                        restartGame();
+                    }
+                    break;
+            }
+        }
     }
     
-    // WSL2 workaround: Get keyboard state directly
-    int numKeys;
-    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
+    // Only process gameplay input if in playing state
+    if (m_gameState != GameState::Playing) {
+        return;
+    }
     
-    // Process input actions
-    if (m_gameState == GameState::Playing) {
-        // Movement - use direct keyboard state for better compatibility with WSL2
-        if (keyboardState[SDL_SCANCODE_W]) {
-            m_player.moveForward(m_deltaTime, m_map);
+    // Get keyboard state
+    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
+    
+    // Movement
+    if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
+        m_player.moveForward(m_deltaTime, m_map);
+    }
+    if (keyboardState[SDL_SCANCODE_S] || keyboardState[SDL_SCANCODE_DOWN]) {
+        m_player.moveBackward(m_deltaTime, m_map);
+    }
+    if (keyboardState[SDL_SCANCODE_A] || keyboardState[SDL_SCANCODE_LEFT]) {
+        m_player.strafeLeft(m_deltaTime, m_map);
+    }
+    if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
+        m_player.strafeRight(m_deltaTime, m_map);
+    }
+    
+    // Rotation with mouse
+    int mouseRelX = m_inputHandler.getMouseRelX();
+    int mouseRelY = m_inputHandler.getMouseRelY();
+    
+    if (mouseRelX != 0) {
+        m_player.rotateLeft(m_deltaTime * mouseRelX * 0.1);
+    }
+    
+    if (mouseRelY != 0) {
+        // Vertical look with mouse
+        if (mouseRelY > 0) {
+            m_player.lookDown(m_deltaTime * mouseRelY * 0.1);
+        } else if (mouseRelY < 0) {
+            m_player.lookUp(m_deltaTime * -mouseRelY * 0.1);
         }
-        if (keyboardState[SDL_SCANCODE_S]) {
-            m_player.moveBackward(m_deltaTime, m_map);
-        }
-        if (keyboardState[SDL_SCANCODE_A]) {
-            m_player.strafeLeft(m_deltaTime, m_map);
-        }
-        if (keyboardState[SDL_SCANCODE_D]) {
-            m_player.strafeRight(m_deltaTime, m_map);
-        }
-        if (keyboardState[SDL_SCANCODE_LEFT]) {
-            m_player.rotateRight(m_deltaTime);  // Changed from rotateLeft to rotateRight
-        }
-        if (keyboardState[SDL_SCANCODE_RIGHT]) {
-            m_player.rotateLeft(m_deltaTime);   // Changed from rotateRight to rotateLeft
-        }
-        
-        // Vertical looking - use direct keyboard state for up and down arrow keys
-        if (keyboardState[SDL_SCANCODE_UP]) {
-            m_player.lookUp(m_deltaTime);
-        }
-        if (keyboardState[SDL_SCANCODE_DOWN]) {
-            m_player.lookDown(m_deltaTime);
-        }
-        
-        // Shooting - use direct keyboard state for Space
-        bool shouldFire = false;
-        
-        // Check for spacebar firing
-        if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
-            shouldFire = true;
-            m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
-        } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
-            m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
-        }
-        
-        // Check for left mouse button firing
-        if (m_inputHandler.isLeftMouseDown() && !m_prevMouseLeftDown) {
-            shouldFire = true;
-            m_prevMouseLeftDown = true;
-        } else if (!m_inputHandler.isLeftMouseDown()) {
-            m_prevMouseLeftDown = false;
-        }
-        
-        // Fire weapon if either input was triggered
-        if (shouldFire) {
-            if (m_player.fire()) {
-                // Apply recoil effect
-                m_weaponRecoil = 0.1;
-                
-                // Apply muzzle flash effect
-                m_flashIntensity = 1.0;
-            }
-        }
-        
-        // Reload - use direct keyboard state for R
-        if (keyboardState[SDL_SCANCODE_R] && !m_prevKeyboardState[SDL_SCANCODE_R]) {
-            m_player.reload();
-            m_prevKeyboardState[SDL_SCANCODE_R] = true;
-        } else if (!keyboardState[SDL_SCANCODE_R]) {
-            m_prevKeyboardState[SDL_SCANCODE_R] = false;
-        }
-        
-        // Toggle lighting - use direct keyboard state for L
-        if (keyboardState[SDL_SCANCODE_L] && !m_prevKeyboardState[SDL_SCANCODE_L]) {
-            if (m_renderer) {
-                m_renderer->toggleLighting();
-                showNotification("Lighting toggled", 2.0);
-            }
-            m_prevKeyboardState[SDL_SCANCODE_L] = true;
-        } else if (!keyboardState[SDL_SCANCODE_L]) {
-            m_prevKeyboardState[SDL_SCANCODE_L] = false;
-        }
-        
-        // Toggle displays - use direct keyboard state for function keys
-        if (keyboardState[SDL_SCANCODE_F1] && !m_prevKeyboardState[SDL_SCANCODE_F1]) {
-            m_renderer->toggleFPS();
-            m_prevKeyboardState[SDL_SCANCODE_F1] = true;
-        } else if (!keyboardState[SDL_SCANCODE_F1]) {
-            m_prevKeyboardState[SDL_SCANCODE_F1] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_F2] && !m_prevKeyboardState[SDL_SCANCODE_F2]) {
-            m_renderer->toggleMinimap();
-            m_prevKeyboardState[SDL_SCANCODE_F2] = true;
-        } else if (!keyboardState[SDL_SCANCODE_F2]) {
-            m_prevKeyboardState[SDL_SCANCODE_F2] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_F3] && !m_prevKeyboardState[SDL_SCANCODE_F3]) {
-            m_renderer->toggleWeapon();
-            m_prevKeyboardState[SDL_SCANCODE_F3] = true;
-        } else if (!keyboardState[SDL_SCANCODE_F3]) {
-            m_prevKeyboardState[SDL_SCANCODE_F3] = false;
-        }
-        
-        // Add F4 key to toggle ceiling rendering
-        if (keyboardState[SDL_SCANCODE_F4] && !m_prevKeyboardState[SDL_SCANCODE_F4]) {
-            m_renderer->toggleCeilings();
-            showNotification("Ceiling rendering toggled", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_F4] = true;
-        } else if (!keyboardState[SDL_SCANCODE_F4]) {
-            m_prevKeyboardState[SDL_SCANCODE_F4] = false;
-        }
-        
-        // Weapon switching - use direct keyboard state for 1-5
-        if (keyboardState[SDL_SCANCODE_1] && !m_prevKeyboardState[SDL_SCANCODE_1]) {
-            m_player.setCurrentWeapon(WeaponType::Pistol);
-            showNotification("Switched to pistol", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_1] = true;
-        } else if (!keyboardState[SDL_SCANCODE_1]) {
-            m_prevKeyboardState[SDL_SCANCODE_1] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_2] && !m_prevKeyboardState[SDL_SCANCODE_2]) {
-            m_player.setCurrentWeapon(WeaponType::MachineGun);
-            m_currentWeaponTexture = m_machineGunTexture;
-            showNotification("Switched to machine gun", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_2] = true;
-        } else if (!keyboardState[SDL_SCANCODE_2]) {
-            m_prevKeyboardState[SDL_SCANCODE_2] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_3] && !m_prevKeyboardState[SDL_SCANCODE_3]) {
-            m_player.setCurrentWeapon(WeaponType::Shotgun);
-            m_currentWeaponTexture = m_weaponTexture;
-            showNotification("Switched to shotgun", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_3] = true;
-        } else if (!keyboardState[SDL_SCANCODE_3]) {
-            m_prevKeyboardState[SDL_SCANCODE_3] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_4] && !m_prevKeyboardState[SDL_SCANCODE_4]) {
-            m_player.setCurrentWeapon(WeaponType::RocketLauncher);
-            m_currentWeaponTexture = m_weaponTexture;
-            showNotification("Switched to rocket launcher", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_4] = true;
-        } else if (!keyboardState[SDL_SCANCODE_4]) {
-            m_prevKeyboardState[SDL_SCANCODE_4] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_5] && !m_prevKeyboardState[SDL_SCANCODE_5]) {
-            m_player.setCurrentWeapon(WeaponType::PlasmaGun);
-            m_currentWeaponTexture = m_weaponTexture;
-            showNotification("Switched to plasma gun", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_5] = true;
-        } else if (!keyboardState[SDL_SCANCODE_5]) {
-            m_prevKeyboardState[SDL_SCANCODE_5] = false;
-        }
-        
-        // Add grenade launcher weapon on key 6
-        if (keyboardState[SDL_SCANCODE_6] && !m_prevKeyboardState[SDL_SCANCODE_6]) {
-            m_player.setCurrentWeapon(WeaponType::GrenadeLauncher);
-            m_currentWeaponTexture = m_weaponTexture;
-            showNotification("Switched to grenade launcher", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_6] = true;
-        } else if (!keyboardState[SDL_SCANCODE_6]) {
-            m_prevKeyboardState[SDL_SCANCODE_6] = false;
-        }
-        
-        // Add chainsaw weapon on key 7
-        if (keyboardState[SDL_SCANCODE_7] && !m_prevKeyboardState[SDL_SCANCODE_7]) {
-            m_player.setCurrentWeapon(WeaponType::Chainsaw);
-            m_currentWeaponTexture = m_weaponTexture;
-            showNotification("Switched to chainsaw", 2.0);
-            m_prevKeyboardState[SDL_SCANCODE_7] = true;
-        } else if (!keyboardState[SDL_SCANCODE_7]) {
-            m_prevKeyboardState[SDL_SCANCODE_7] = false;
-        }
-        
-        // Throw grenade directly with G key
-        if (keyboardState[SDL_SCANCODE_G] && !m_prevKeyboardState[SDL_SCANCODE_G]) {
-            if (m_player.throwGrenade()) {
-                // Apply recoil effect
-                m_weaponRecoil = 0.15;
-            }
-            m_prevKeyboardState[SDL_SCANCODE_G] = true;
-        } else if (!keyboardState[SDL_SCANCODE_G]) {
-            m_prevKeyboardState[SDL_SCANCODE_G] = false;
-        }
-        
-        // Audio controls - use direct keyboard state for better compatibility with WSL2
-        if (keyboardState[SDL_SCANCODE_M] && !m_prevKeyboardState[SDL_SCANCODE_M]) {
-            toggleMusic();
-            m_prevKeyboardState[SDL_SCANCODE_M] = true;
-        } else if (!keyboardState[SDL_SCANCODE_M]) {
-            m_prevKeyboardState[SDL_SCANCODE_M] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_PAGEUP] && !m_prevKeyboardState[SDL_SCANCODE_PAGEUP]) {
+    }
+    
+    // Reset mouse relative movement
+    m_inputHandler.resetMouseRel();
+    
+    // Weapon firing
+    bool shouldFire = false;
+    
+    // Check for space bar firing
+    if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
+        shouldFire = true;
+        m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
+    } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
+        m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
+    }
+    
+    // Check for left mouse button firing
+    if (m_inputHandler.isLeftMouseDown() && !m_prevMouseLeftDown) {
+        shouldFire = true;
+        m_prevMouseLeftDown = true;
+    } else if (!m_inputHandler.isLeftMouseDown()) {
+        m_prevMouseLeftDown = false;
+    }
+    
+    // Fire weapon if either input was triggered
+    if (shouldFire) {
+        if (m_player.fire()) {
+            // Apply recoil effect
+            m_weaponRecoil = 0.1;
+            
+            // Apply muzzle flash effect
+            m_flashIntensity = 1.0;
+            
+            // Play sound effect
             if (m_audioSystem) {
-                int currentVolume = m_audioSystem->getMusicVolume();
-                setMusicVolume(currentVolume + 8); // Increase by ~6% (8/128)
+                switch (m_player.getCurrentWeapon()) {
+                    case WeaponType::Pistol:
+                        m_audioSystem->playSoundEffect("pistol_fire");
+                        break;
+                    case WeaponType::Shotgun:
+                        m_audioSystem->playSoundEffect("shotgun_fire");
+                        break;
+                    case WeaponType::MachineGun:
+                        m_audioSystem->playSoundEffect("machinegun_fire");
+                        break;
+                    case WeaponType::RocketLauncher:
+                        m_audioSystem->playSoundEffect("rocket_fire");
+                        break;
+                    case WeaponType::PlasmaGun:
+                        m_audioSystem->playSoundEffect("plasma_fire");
+                        break;
+                    case WeaponType::Chainsaw:
+                        m_audioSystem->playSoundEffect("chainsaw_fire");
+                        break;
+                    default:
+                        m_audioSystem->playSoundEffect("pistol_fire");
+                        break;
+                }
             }
-            m_prevKeyboardState[SDL_SCANCODE_PAGEUP] = true;
-        } else if (!keyboardState[SDL_SCANCODE_PAGEUP]) {
-            m_prevKeyboardState[SDL_SCANCODE_PAGEUP] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_PAGEDOWN] && !m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN]) {
-            if (m_audioSystem) {
-                int currentVolume = m_audioSystem->getMusicVolume();
-                setMusicVolume(currentVolume - 8); // Decrease by ~6% (8/128)
-            }
-            m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = true;
-        } else if (!keyboardState[SDL_SCANCODE_PAGEDOWN]) {
-            m_prevKeyboardState[SDL_SCANCODE_PAGEDOWN] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_HOME] && !m_prevKeyboardState[SDL_SCANCODE_HOME]) {
-            if (m_audioSystem) {
-                int currentVolume = m_audioSystem->getSfxVolume();
-                setSfxVolume(currentVolume + 8); // Increase by ~6% (8/128)
-            }
-            m_prevKeyboardState[SDL_SCANCODE_HOME] = true;
-        } else if (!keyboardState[SDL_SCANCODE_HOME]) {
-            m_prevKeyboardState[SDL_SCANCODE_HOME] = false;
-        }
-        
-        if (keyboardState[SDL_SCANCODE_END] && !m_prevKeyboardState[SDL_SCANCODE_END]) {
-            if (m_audioSystem) {
-                int currentVolume = m_audioSystem->getSfxVolume();
-                setSfxVolume(currentVolume - 8); // Decrease by ~6% (8/128)
-            }
-            m_prevKeyboardState[SDL_SCANCODE_END] = true;
-        } else if (!keyboardState[SDL_SCANCODE_END]) {
-            m_prevKeyboardState[SDL_SCANCODE_END] = false;
-        }
-    }
-    
-    // Global actions (work in any state)
-    if (keyboardState[SDL_SCANCODE_ESCAPE] && !m_prevKeyboardState[SDL_SCANCODE_ESCAPE]) {
-        if (m_gameState == GameState::Playing) {
-            setState(GameState::Paused);
-        } else if (m_gameState == GameState::Paused) {
-            setState(GameState::Playing);
-        }
-        m_prevKeyboardState[SDL_SCANCODE_ESCAPE] = true;
-    } else if (!keyboardState[SDL_SCANCODE_ESCAPE]) {
-        m_prevKeyboardState[SDL_SCANCODE_ESCAPE] = false;
-    }
-    
-    if (keyboardState[SDL_SCANCODE_Q] && !m_prevKeyboardState[SDL_SCANCODE_Q]) {
-        m_running = false;
-        m_prevKeyboardState[SDL_SCANCODE_Q] = true;
-    } else if (!keyboardState[SDL_SCANCODE_Q]) {
-        m_prevKeyboardState[SDL_SCANCODE_Q] = false;
-    }
-    
-    // Process mouse movement for camera rotation
-    int mouseX, mouseY;
-    m_inputHandler.getMouseMotion(mouseX, mouseY);
-    
-    if (mouseX != 0) {
-        // Use the existing rotation methods with the mouse input
-        if (mouseX > 0) {
-            m_player.rotateLeft(m_deltaTime * mouseX * 0.01);  // Reverted back to original rotateLeft
-        } else {
-            m_player.rotateRight(m_deltaTime * -mouseX * 0.01);  // Reverted back to original rotateRight
-        }
-    }
-    
-    if (mouseY != 0) {
-        // Use the existing look methods with the mouse input
-        if (mouseY > 0) {
-            m_player.lookDown(m_deltaTime * mouseY * 0.01);
-        } else {
-            m_player.lookUp(m_deltaTime * -mouseY * 0.01);
+            
+            std::cout << "Weapon fired!" << std::endl;
         }
     }
 }
@@ -647,6 +608,9 @@ void Engine::update() {
         if (keyState[SDL_SCANCODE_ESCAPE]) {
             setState(GameState::Paused);
         }
+        
+        // Update sector visibility based on player position
+        m_map.updateVisibility(m_player.getPosition());
     }
     
     // Update input handler at the end of the frame
@@ -702,51 +666,59 @@ void Engine::renderNotification() {
 }
 
 void Engine::render() {
-    // Clear the renderer
+    // Clear screen
     SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 255);
     SDL_RenderClear(m_sdlRenderer);
     
     // Render based on game state
     switch (m_gameState) {
+        case GameState::MainMenu:
+            // Render the main menu
+            renderMainMenu();
+            break;
+            
         case GameState::Playing:
-        case GameState::Paused:
-            // Render the 3D view
-            m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
-            
-            // Render weapon if enabled
-            if (m_renderer->isShowingWeapon()) {
-                m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
-            }
-            
-            // Render notification if active
-            renderNotification();
-            
-            // If paused, render pause overlay
-            if (m_gameState == GameState::Paused) {
-                // TODO: Render pause overlay
+            // Render the game
+            if (m_useCuda && m_cudaRenderer) {
+                // Use CUDA renderer for the 3D view
+                m_cudaRenderer->render(m_map, m_player);
+                
+                // Use CPU renderer for weapon and UI
+                if (m_renderer->isShowingWeapon()) {
+                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+                }
+                
+                // Render sprites
+                m_renderer->renderSprites(m_map, m_player);
+                
+                // Render UI elements
+                m_renderer->renderUI(m_player);
+                
+                // Render notification if active
+                renderNotification();
+            } else {
+                // Use CPU renderer
+                m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
+                if (m_renderer->isShowingWeapon()) {
+                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+                }
+                
+                // Render notification if active
+                renderNotification();
             }
             break;
             
-        case GameState::MainMenu:
-            // TODO: Render main menu
+        case GameState::Paused:
+            // Render pause overlay
+            renderPauseOverlay();
             break;
             
         case GameState::GameOver:
-            // Render the 3D view (darkened)
-            m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
-            if (m_renderer->isShowingWeapon()) {
-                m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
-            }
-            // TODO: Render game over overlay
+            // TODO: Render game over screen
             break;
             
         case GameState::Victory:
-            // Render the 3D view
-            m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
-            if (m_renderer->isShowingWeapon()) {
-                m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
-            }
-            // TODO: Render victory overlay
+            // TODO: Render victory screen
             break;
     }
     
@@ -2167,6 +2139,9 @@ void Engine::setupMap() {
         m_renderer->getLightingSystem().addLight(stair2Light);
     }
     
+    // Create sectors for visibility culling
+    m_map.createSectors();
+    
     // Set player starting position
     m_player.init(m_map.getWidth() / 4, m_map.getHeight() / 4, 1.0, 0.0);
     
@@ -2368,5 +2343,107 @@ void Engine::showNotification(const std::string& text, double duration) {
     if (m_notificationTexture) {
         SDL_DestroyTexture(m_notificationTexture);
         m_notificationTexture = nullptr;
+    }
+}
+
+void Engine::renderMainMenu() {
+    // Set background color
+    SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 255);
+    SDL_RenderClear(m_sdlRenderer);
+    
+    // Render title
+    SDL_Color titleColor = {255, 0, 0, 255}; // Red color for DOOM-style title
+    SDL_Surface* titleSurface = TTF_RenderText_Blended(m_font, "DOOM CLONE", titleColor);
+    if (titleSurface) {
+        SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, titleSurface);
+        if (titleTexture) {
+            SDL_Rect titleRect = {
+                m_screenWidth / 2 - titleSurface->w / 2,
+                m_screenHeight / 4 - titleSurface->h / 2,
+                titleSurface->w,
+                titleSurface->h
+            };
+            SDL_RenderCopy(m_sdlRenderer, titleTexture, NULL, &titleRect);
+            SDL_DestroyTexture(titleTexture);
+        }
+        SDL_FreeSurface(titleSurface);
+    }
+    
+    // Render menu options
+    SDL_Color menuColor = {200, 200, 200, 255}; // Light gray for menu options
+    const char* menuOptions[] = {
+        "Start Game",
+        "Options",
+        "Quit"
+    };
+    
+    for (int i = 0; i < 3; i++) {
+        SDL_Surface* menuSurface = TTF_RenderText_Blended(m_font, menuOptions[i], menuColor);
+        if (menuSurface) {
+            SDL_Texture* menuTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, menuSurface);
+            if (menuTexture) {
+                SDL_Rect menuRect = {
+                    m_screenWidth / 2 - menuSurface->w / 2,
+                    m_screenHeight / 2 + i * 60 - menuSurface->h / 2,
+                    menuSurface->w,
+                    menuSurface->h
+                };
+                SDL_RenderCopy(m_sdlRenderer, menuTexture, NULL, &menuRect);
+                SDL_DestroyTexture(menuTexture);
+            }
+            SDL_FreeSurface(menuSurface);
+        }
+    }
+}
+
+void Engine::renderPauseOverlay() {
+    // Render semi-transparent overlay
+    SDL_SetRenderDrawBlendMode(m_sdlRenderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 128); // Semi-transparent black
+    SDL_Rect overlayRect = {0, 0, m_screenWidth, m_screenHeight};
+    SDL_RenderFillRect(m_sdlRenderer, &overlayRect);
+    
+    // Render "PAUSED" text
+    SDL_Color pauseColor = {255, 255, 255, 255}; // White color for pause text
+    SDL_Surface* pauseSurface = TTF_RenderText_Blended(m_font, "PAUSED", pauseColor);
+    if (pauseSurface) {
+        SDL_Texture* pauseTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, pauseSurface);
+        if (pauseTexture) {
+            SDL_Rect pauseRect = {
+                m_screenWidth / 2 - pauseSurface->w / 2,
+                m_screenHeight / 2 - pauseSurface->h / 2,
+                pauseSurface->w,
+                pauseSurface->h
+            };
+            SDL_RenderCopy(m_sdlRenderer, pauseTexture, NULL, &pauseRect);
+            SDL_DestroyTexture(pauseTexture);
+        }
+        SDL_FreeSurface(pauseSurface);
+    }
+    
+    // Render pause menu options
+    SDL_Color menuColor = {200, 200, 200, 255}; // Light gray for menu options
+    const char* menuOptions[] = {
+        "Resume",
+        "Options",
+        "Quit to Main Menu"
+    };
+    
+    for (int i = 0; i < 3; i++) {
+        SDL_Surface* menuSurface = TTF_RenderText_Blended(m_font, menuOptions[i], menuColor);
+        if (menuSurface) {
+            SDL_Texture* menuTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, menuSurface);
+            if (menuTexture) {
+                SDL_Rect menuRect = {
+                    m_screenWidth / 2 - menuSurface->w / 2,
+                    m_screenHeight / 2 + 60 + i * 40 - menuSurface->h / 2,
+                    menuSurface->w,
+                    menuSurface->h
+                };
+                SDL_RenderCopy(m_sdlRenderer, menuTexture, NULL, &menuRect);
+                SDL_DestroyTexture(menuTexture);
+            }
+            SDL_FreeSurface(menuSurface);
+        }
     }
 } 
