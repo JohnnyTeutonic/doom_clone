@@ -68,6 +68,9 @@ private:
     // CUDA stream
     cudaStream_t m_cudaStream;
     
+    // Frame generation state
+    bool m_frameReady;
+    
     // Initialize CUDA resources
     bool initCuda();
     
@@ -88,7 +91,13 @@ public:
     // Clean up resources
     void cleanup();
     
-    // Render a frame
+    // Generate a frame (process the ray-casting)
+    void generateFrame(const Map& map, const Player& player);
+    
+    // Blit the frame buffer to the screen
+    void blitFrameBuffer();
+    
+    // Original render method (now split into generateFrame and blitFrameBuffer)
     void render(const Map& map, const Player& player);
     
     // Check if CUDA is available

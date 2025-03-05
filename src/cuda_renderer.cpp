@@ -43,6 +43,7 @@ CudaRenderer::CudaRenderer()
     , m_wallTextureWidth(0)
     , m_wallTextureHeight(0)
     , m_cudaStream(0)
+    , m_frameReady(false)
 {
 }
 
@@ -490,9 +491,7 @@ void CudaRenderer::copyTexturesToDevice() {
                                cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) {
             std::cerr << "Failed to copy wall textures to device: " << cudaGetErrorString(cudaStatus) << std::endl;
-        } else {
-            std::cout << "Successfully copied " << numWallTextures << " wall textures to device" << std::endl;
-        }
+        } 
     }
     
     if (floorCeilingLoaded) {
@@ -517,7 +516,9 @@ void CudaRenderer::copyTexturesToDevice() {
     delete[] ceilingTextureData;
 }
 
-void CudaRenderer::render(const Map& map, const Player& player) {
+void CudaRenderer::generateFrame(const Map& map, const Player& player) {
+    std::cout << "CudaRenderer::generateFrame called" << std::endl;
+    
     // Copy map data to device
     copyMapToDevice(map, player);
     
@@ -552,6 +553,7 @@ void CudaRenderer::render(const Map& map, const Player& player) {
     cudaError_t cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
         std::cerr << "Kernel launch failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        m_frameReady = false;
         return;
     }
     
@@ -559,6 +561,7 @@ void CudaRenderer::render(const Map& map, const Player& player) {
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
         std::cerr << "cudaDeviceSynchronize failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        m_frameReady = false;
         return;
     }
     
@@ -568,8 +571,51 @@ void CudaRenderer::render(const Map& map, const Player& player) {
     // Update SDL texture with frame buffer
     SDL_UpdateTexture(m_frameTexture, NULL, m_hostFrameBuffer, m_screenWidth * sizeof(uint32_t));
     
-    // Render the texture to the screen
-    SDL_RenderCopy(m_sdlRenderer, m_frameTexture, NULL, NULL);
+    // Mark frame as ready
+    m_frameReady = true;
+    
+    std::cout << "CudaRenderer::generateFrame completed" << std::endl;
+}
+
+void CudaRenderer::blitFrameBuffer() {
+    std::cout << "CudaRenderer::blitFrameBuffer called" << std::endl;
+    
+    if (!m_frameReady) {
+        std::cerr << "No frame ready to blit!" << std::endl;
+        return;
+    }
+    
+    // Simply render the texture to the screen
+    // We don't use NULL for the destination rect to ensure it's properly scaled
+    SDL_Rect destRect = {0, 0, m_screenWidth, m_screenHeight};
+    
+    // Save current renderer state
+    SDL_BlendMode oldBlendMode;
+    SDL_GetRenderDrawBlendMode(m_sdlRenderer, &oldBlendMode);
+    
+    // Set blend mode to NONE for the background frame
+    // This ensures the frame completely overwrites whatever was there before
+    SDL_SetTextureBlendMode(m_frameTexture, SDL_BLENDMODE_NONE);
+    
+    // Render the texture (the 3D view)
+    SDL_RenderCopy(m_sdlRenderer, m_frameTexture, NULL, &destRect);
+    
+    // Restore renderer state
+    SDL_SetRenderDrawBlendMode(m_sdlRenderer, oldBlendMode);
+    
+    std::cout << "CudaRenderer::blitFrameBuffer completed" << std::endl;
+}
+
+void CudaRenderer::render(const Map& map, const Player& player) {
+    std::cout << "CudaRenderer::render called" << std::endl;
+    
+    // Generate the frame
+    generateFrame(map, player);
+    
+    // Blit the frame buffer
+    blitFrameBuffer();
+    
+    std::cout << "CudaRenderer::render completed" << std::endl;
 }
 
 void CudaRenderer::renderSprites(const Map& map, const Player& player) {

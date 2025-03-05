@@ -933,6 +933,8 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         return;
     }
     
+    std::cout << "Renderer::renderWeapon called with texture ID: " << weaponTextureId << std::endl;
+    
     // Get the weapon texture using the passed texture ID
     const Texture* weaponTexture = m_textureManager->getTexture(weaponTextureId);
     
@@ -972,6 +974,9 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         return;
     }
     
+    std::cout << "Found weapon texture with ID " << weaponTextureId << ", dimensions: " 
+              << weaponTexture->getWidth() << "x" << weaponTexture->getHeight() << std::endl;
+    
     // Calculate the weapon size (maintain aspect ratio)
     float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
     int weaponHeight = m_screenHeight / 2;  // Take up half the screen height
@@ -995,8 +1000,42 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
     // Get the SDL texture from the Texture object
     SDL_Texture* sdlTexture = weaponTexture->getSDLTexture();
     if (sdlTexture) {
-        // Draw the texture
-        SDL_RenderCopy(m_renderer, sdlTexture, NULL, &destRect);
+        std::cout << "Rendering weapon texture with SDL_Texture: " << sdlTexture << std::endl;
+        
+        // CRITICAL: Save the entire renderer state
+        SDL_Renderer* renderer = m_renderer;
+        
+        // Save blend mode
+        SDL_BlendMode oldBlendMode;
+        SDL_GetTextureBlendMode(sdlTexture, &oldBlendMode);
+        
+        // Force alpha blending for the weapon
+        SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+        
+        // Set the alpha value to fully opaque
+        SDL_SetTextureAlphaMod(sdlTexture, 255);
+        
+        // Save current target
+        SDL_Texture* currentTarget = SDL_GetRenderTarget(renderer);
+        SDL_SetRenderTarget(renderer, NULL);  // Ensure we're rendering to the default target
+        
+        // CRITICAL: Use this more reliable method to render the texture
+        // This ensures it's rendered at the correct size and position
+        SDL_RenderCopyEx(
+            renderer,          // Renderer
+            sdlTexture,        // Texture
+            NULL,              // Source rectangle (NULL = entire texture)
+            &destRect,         // Destination rectangle
+            0.0,               // Angle (no rotation)
+            NULL,              // Center of rotation (NULL = center of dest rect)
+            SDL_FLIP_NONE      // No flipping
+        );
+        
+        // Restore renderer state
+        SDL_SetRenderTarget(renderer, currentTarget);
+        SDL_SetTextureBlendMode(sdlTexture, oldBlendMode);
+    } else {
+        std::cout << "Failed to get SDL_Texture from weapon texture" << std::endl;
     }
     
     // Render muzzle flash if needed

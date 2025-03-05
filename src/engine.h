@@ -147,6 +147,7 @@ private:
     int m_weaponTexture;
     int m_bulletTexture;
     int m_machineGunTexture;
+    int m_rocketLauncherTexture;
     int m_currentWeaponTexture;
     std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
     

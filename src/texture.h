@@ -6,6 +6,7 @@
 #include <memory>
 #include <SDL2/SDL.h>
 #include "utils.h"
+#include <iostream>
 
 // Forward declarations
 class TextureManager;
@@ -82,7 +83,10 @@ public:
     
     // Add an existing SDL texture
     int addTexture(SDL_Texture* sdlTexture) {
-        if (!sdlTexture) return -1;
+        if (!sdlTexture) {
+            std::cout << "TextureManager::addTexture - SDL_Texture is null" << std::endl;
+            return -1;
+        }
         
         auto texture = std::make_unique<Texture>();
         
@@ -97,7 +101,9 @@ public:
         
         // Add texture to the manager
         m_textures.push_back(std::move(texture));
-        return static_cast<int>(m_textures.size() - 1);
+        int id = static_cast<int>(m_textures.size() - 1);
+        std::cout << "TextureManager::addTexture - Added texture with ID: " << id << ", dimensions: " << width << "x" << height << std::endl;
+        return id;
     }
     
     // Get a texture by ID

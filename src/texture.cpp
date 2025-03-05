@@ -356,6 +356,7 @@ int TextureManager::createTextureFromSurface(SDL_Surface* surface) {
 
 const Texture* TextureManager::getTexture(int id) const {
     if (id < 0 || id >= static_cast<int>(m_textures.size())) {
+        std::cout << "TextureManager::getTexture - Invalid texture ID: " << id << ", max ID: " << (m_textures.size() - 1) << std::endl;
         return nullptr;
     }
     
@@ -365,10 +366,16 @@ const Texture* TextureManager::getTexture(int id) const {
 SDL_Texture* TextureManager::getSDLTexture(int id) const {
     const Texture* texture = getTexture(id);
     if (!texture) {
+        std::cout << "TextureManager::getSDLTexture - Texture not found for ID: " << id << std::endl;
         return nullptr;
     }
     
-    return texture->getSDLTexture();
+    SDL_Texture* sdlTexture = texture->getSDLTexture();
+    if (!sdlTexture) {
+        std::cout << "TextureManager::getSDLTexture - SDL_Texture is null for ID: " << id << std::endl;
+    }
+    
+    return sdlTexture;
 }
 
 void TextureManager::initDefaultTextures() {
@@ -419,4 +426,4 @@ SDL_Surface* createDoomWallTexture(int width, int height) {
     
     SDL_UnlockSurface(surface);
     return surface;
-} 
+}

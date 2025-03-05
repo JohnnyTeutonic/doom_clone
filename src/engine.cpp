@@ -35,6 +35,7 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_prevMouseLeftDown(false)
     , m_cudaRenderer(nullptr)
     , m_useCuda(false)
+    , m_rocketLauncherTexture(-1)
 {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
@@ -415,6 +416,10 @@ void Engine::restartGame() {
 }
 
 void Engine::processInput() {
+    // Update input handler at the beginning of input processing
+    // This is critical for ensuring key state changes are properly detected
+    m_inputHandler.update();
+    
     // Handle SDL events
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -476,6 +481,52 @@ void Engine::processInput() {
     }
     if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
         m_player.strafeRight(m_deltaTime, m_map);
+    }
+    
+    // Weapon switching - DIRECT approach with SDL key states
+    // Track key states manually to detect presses
+    static bool prevKey1Down = false;
+    static bool prevKey2Down = false;
+    static bool prevKey3Down = false;
+    
+    // Check key 1 for pistol
+    bool key1Down = keyboardState[SDL_SCANCODE_1] != 0;
+    if (key1Down && !prevKey1Down) {
+        std::cout << "DIRECT KEY DETECTION: Key 1 pressed - switching to pistol" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::Pistol);
+        m_currentWeaponTexture = m_weaponTexture;
+        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Pistol)" << std::endl;
+        showNotification("Pistol selected", 1.0);
+    }
+    prevKey1Down = key1Down;
+    
+    // Check key 2 for machine gun
+    bool key2Down = keyboardState[SDL_SCANCODE_2] != 0;
+    if (key2Down && !prevKey2Down) {
+        std::cout << "DIRECT KEY DETECTION: Key 2 pressed - switching to machine gun" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::MachineGun);
+        m_currentWeaponTexture = m_machineGunTexture;
+        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Machine Gun)" << std::endl;
+        showNotification("Machine Gun selected", 1.0);
+    }
+    prevKey2Down = key2Down;
+    
+    // Check key 3 for rocket launcher
+    bool key3Down = keyboardState[SDL_SCANCODE_3] != 0;
+    if (key3Down && !prevKey3Down) {
+        std::cout << "DIRECT KEY DETECTION: Key 3 pressed - switching to rocket launcher" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::RocketLauncher);
+        m_currentWeaponTexture = m_rocketLauncherTexture;
+        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Rocket Launcher)" << std::endl;
+        showNotification("Rocket Launcher selected", 1.0);
+    }
+    prevKey3Down = key3Down;
+    
+    // Additional debugging - print the state of all relevant keys
+    if (keyboardState[SDL_SCANCODE_1] || keyboardState[SDL_SCANCODE_2] || keyboardState[SDL_SCANCODE_3]) {
+        std::cout << "Key states: 1=" << (keyboardState[SDL_SCANCODE_1] ? "down" : "up") 
+                  << ", 2=" << (keyboardState[SDL_SCANCODE_2] ? "down" : "up")
+                  << ", 3=" << (keyboardState[SDL_SCANCODE_3] ? "down" : "up") << std::endl;
     }
     
     // Rotation with mouse
@@ -613,8 +664,7 @@ void Engine::update() {
         m_map.updateVisibility(m_player.getPosition());
     }
     
-    // Update input handler at the end of the frame
-    m_inputHandler.update();
+    // Note: Input handler is now updated at the beginning of processInput()
 }
 
 void Engine::renderNotification() {
@@ -666,6 +716,13 @@ void Engine::renderNotification() {
 }
 
 void Engine::render() {
+    // Debug check to ensure weapon texture wasn't reset unexpectedly
+    static int lastWeaponTexture = -1;
+    if (lastWeaponTexture != m_currentWeaponTexture) {
+        std::cout << "Weapon texture changed from " << lastWeaponTexture << " to " << m_currentWeaponTexture << std::endl;
+        lastWeaponTexture = m_currentWeaponTexture;
+    }
+    
     // Clear screen
     SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 255);
     SDL_RenderClear(m_sdlRenderer);
@@ -680,12 +737,34 @@ void Engine::render() {
         case GameState::Playing:
             // Render the game
             if (m_useCuda && m_cudaRenderer) {
-                // Use CUDA renderer for the 3D view
-                m_cudaRenderer->render(m_map, m_player);
+                // Get the ray-casting buffer from CUDA without rendering it directly
+                // This returns a frame buffer that we can render ourselves
+                m_cudaRenderer->generateFrame(m_map, m_player);
                 
-                // Use CPU renderer for weapon and UI
+                // Now manually render the frame buffer to the screen
+                // This gives us complete control over the rendering order
+                m_cudaRenderer->blitFrameBuffer();
+                
+                // Now render all UI elements on top
                 if (m_renderer->isShowingWeapon()) {
-                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+                    std::cout << "CUDA mode: About to render weapon with texture ID: " << m_currentWeaponTexture << std::endl;
+                    std::cout << "  Pistol ID: " << m_weaponTexture << std::endl;
+                    std::cout << "  Machine Gun ID: " << m_machineGunTexture << std::endl;
+                    std::cout << "  Rocket Launcher ID: " << m_rocketLauncherTexture << std::endl;
+                    
+                    // Verify we're using the right texture
+                    int textureToUse = m_currentWeaponTexture;
+                    
+                    // Safety check - if somehow m_currentWeaponTexture is invalid, use a fallback
+                    if (textureToUse != m_weaponTexture && 
+                        textureToUse != m_machineGunTexture && 
+                        textureToUse != m_rocketLauncherTexture) {
+                        std::cout << "WARNING: Invalid current weapon texture ID! Defaulting to pistol." << std::endl;
+                        textureToUse = m_weaponTexture;
+                        m_currentWeaponTexture = m_weaponTexture; // Fix the variable too
+                    }
+                    
+                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, textureToUse);
                 }
                 
                 // Render sprites
@@ -700,7 +779,24 @@ void Engine::render() {
                 // Use CPU renderer
                 m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
                 if (m_renderer->isShowingWeapon()) {
-                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
+                    std::cout << "CPU mode: About to render weapon with texture ID: " << m_currentWeaponTexture << std::endl;
+                    std::cout << "  Pistol ID: " << m_weaponTexture << std::endl;
+                    std::cout << "  Machine Gun ID: " << m_machineGunTexture << std::endl;
+                    std::cout << "  Rocket Launcher ID: " << m_rocketLauncherTexture << std::endl;
+                    
+                    // Verify we're using the right texture
+                    int textureToUse = m_currentWeaponTexture;
+                    
+                    // Safety check - if somehow m_currentWeaponTexture is invalid, use a fallback
+                    if (textureToUse != m_weaponTexture && 
+                        textureToUse != m_machineGunTexture && 
+                        textureToUse != m_rocketLauncherTexture) {
+                        std::cout << "WARNING: Invalid current weapon texture ID! Defaulting to pistol." << std::endl;
+                        textureToUse = m_weaponTexture;
+                        m_currentWeaponTexture = m_weaponTexture; // Fix the variable too
+                    }
+                    
+                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, textureToUse);
                 }
                 
                 // Render notification if active
@@ -722,7 +818,8 @@ void Engine::render() {
             break;
     }
     
-    // Present the renderer
+    // Present the renderer - we do this ONCE at the end of the frame
+    std::cout << "Calling SDL_RenderPresent at the end of the frame" << std::endl;
     SDL_RenderPresent(m_sdlRenderer);
 }
 
@@ -738,6 +835,7 @@ bool Engine::loadAssets() {
     m_impTexture = -1;
     m_weaponTexture = -1;
     m_machineGunTexture = -1;
+    m_rocketLauncherTexture = -1;
     
     std::string assetsPath = "assets/textures/";
     
@@ -1304,40 +1402,134 @@ bool Engine::loadAssets() {
     // Load weapon textures with transparency
     std::cout << "Loading weapon textures..." << std::endl;
     
+    // Reset texture IDs to ensure they're unique
+    m_weaponTexture = -1;
+    m_machineGunTexture = -1;
+    m_rocketLauncherTexture = -1;
+    
     // Load shotgun
     SDL_Surface* tempSurface = IMG_Load((assetsPath + "shotgun.webp").c_str());
     if (tempSurface) {
+        // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
+        
+        // DEBUG: Save the surface to a file to verify it's loading correctly
+        SDL_SaveBMP(tempSurface, "shotgun_debug.bmp");
+        
+        // Create texture from surface
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
+            // Set blend mode to allow transparency
             SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+            
+            // Add texture to manager
             m_weaponTexture = m_textureManager->addTexture(texture);
+            
+            std::cout << "Added shotgun texture with ID: " << m_weaponTexture << std::endl;
         }
         SDL_FreeSurface(tempSurface);
     }
     if (m_weaponTexture < 0) {
         m_weaponTexture = m_textureManager->createSolidTexture(256, 256, Color(128, 128, 128));
+        std::cout << "Created fallback shotgun texture with ID: " << m_weaponTexture << std::endl;
     }
     std::cout << "Weapon texture ID: " << m_weaponTexture << std::endl;
     
-    // Load machine gun
+    // Load machine gun - use a different path just to be sure
     tempSurface = IMG_Load((assetsPath + "machine_gun.png").c_str());
     if (tempSurface) {
+        // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
+        
+        // DEBUG: Save the surface to a file to verify it's loading correctly
+        SDL_SaveBMP(tempSurface, "machine_gun_debug.bmp");
+        
+        // Create texture from surface - create a new texture, don't reuse
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
+            // Set blend mode to allow transparency
             SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-            m_machineGunTexture = m_textureManager->addTexture(texture);
+            
+            // Manually check the texture is not null
+            if (texture == nullptr) {
+                std::cerr << "ERROR: Machine gun texture is NULL after SDL_CreateTextureFromSurface" << std::endl;
+            } else {
+                // Force this to be a different texture ID than the shotgun
+                m_machineGunTexture = m_textureManager->addTexture(texture);
+                std::cout << "Added machine gun texture with ID: " << m_machineGunTexture << std::endl;
+            }
         }
         SDL_FreeSurface(tempSurface);
     }
     if (m_machineGunTexture < 0) {
-        m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 100));
+        // Make sure this creates a different solid texture than the shotgun
+        m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(100, 100, 200)); // Different color
+        std::cout << "Created fallback machine gun texture with ID: " << m_machineGunTexture << std::endl;
     }
     std::cout << "Machine gun texture ID: " << m_machineGunTexture << std::endl;
     
+    // Load rocket launcher - make sure we get a unique texture
+    tempSurface = IMG_Load((assetsPath + "rocket_launcher.png").c_str());
+    if (tempSurface) {
+        // Set black as the transparent color
+        SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
+        
+        // DEBUG: Save the surface to a file to verify it's loading correctly
+        SDL_SaveBMP(tempSurface, "rocket_launcher_debug.bmp");
+        
+        // Create texture from surface - with a unique SDL_Texture
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
+        if (texture) {
+            // Set blend mode to allow transparency
+            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+            
+            // Manually check the texture is not null
+            if (texture == nullptr) {
+                std::cerr << "ERROR: Rocket launcher texture is NULL after SDL_CreateTextureFromSurface" << std::endl;
+            } else {
+                // Force this to be a different texture ID than the other weapons
+                m_rocketLauncherTexture = m_textureManager->addTexture(texture);
+                std::cout << "Added rocket launcher texture with ID: " << m_rocketLauncherTexture << std::endl;
+            }
+        }
+        SDL_FreeSurface(tempSurface);
+    }
+    if (m_rocketLauncherTexture < 0) {
+        // Make sure this creates a different solid texture
+        m_rocketLauncherTexture = m_textureManager->createSolidTexture(256, 256, Color(255, 120, 120)); // Distinctly different color
+        std::cout << "Created fallback rocket launcher texture with ID: " << m_rocketLauncherTexture << std::endl;
+    }
+    std::cout << "Rocket launcher texture ID: " << m_rocketLauncherTexture << std::endl;
+    
+    // Verify all weapons have different texture IDs
+    if (m_weaponTexture == m_machineGunTexture || m_weaponTexture == m_rocketLauncherTexture || m_machineGunTexture == m_rocketLauncherTexture) {
+        std::cerr << "ERROR: Weapon textures have duplicate IDs!" << std::endl;
+        // Force them to be different if they're duplicates
+        if (m_machineGunTexture == m_weaponTexture) {
+            m_machineGunTexture = m_textureManager->createSolidTexture(256, 256, Color(0, 200, 0));
+            std::cout << "Fixed duplicate: New machine gun texture ID: " << m_machineGunTexture << std::endl;
+        }
+        if (m_rocketLauncherTexture == m_weaponTexture) {
+            m_rocketLauncherTexture = m_textureManager->createSolidTexture(256, 256, Color(200, 0, 0));
+            std::cout << "Fixed duplicate: New rocket launcher texture ID: " << m_rocketLauncherTexture << std::endl;
+        }
+        if (m_rocketLauncherTexture == m_machineGunTexture) {
+            m_rocketLauncherTexture = m_textureManager->createSolidTexture(256, 256, Color(0, 0, 200));
+            std::cout << "Fixed duplicate: New rocket launcher texture ID: " << m_rocketLauncherTexture << std::endl;
+        }
+    }
+    
     // Set initial weapon texture
     m_currentWeaponTexture = m_weaponTexture;
+    
+    // Debug printout of all weapon texture IDs
+    std::cout << "\n=============================================" << std::endl;
+    std::cout << "WEAPON TEXTURE IDs:" << std::endl;
+    std::cout << "Pistol/Shotgun (m_weaponTexture): " << m_weaponTexture << std::endl;
+    std::cout << "Machine Gun (m_machineGunTexture): " << m_machineGunTexture << std::endl;
+    std::cout << "Rocket Launcher (m_rocketLauncherTexture): " << m_rocketLauncherTexture << std::endl;
+    std::cout << "Current weapon texture: " << m_currentWeaponTexture << std::endl;
+    std::cout << "=============================================\n" << std::endl;
     
     // Create a variety of wall textures for more interesting maps
     std::cout << "Adding wall texture variations to m_wallTextureVariations" << std::endl;
@@ -1356,7 +1548,7 @@ bool Engine::loadAssets() {
     // Verify all required textures were created
     bool success = m_wallTexture >= 0 && m_floorTexture >= 0 && m_ceilingTexture >= 0 && 
                   m_bulletTexture >= 0 && m_enemyTexture >= 0 && m_weaponTexture >= 0 && 
-                  m_machineGunTexture >= 0 && !m_wallTextureVariations.empty();
+                  m_machineGunTexture >= 0 && m_rocketLauncherTexture >= 0 && !m_wallTextureVariations.empty();
     
     if (!success) {
         std::cerr << "Failed to create one or more required textures!" << std::endl;

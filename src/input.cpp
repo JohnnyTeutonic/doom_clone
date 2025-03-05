@@ -24,14 +24,19 @@ void InputHandler::init() {
 }
 
 void InputHandler::update() {
-    // Store current key states as previous states
+    // First, store current key states as previous states
     m_prevKeyStates = m_keyStates;
     
     // Get current keyboard state directly from SDL
     int numKeys;
     const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
     
-    // Update our key state map
+    // Track if we've updated key states for important keys like 1-3
+    bool updated1 = false;
+    bool updated2 = false;
+    bool updated3 = false;
+    
+    // Update our key state map for all mapped keys
     for (auto& binding : m_keyBindings) {
         SDL_Scancode scancode = binding.first;
         if (scancode < numKeys) {
@@ -45,10 +50,44 @@ void InputHandler::update() {
             } else if (!isDown && wasDown) {
                 std::cout << "Key released (direct): " << SDL_GetScancodeName(scancode) << " (scancode: " << scancode << ")" << std::endl;
             }
+            
+            // Track numeric keys specifically
+            if (scancode == SDL_SCANCODE_1) updated1 = true;
+            if (scancode == SDL_SCANCODE_2) updated2 = true;
+            if (scancode == SDL_SCANCODE_3) updated3 = true;
         }
     }
     
-    // Reset mouse motion
+    // Make absolutely sure we update the states for number keys (1-3) even if they're not bound
+    // This is a safeguard to ensure weapon switching keys are always tracked
+    if (!updated1) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_1];
+        bool isDown = keyboardState[SDL_SCANCODE_1] ? true : false;
+        m_keyStates[SDL_SCANCODE_1] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "Key 1 state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    if (!updated2) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_2];
+        bool isDown = keyboardState[SDL_SCANCODE_2] ? true : false;
+        m_keyStates[SDL_SCANCODE_2] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "Key 2 state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    if (!updated3) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_3];
+        bool isDown = keyboardState[SDL_SCANCODE_3] ? true : false;
+        m_keyStates[SDL_SCANCODE_3] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "Key 3 state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    // Reset mouse motion for this frame
     m_mouseRelX = 0;
     m_mouseRelY = 0;
 }
@@ -105,7 +144,17 @@ bool InputHandler::isKeyPressed(SDL_Scancode key) const {
     bool isDown = (currIt != m_keyStates.end() && currIt->second);
     bool wasDown = (prevIt != m_prevKeyStates.end() && prevIt->second);
     
-    return isDown && !wasDown;
+    bool result = isDown && !wasDown;
+    
+    // Debug output for number keys (1-3)
+    if (key == SDL_SCANCODE_1 || key == SDL_SCANCODE_2 || key == SDL_SCANCODE_3) {
+        std::cout << "isKeyPressed for key " << SDL_GetScancodeName(key) 
+                  << ": isDown=" << isDown 
+                  << ", wasDown=" << wasDown 
+                  << ", result=" << result << std::endl;
+    }
+    
+    return result;
 }
 
 bool InputHandler::isKeyReleased(SDL_Scancode key) const {
@@ -145,6 +194,14 @@ bool InputHandler::isActionJustPressed(InputAction action) const {
     // Find all keys bound to this action
     for (const auto& binding : m_keyBindings) {
         if (binding.second == action && isKeyPressed(binding.first)) {
+            // Special debug for weapon actions
+            if (action == InputAction::Weapon1 || 
+                action == InputAction::Weapon2 || 
+                action == InputAction::Weapon3) {
+                std::cout << "WEAPON ACTION DETECTED: " << static_cast<int>(action) 
+                          << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
+            }
+            
             std::cout << "Action just pressed: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
             return true;
         }
