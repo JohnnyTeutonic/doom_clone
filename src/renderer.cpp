@@ -311,21 +311,15 @@ void Renderer::renderView(const Map& map, const Player& player) {
                 
                 // Add a shadow at the edge between horizontal and vertical parts
                 SDL_SetRenderDrawColor(m_renderer, 50, 50, 100, 255); // Dark shadow
-                SDL_RenderDrawLine(m_renderer, x, midPoint-1, x, midPoint+1);
+                SDL_RenderDrawLine(m_renderer, x, midPoint, x, midPoint+1);
             }
-            else if (isStairs) {
-                // For stair entry/exit points, create a distinct pattern
-                // Render the entry/exit point with a fancy pattern
-                // Create a chevron/arrow pattern pointing up/down
+            else {
+                // Render stair entry/exit point with a special pattern
                 for (int y = drawStart; y < drawEnd; y++) {
-                    // Calculate normalized position in the stair (0.0 to 1.0)
-                    float relY = (y - drawStart) / static_cast<float>(drawEnd - drawStart);
+                    // Calculate pattern based on position
+                    int patternY = (y - drawStart) % 10;
+                    int patternX = (x + patternY) % 10;
                     
-                    // Create an arrow/chevron pattern
-                    int patternValue = static_cast<int>((relY * 10)) % 10;
-                    int patternX = abs(patternValue - 5); // Creates a zigzag from 5->0->5
-                    
-                    // Arrow pattern is wider in the middle, narrower at ends
                     if (x % 5 <= patternX) {
                         // Golden/yellow for entry points
                         SDL_SetRenderDrawColor(m_renderer, 255, 215, 0, 255);
@@ -522,54 +516,52 @@ void Renderer::renderView(const Map& map, const Player& player) {
 }
 
 void Renderer::renderSprites(const Player& player) {
-    if (!m_spriteManager) return;
+    if (!m_spriteManager || !m_textureManager) return;
     
-    // Get player position and vertical angle
+    // Get player position and direction
     const Vec2& pos = player.getPosition();
     const Vec2& dir = player.getDirection();
     const Vec2& plane = player.getPlane();
-    double verticalAngle = player.getVerticalAngle();  // Get vertical look angle
+    double verticalAngle = player.getVerticalAngle();
     
     // Calculate vertical offset based on vertical angle
     int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
     
-    // Get active sprites
+    // Get all active sprites
     std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+    if (sprites.empty()) return;
     
-    // Sort sprites by distance (furthest first)
-    std::sort(sprites.begin(), sprites.end(), 
-        [&pos](const Sprite* a, const Sprite* b) {
-            double distA = (a->getPosition() - pos).lengthSquared();
-            double distB = (b->getPosition() - pos).lengthSquared();
-            return distA > distB;
-        }
-    );
+    // Sort sprites by distance (closest first for proper rendering)
+    std::sort(sprites.begin(), sprites.end(), [&pos](const Sprite* a, const Sprite* b) {
+        double distA = (a->getPosition() - pos).lengthSquared();
+        double distB = (b->getPosition() - pos).lengthSquared();
+        return distA < distB;  // Sort in ascending order (closest first)
+    });
     
-    // Render each sprite
+    // For each sprite
     for (const Sprite* sprite : sprites) {
-        // Translate sprite position to relative to camera
-        double spriteX = sprite->getPosition().x - pos.x;
-        double spriteY = sprite->getPosition().y - pos.y;
+        if (!sprite->isVisible() || !sprite->isActive()) continue;
+        
+        // Translate sprite position relative to player
+        Vec2 spritePos = sprite->getPosition() - pos;
         
         // Transform sprite with the inverse camera matrix
         double invDet = 1.0 / (plane.x * dir.y - dir.x * plane.y);
-        double transformX = invDet * (dir.y * spriteX - dir.x * spriteY);
-        double transformY = invDet * (-plane.y * spriteX + plane.x * spriteY);
+        double transformX = invDet * (dir.y * spritePos.x - dir.x * spritePos.y);
+        double transformY = invDet * (-plane.y * spritePos.x + plane.x * spritePos.y);
         
-        // Skip if behind player or too far away (culling)
-        if (transformY <= 0.1) continue;
-        
-        // Optimization: Skip distant sprites when in low performance mode
-        if (m_performanceLevel == PerformanceLevel::Low && transformY > 12.0) continue;
+        // Skip sprites behind the player
+        if (transformY <= 0) continue;
         
         // Calculate sprite screen position
         int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
         
         // Calculate sprite height and width on screen
-        int spriteHeight = std::abs(static_cast<int>(m_screenHeight / transformY)) * sprite->getSize();
-        int spriteWidth = spriteHeight; // Square sprites
+        double spriteSize = sprite->getSize();
+        int spriteHeight = abs(static_cast<int>(m_screenHeight / transformY * spriteSize));
+        int spriteWidth = abs(static_cast<int>(m_screenHeight / transformY * spriteSize));
         
-        // Calculate drawing boundaries with vertical offset applied
+        // Calculate drawing bounds
         int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
         if (drawStartY < 0) drawStartY = 0;
         int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
@@ -580,23 +572,11 @@ void Renderer::renderSprites(const Player& player) {
         int drawEndX = spriteWidth / 2 + spriteScreenX;
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
-        // Get the sprite texture based on animation frame
+        // Get sprite texture
         int textureId = sprite->getTextureId();
         
-        // For enemy sprites, check if we need to use a different texture based on animation frame
-        if (sprite->getType() == SpriteType::Enemy) {
-            // Get the current animation frame
-            int currentFrame = sprite->getCurrentFrame();
-            
-            // Use the engine reference to get texture frames
-            if (m_engine && currentFrame >= 0) {
-                const std::vector<int>& enemyTextureFrames = m_engine->getEnemyTextureFrames();
-                if (!enemyTextureFrames.empty() && currentFrame < static_cast<int>(enemyTextureFrames.size())) {
-                    textureId = enemyTextureFrames[currentFrame];
-                }
-            }
-        } else if (sprite->getType() == SpriteType::ImpEnemy) {
-            // Get the current animation frame for Imp
+        // For animated sprites, get the current frame
+        if (sprite->getType() == SpriteType::ImpEnemy) {
             int currentFrame = sprite->getCurrentFrame();
             
             // Use the engine reference to get Imp texture frames
@@ -606,6 +586,16 @@ void Renderer::renderSprites(const Player& player) {
                     textureId = impTextureFrames[currentFrame];
                 }
             }
+        } else if (sprite->getType() == SpriteType::Enemy) {
+            int currentFrame = sprite->getCurrentFrame();
+            
+            // Use the engine reference to get Enemy texture frames
+            if (m_engine && currentFrame >= 0) {
+                const std::vector<int>& enemyTextureFrames = m_engine->getEnemyTextureFrames();
+                if (!enemyTextureFrames.empty() && currentFrame < static_cast<int>(enemyTextureFrames.size())) {
+                    textureId = enemyTextureFrames[currentFrame];
+                }
+            }
         }
         
         // Get the texture
@@ -613,28 +603,23 @@ void Renderer::renderSprites(const Player& player) {
         if (!texture) continue;
         
         // Optimization: Pre-calculate lighting based on distance (fake lighting for sprites)
-        // This is much faster than calculating per-pixel lighting for sprites
         double distanceShade = 1.0 - std::min(1.0, transformY / 15.0);
         
         // Adjust shading based on performance level
         if (m_performanceLevel == PerformanceLevel::High) {
             // For high quality, use slightly more accurate lighting calculation
-            // Create a normal vector pointing towards the player for more accurate lighting
             Vec2 spriteNormal = (pos - sprite->getPosition()).normalized();
-            
-            // Pre-calculate one lighting value for the whole sprite
             Color lighting = m_lightingSystem.calculateLighting(sprite->getPosition(), spriteNormal, pos);
-            
-            // Adjust the distance shading based on this lighting
             distanceShade *= (lighting.r + lighting.g + lighting.b) / (3.0 * 255.0);
         }
         
-        // Draw the sprite
+        // Draw the sprite directly to the screen
         for (int x = drawStartX; x < drawEndX; x++) {
             // Check if sprite is in front of the wall
             if (transformY > 0 && x >= 0 && x < m_screenWidth && transformY < m_zBuffer[x]) {
                 // Calculate texture x coordinate
                 double texX = (x - (-spriteWidth / 2 + spriteScreenX)) / static_cast<double>(spriteWidth);
+                texX = std::max(0.0, std::min(0.999, texX)); // Clamp to [0, 0.999]
                 
                 // For medium/high quality, determine pixel lighting frequency
                 int pixelStride = 1; // Default render every pixel
@@ -646,6 +631,7 @@ void Renderer::renderSprites(const Player& player) {
                 for (int y = drawStartY; y < drawEndY; y += pixelStride) {
                     // Calculate texture y coordinate
                     double texY = (y - drawStartY) / static_cast<double>(drawEndY - drawStartY);
+                    texY = std::max(0.0, std::min(0.999, texY)); // Clamp to [0, 0.999]
                     
                     // Get pixel color from texture
                     Color color = texture->getPixelNormalized(texX, texY);
@@ -661,10 +647,8 @@ void Renderer::renderSprites(const Player& player) {
                     SDL_RenderDrawPoint(m_renderer, x, y);
                     
                     // Fill in skipped pixels with the same color if using stride > 1
-                    if (pixelStride > 1) {
-                        for (int i = 1; i < pixelStride && y + i < drawEndY; i++) {
-                            SDL_RenderDrawPoint(m_renderer, x, y + i);
-                        }
+                    for (int i = 1; i < pixelStride && y + i < drawEndY; i++) {
+                        SDL_RenderDrawPoint(m_renderer, x, y + i);
                     }
                 }
             }
@@ -881,7 +865,6 @@ void Renderer::renderMinimap(const Map& map, const Player& player, ProjectileMan
                                     }
                                 }
                             }
-                            if (targetElevation >= 0) break;
                         }
                         
                         // Draw up/down marker
