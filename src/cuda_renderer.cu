@@ -121,10 +121,24 @@ extern "C" __global__ void raycastKernel(
     if (drawEnd >= screenHeight) drawEnd = screenHeight - 1;
     
     // Texturing calculations
-    int texNum = cellValue - 1; // Subtract 1 to get texture index (0-based)
+    int texNum = 0; // Default to texture 0
     
-    // Ensure texNum is valid (prevent negative indices)
-    if (texNum < 0) texNum = 0;
+    // Extract the texture ID from the cell value
+    // If the cell value is > 100, it's a wall with an encoded texture ID
+    if (cellValue > 100) {
+        // The texture ID is encoded as (textureId + 1) * 100 + cellType
+        // So we divide by 100 and subtract 1 to get the texture ID
+        texNum = (cellValue / 100) - 1;
+        
+        // Ensure texNum is valid (0-3)
+        texNum = (texNum < 0) ? 0 : (texNum > 3) ? 3 : texNum;
+    } else {
+        // For regular cells, use the cell value - 1 as the texture index
+        texNum = cellValue - 1;
+        
+        // Ensure texNum is valid (prevent negative indices)
+        if (texNum < 0) texNum = 0;
+    }
     
     // Calculate where exactly the wall was hit
     float wallX;

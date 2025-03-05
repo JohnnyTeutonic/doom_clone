@@ -123,24 +123,25 @@ bool CudaRenderer::init(int screenWidth, int screenHeight, SDL_Renderer* sdlRend
     m_wallTextureHeight = 64;
     
     // Allocate texture memory on device
-    // This is a simplified version, in a real implementation you would load actual textures
-    size_t textureSize = m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t);
+    // For wall textures, allocate space for multiple textures (at least 4)
+    size_t wallTextureSize = 4 * m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t); // Space for 4 wall textures
+    size_t floorCeilingTextureSize = m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t);
     
-    cudaStatus = cudaMalloc((void**)&m_deviceWallTextures, textureSize);
+    cudaStatus = cudaMalloc((void**)&m_deviceWallTextures, wallTextureSize);
     if (cudaStatus != cudaSuccess) {
-        std::cerr << "cudaMalloc failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        std::cerr << "cudaMalloc failed for wall textures: " << cudaGetErrorString(cudaStatus) << std::endl;
         return false;
     }
     
-    cudaStatus = cudaMalloc((void**)&m_deviceFloorTextures, textureSize);
+    cudaStatus = cudaMalloc((void**)&m_deviceFloorTextures, floorCeilingTextureSize);
     if (cudaStatus != cudaSuccess) {
-        std::cerr << "cudaMalloc failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        std::cerr << "cudaMalloc failed for floor textures: " << cudaGetErrorString(cudaStatus) << std::endl;
         return false;
     }
     
-    cudaStatus = cudaMalloc((void**)&m_deviceCeilingTextures, textureSize);
+    cudaStatus = cudaMalloc((void**)&m_deviceCeilingTextures, floorCeilingTextureSize);
     if (cudaStatus != cudaSuccess) {
-        std::cerr << "cudaMalloc failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        std::cerr << "cudaMalloc failed for ceiling textures: " << cudaGetErrorString(cudaStatus) << std::endl;
         return false;
     }
     
@@ -274,7 +275,22 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
             if (std::find(visibleSectors.begin(), visibleSectors.end(), sectorId) == visibleSectors.end()) {
                 hostMapData[y * width + x] = 0; // Mark as empty for rendering
             } else {
-                hostMapData[y * width + x] = cellValue;
+                // For wall cells, encode the texture ID in the cell value
+                if (cellType == CellType::Wall) {
+                    // Get the wall texture ID (0-3) and add 1 to it (to make it 1-4)
+                    // Then multiply by 100 and add the cell type (1 for wall)
+                    // This way, the cell value will be 101, 201, 301, or 401 for walls with different textures
+                    int textureId = map.getWallTexture(x, y);
+                    hostMapData[y * width + x] = ((textureId + 1) * 100) + cellValue;
+                    
+                    // Debug output
+                    if (x == 10 && y == 10) {
+                        std::cout << "Wall at (" << x << "," << y << ") has texture ID " << textureId 
+                                  << " and cell value " << hostMapData[y * width + x] << std::endl;
+                    }
+                } else {
+                    hostMapData[y * width + x] = cellValue;
+                }
             }
         }
     }
@@ -301,154 +317,188 @@ void CudaRenderer::copyTexturesToDevice() {
     // Check if texture manager is available
     if (!m_textureManager) return;
     
-    // Get wall texture - use the first wall texture (ID 0)
-    SDL_Texture* wallTexture = m_textureManager->getSDLTexture(0);
-    if (!wallTexture) {
-        std::cerr << "Wall texture not found" << std::endl;
-        return;
-    }
-    
-    // Get floor texture - use the floor texture (ID 1)
-    SDL_Texture* floorTexture = m_textureManager->getSDLTexture(1);
-    if (!floorTexture) {
-        std::cerr << "Floor texture not found" << std::endl;
-        return;
-    }
-    
-    // Get ceiling texture - use the ceiling texture (ID 2)
-    SDL_Texture* ceilingTexture = m_textureManager->getSDLTexture(2);
-    if (!ceilingTexture) {
-        std::cerr << "Ceiling texture not found" << std::endl;
-        return;
-    }
-    
     // Create temporary buffers for texture data
-    uint32_t* wallTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
+    const int numWallTextures = 4; // Load 4 wall textures (IDs 0-3)
+    uint32_t* wallTextureData = new uint32_t[numWallTextures * m_wallTextureWidth * m_wallTextureHeight];
     uint32_t* floorTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
     uint32_t* ceilingTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
     
-    // Initialize texture data to a default color in case of errors
-    for (int i = 0; i < m_wallTextureWidth * m_wallTextureHeight; i++) {
+    // Initialize texture data to default colors in case of errors
+    for (int i = 0; i < numWallTextures * m_wallTextureWidth * m_wallTextureHeight; i++) {
         wallTextureData[i] = 0xFF808080;  // Gray
+    }
+    
+    for (int i = 0; i < m_wallTextureWidth * m_wallTextureHeight; i++) {
         floorTextureData[i] = 0xFF404040;  // Dark gray
         ceilingTextureData[i] = 0xFF606060;  // Medium gray
     }
     
-    // Alternative method to get texture data since SDL_LockTexture requires streaming textures
-    // Create temporary surfaces to hold texture data
-    SDL_Surface* wallSurface = SDL_CreateRGBSurface(0, m_wallTextureWidth, m_wallTextureHeight, 32,
-                                                  0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
-    SDL_Surface* floorSurface = SDL_CreateRGBSurface(0, m_wallTextureWidth, m_wallTextureHeight, 32,
-                                                   0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
-    SDL_Surface* ceilingSurface = SDL_CreateRGBSurface(0, m_wallTextureWidth, m_wallTextureHeight, 32,
-                                                     0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
-    
-    // Create temporary render targets
-    SDL_Texture* wallTarget = nullptr;
-    SDL_Texture* floorTarget = nullptr;
-    SDL_Texture* ceilingTarget = nullptr;
-    
-    // Save current render target
-    SDL_Texture* oldTarget = nullptr;
-    
-    bool success = true;
-    
-    if (!wallSurface || !floorSurface || !ceilingSurface) {
-        std::cerr << "Failed to create temporary surfaces: " << SDL_GetError() << std::endl;
-        success = false;
-    }
-    
-    // Only proceed if surfaces were created successfully
-    if (success) {
-        wallTarget = SDL_CreateTexture(m_sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                      SDL_TEXTUREACCESS_TARGET, m_wallTextureWidth, m_wallTextureHeight);
-        floorTarget = SDL_CreateTexture(m_sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                       SDL_TEXTUREACCESS_TARGET, m_wallTextureWidth, m_wallTextureHeight);
-        ceilingTarget = SDL_CreateTexture(m_sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                         SDL_TEXTUREACCESS_TARGET, m_wallTextureWidth, m_wallTextureHeight);
-        
-        if (!wallTarget || !floorTarget || !ceilingTarget) {
-            std::cerr << "Failed to create temporary render targets: " << SDL_GetError() << std::endl;
-            success = false;
+    // Load wall textures (IDs 0-3)
+    bool wallTexturesLoaded = false;
+    for (int texId = 0; texId < numWallTextures; texId++) {
+        SDL_Texture* wallTexture = m_textureManager->getSDLTexture(texId);
+        if (!wallTexture) {
+            std::cerr << "Wall texture ID " << texId << " not found" << std::endl;
+            continue;
         }
-    }
-    
-    // Only proceed if render targets were created successfully
-    if (success) {
+        
+        // Create temporary surface for this wall texture
+        SDL_Surface* wallSurface = SDL_CreateRGBSurface(0, m_wallTextureWidth, m_wallTextureHeight, 32,
+                                                      0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+        if (!wallSurface) {
+            std::cerr << "Failed to create temporary surface for wall texture " << texId << ": " << SDL_GetError() << std::endl;
+            continue;
+        }
+        
+        // Create temporary render target
+        SDL_Texture* wallTarget = SDL_CreateTexture(m_sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                                  SDL_TEXTUREACCESS_TARGET, m_wallTextureWidth, m_wallTextureHeight);
+        if (!wallTarget) {
+            std::cerr << "Failed to create temporary render target for wall texture " << texId << ": " << SDL_GetError() << std::endl;
+            SDL_FreeSurface(wallSurface);
+            continue;
+        }
+        
         // Save current render target
-        oldTarget = SDL_GetRenderTarget(m_sdlRenderer);
+        SDL_Texture* oldTarget = SDL_GetRenderTarget(m_sdlRenderer);
         
         // Copy wall texture data
         SDL_SetRenderTarget(m_sdlRenderer, wallTarget);
         SDL_RenderCopy(m_sdlRenderer, wallTexture, NULL, NULL);
         SDL_RenderReadPixels(m_sdlRenderer, NULL, SDL_PIXELFORMAT_ARGB8888, wallSurface->pixels, wallSurface->pitch);
         
-        // Copy floor texture data
-        SDL_SetRenderTarget(m_sdlRenderer, floorTarget);
-        SDL_RenderCopy(m_sdlRenderer, floorTexture, NULL, NULL);
-        SDL_RenderReadPixels(m_sdlRenderer, NULL, SDL_PIXELFORMAT_ARGB8888, floorSurface->pixels, floorSurface->pitch);
-        
-        // Copy ceiling texture data
-        SDL_SetRenderTarget(m_sdlRenderer, ceilingTarget);
-        SDL_RenderCopy(m_sdlRenderer, ceilingTexture, NULL, NULL);
-        SDL_RenderReadPixels(m_sdlRenderer, NULL, SDL_PIXELFORMAT_ARGB8888, ceilingSurface->pixels, ceilingSurface->pitch);
-        
         // Restore original render target
         SDL_SetRenderTarget(m_sdlRenderer, oldTarget);
         
-        // Copy data from surfaces to our texture data arrays
-        if (wallSurface && floorSurface && ceilingSurface) {
-            SDL_LockSurface(wallSurface);
-            SDL_LockSurface(floorSurface);
-            SDL_LockSurface(ceilingSurface);
+        // Copy data from surface to our texture data array
+        SDL_LockSurface(wallSurface);
+        
+        for (int y = 0; y < m_wallTextureHeight; y++) {
+            for (int x = 0; x < m_wallTextureWidth; x++) {
+                int srcIndex = y * (wallSurface->pitch / 4) + x;
+                int destIndex = (texId * m_wallTextureHeight + y) * m_wallTextureWidth + x;
+                Uint32* wallPixels = (Uint32*)wallSurface->pixels;
+                
+                wallTextureData[destIndex] = wallPixels[srcIndex];
+            }
+        }
+        
+        SDL_UnlockSurface(wallSurface);
+        SDL_FreeSurface(wallSurface);
+        SDL_DestroyTexture(wallTarget);
+        
+        wallTexturesLoaded = true;
+        std::cout << "Successfully loaded wall texture ID " << texId << std::endl;
+    }
+    
+    // Get floor texture (ID 1)
+    SDL_Texture* floorTexture = m_textureManager->getSDLTexture(1);
+    if (!floorTexture) {
+        std::cerr << "Floor texture not found" << std::endl;
+    }
+    
+    // Get ceiling texture (ID 2)
+    SDL_Texture* ceilingTexture = m_textureManager->getSDLTexture(2);
+    if (!ceilingTexture) {
+        std::cerr << "Ceiling texture not found" << std::endl;
+    }
+    
+    // Process floor and ceiling textures if they exist
+    bool floorCeilingLoaded = false;
+    if (floorTexture && ceilingTexture) {
+        // Create temporary surfaces
+        SDL_Surface* floorSurface = SDL_CreateRGBSurface(0, m_wallTextureWidth, m_wallTextureHeight, 32,
+                                                       0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+        SDL_Surface* ceilingSurface = SDL_CreateRGBSurface(0, m_wallTextureWidth, m_wallTextureHeight, 32,
+                                                         0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+        
+        if (!floorSurface || !ceilingSurface) {
+            std::cerr << "Failed to create temporary surfaces for floor/ceiling: " << SDL_GetError() << std::endl;
+        } else {
+            // Create temporary render targets
+            SDL_Texture* floorTarget = SDL_CreateTexture(m_sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                                       SDL_TEXTUREACCESS_TARGET, m_wallTextureWidth, m_wallTextureHeight);
+            SDL_Texture* ceilingTarget = SDL_CreateTexture(m_sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                                         SDL_TEXTUREACCESS_TARGET, m_wallTextureWidth, m_wallTextureHeight);
             
-            for (int y = 0; y < m_wallTextureHeight; y++) {
-                for (int x = 0; x < m_wallTextureWidth; x++) {
-                    int index = y * m_wallTextureWidth + x;
-                    Uint32* wallPixels = (Uint32*)wallSurface->pixels;
-                    Uint32* floorPixels = (Uint32*)floorSurface->pixels;
-                    Uint32* ceilingPixels = (Uint32*)ceilingSurface->pixels;
-                    
-                    wallTextureData[index] = wallPixels[y * (wallSurface->pitch / 4) + x];
-                    floorTextureData[index] = floorPixels[y * (floorSurface->pitch / 4) + x];
-                    ceilingTextureData[index] = ceilingPixels[y * (ceilingSurface->pitch / 4) + x];
+            if (!floorTarget || !ceilingTarget) {
+                std::cerr << "Failed to create temporary render targets for floor/ceiling: " << SDL_GetError() << std::endl;
+            } else {
+                // Save current render target
+                SDL_Texture* oldTarget = SDL_GetRenderTarget(m_sdlRenderer);
+                
+                // Copy floor texture data
+                SDL_SetRenderTarget(m_sdlRenderer, floorTarget);
+                SDL_RenderCopy(m_sdlRenderer, floorTexture, NULL, NULL);
+                SDL_RenderReadPixels(m_sdlRenderer, NULL, SDL_PIXELFORMAT_ARGB8888, floorSurface->pixels, floorSurface->pitch);
+                
+                // Copy ceiling texture data
+                SDL_SetRenderTarget(m_sdlRenderer, ceilingTarget);
+                SDL_RenderCopy(m_sdlRenderer, ceilingTexture, NULL, NULL);
+                SDL_RenderReadPixels(m_sdlRenderer, NULL, SDL_PIXELFORMAT_ARGB8888, ceilingSurface->pixels, ceilingSurface->pitch);
+                
+                // Restore original render target
+                SDL_SetRenderTarget(m_sdlRenderer, oldTarget);
+                
+                // Copy data from surfaces to our texture data arrays
+                SDL_LockSurface(floorSurface);
+                SDL_LockSurface(ceilingSurface);
+                
+                for (int y = 0; y < m_wallTextureHeight; y++) {
+                    for (int x = 0; x < m_wallTextureWidth; x++) {
+                        int index = y * m_wallTextureWidth + x;
+                        Uint32* floorPixels = (Uint32*)floorSurface->pixels;
+                        Uint32* ceilingPixels = (Uint32*)ceilingSurface->pixels;
+                        
+                        floorTextureData[index] = floorPixels[y * (floorSurface->pitch / 4) + x];
+                        ceilingTextureData[index] = ceilingPixels[y * (ceilingSurface->pitch / 4) + x];
+                    }
                 }
+                
+                SDL_UnlockSurface(floorSurface);
+                SDL_UnlockSurface(ceilingSurface);
+                
+                SDL_DestroyTexture(floorTarget);
+                SDL_DestroyTexture(ceilingTarget);
+                
+                floorCeilingLoaded = true;
+                std::cout << "Successfully loaded floor and ceiling textures" << std::endl;
             }
             
-            SDL_UnlockSurface(wallSurface);
-            SDL_UnlockSurface(floorSurface);
-            SDL_UnlockSurface(ceilingSurface);
+            SDL_FreeSurface(floorSurface);
+            SDL_FreeSurface(ceilingSurface);
         }
     }
     
-    // Copy texture data to device if we have valid data
-    if (success) {
-        cudaError_t cudaStatus;
-        
-        cudaStatus = cudaMemcpy(m_deviceWallTextures, wallTextureData, m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    // Copy texture data to device
+    cudaError_t cudaStatus;
+    
+    if (wallTexturesLoaded) {
+        cudaStatus = cudaMemcpy(m_deviceWallTextures, wallTextureData, 
+                               numWallTextures * m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t), 
+                               cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) {
-            std::cerr << "Failed to copy wall texture to device: " << cudaGetErrorString(cudaStatus) << std::endl;
+            std::cerr << "Failed to copy wall textures to device: " << cudaGetErrorString(cudaStatus) << std::endl;
+        } else {
+            std::cout << "Successfully copied " << numWallTextures << " wall textures to device" << std::endl;
         }
-        
-        cudaStatus = cudaMemcpy(m_deviceFloorTextures, floorTextureData, m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    }
+    
+    if (floorCeilingLoaded) {
+        cudaStatus = cudaMemcpy(m_deviceFloorTextures, floorTextureData, 
+                               m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t), 
+                               cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) {
             std::cerr << "Failed to copy floor texture to device: " << cudaGetErrorString(cudaStatus) << std::endl;
         }
         
-        cudaStatus = cudaMemcpy(m_deviceCeilingTextures, ceilingTextureData, m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t), cudaMemcpyHostToDevice);
+        cudaStatus = cudaMemcpy(m_deviceCeilingTextures, ceilingTextureData, 
+                               m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t), 
+                               cudaMemcpyHostToDevice);
         if (cudaStatus != cudaSuccess) {
             std::cerr << "Failed to copy ceiling texture to device: " << cudaGetErrorString(cudaStatus) << std::endl;
         }
     }
-    
-    // Free temporary resources
-    if (wallSurface) SDL_FreeSurface(wallSurface);
-    if (floorSurface) SDL_FreeSurface(floorSurface);
-    if (ceilingSurface) SDL_FreeSurface(ceilingSurface);
-    
-    if (wallTarget) SDL_DestroyTexture(wallTarget);
-    if (floorTarget) SDL_DestroyTexture(floorTarget);
-    if (ceilingTarget) SDL_DestroyTexture(ceilingTarget);
     
     // Free temporary buffers
     delete[] wallTextureData;
