@@ -663,10 +663,6 @@ void Engine::render() {
                 
                 // Now render all UI elements on top
                 if (m_renderer->isShowingWeapon()) {
-                    std::cout << "CUDA mode: About to render weapon with texture ID: " << m_currentWeaponTexture << std::endl;
-                    std::cout << "  Pistol ID: " << m_weaponTexture << std::endl;
-                    std::cout << "  Machine Gun ID: " << m_machineGunTexture << std::endl;
-                    std::cout << "  Rocket Launcher ID: " << m_rocketLauncherTexture << std::endl;
                     
                     // Verify we're using the right texture
                     int textureToUse = m_currentWeaponTexture;
@@ -735,7 +731,6 @@ void Engine::render() {
     }
     
     // Present the renderer - we do this ONCE at the end of the frame
-    std::cout << "Calling SDL_RenderPresent at the end of the frame" << std::endl;
     SDL_RenderPresent(m_sdlRenderer);
 }
 
@@ -1385,10 +1380,7 @@ bool Engine::loadAssets() {
     if (tempSurface) {
         // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
-        
-        // DEBUG: Save the surface to a file to verify it's loading correctly
-        SDL_SaveBMP(tempSurface, "shotgun_debug.bmp");
-        
+                
         // Create texture from surface
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
@@ -1413,10 +1405,7 @@ bool Engine::loadAssets() {
     if (tempSurface) {
         // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
-        
-        // DEBUG: Save the surface to a file to verify it's loading correctly
-        SDL_SaveBMP(tempSurface, "machine_gun_debug.bmp");
-        
+                
         // Create texture from surface - create a new texture, don't reuse
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
@@ -1446,10 +1435,7 @@ bool Engine::loadAssets() {
     if (tempSurface) {
         // Set black as the transparent color
         SDL_SetColorKey(tempSurface, SDL_TRUE, SDL_MapRGB(tempSurface->format, 0, 0, 0));
-        
-        // DEBUG: Save the surface to a file to verify it's loading correctly
-        SDL_SaveBMP(tempSurface, "rocket_launcher_debug.bmp");
-        
+                
         // Create texture from surface - with a unique SDL_Texture
         SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, tempSurface);
         if (texture) {
@@ -1855,7 +1841,7 @@ void Engine::setupMap() {
     
     // Create the second level with proper walls and floor
     for (int x = secondLevelStartX; x < secondLevelStartX + secondLevelWidth; x++) {
-        for (int y = secondLevelStartY; y < secondLevelStartY + secondLevelHeight; y++) {
+        for (int y = secondLevelStartY; y < secondLevelStartY + secondLevelHeight; y++) {  // Added missing brace
             // Set all cells in this region to elevated floor
             m_map.setCell(x, y, CellType::Empty); // Use Empty instead of ElevatedFloor
             m_map.setCellElevation(x, y, 1); // Set elevation to 1 (second level)
@@ -1888,70 +1874,7 @@ void Engine::setupMap() {
                     }
                 }
             }
-            // Internal structures for second level
-            else {
-                // Create some internal wall patterns on the second level
-                bool createSecondLevelWall = false;
-                
-                // Horizontal corridors
-                if ((y - secondLevelStartY) % 5 == 0 && x > secondLevelStartX && 
-                    x < secondLevelStartX + secondLevelWidth - 1) {
-                    if ((x - secondLevelStartX) % 8 != 3 && (x - secondLevelStartX) % 8 != 4) {
-                        createSecondLevelWall = true;
-                    }
-                }
-                
-                // Vertical corridors
-                if ((x - secondLevelStartX) % 8 == 0 && y > secondLevelStartY && 
-                    y < secondLevelStartY + secondLevelHeight - 1) {
-                    if ((y - secondLevelStartY) % 5 != 2 && (y - secondLevelStartY) % 5 != 3) {
-                        createSecondLevelWall = true;
-                    }
-                }
-                
-                // Central chamber or boss area
-                int centerX = secondLevelStartX + secondLevelWidth / 2;
-                int centerY = secondLevelStartY + secondLevelHeight / 2;
-                int chamberSize = 5;
-                
-                if (abs(x - centerX) <= chamberSize && abs(y - centerY) <= chamberSize) {
-                    // Inside the central chamber
-                    if (abs(x - centerX) == chamberSize || abs(y - centerY) == chamberSize) {
-                        // Chamber walls
-                        createSecondLevelWall = true;
-                        
-                        // Add doorways to the chamber
-                        if ((x == centerX && abs(y - centerY) == chamberSize) ||
-                            (y == centerY && abs(x - centerX) == chamberSize)) {
-                            createSecondLevelWall = false;
-                        }
-                    }
-                    
-                    // Add some enemies in the central chamber
-                    if (!createSecondLevelWall && 
-                        abs(x - centerX) < chamberSize - 1 && 
-                        abs(y - centerY) < chamberSize - 1) {
-                        // Increase spawn chance from 20% to 40% for more enemies
-                        if (rand() % 5 <= 1) {
-                            // Make all enemies in the central chamber Imps for a more challenging boss area
-                            m_map.setCell(x, y, CellType::Enemy);
-                            m_map.setCellElevation(x, y, 1); // Keep elevation at level 2
-                        }
-                    }
-                }
-                
-                if (createSecondLevelWall) {
-                    m_map.setCell(x, y, CellType::Wall); // Use Wall instead of ElevatedWall
-                    
-                    // Use a different texture for internal walls
-                    if (!m_wallTextureVariations.empty() && m_wallTextureVariations.size() > 2) {
-                        m_map.setWallTexture(x, y, m_wallTextureVariations[2]); // Use third texture if available
-                    } else if (!m_wallTextureVariations.empty()) {
-                        m_map.setWallTexture(x, y, m_wallTextureVariations[0]); // Use first texture otherwise
-                    }
-                }
-            }
-        }
+        }  // Added missing brace
     }
     
     // Create staircases connecting the levels - manually create them instead of using createStaircase

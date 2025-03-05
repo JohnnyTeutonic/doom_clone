@@ -265,48 +265,49 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
     // Get visible sectors
     const std::vector<int>& visibleSectors = map.getVisibleSectors();
     
-    // Debug: Count walls with each texture ID
-    int wallCounts[4] = {0, 0, 0, 0};
-    
-    // Fill host buffer with map data, applying sector culling
+    // First pass: Count walls and debug output
+    int wallCount = 0;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             CellType cellType = map.getCell(x, y);
-            int cellValue = static_cast<int>(cellType);
-            int sectorId = map.getSectorId(x, y);
-            
-            // If sector is not visible, mark as empty space (0) for rendering
-            if (std::find(visibleSectors.begin(), visibleSectors.end(), sectorId) == visibleSectors.end()) {
-                hostMapData[y * width + x] = 0; // Mark as empty for rendering
-            } else {
-                // For wall cells, encode the texture ID in the cell value
-                if (cellType == CellType::Wall) {
-                    // Get the wall texture ID (0-3) and add 1 to it (to make it 1-4)
-                    // Then multiply by 100 and add the cell type (1 for wall)
-                    // This way, the cell value will be 101, 201, 301, or 401 for walls with different textures
-                    int textureId = map.getWallTexture(x, y);
-                    
-                    // Count walls with each texture ID
-                    if (textureId >= 0 && textureId < 4) {
-                        wallCounts[textureId]++;
-                    }
-                    
-                    hostMapData[y * width + x] = ((textureId + 1) * 100) + cellValue;
-                    
-                    // Debug output for more walls
-                    if ((x % 10 == 0 && y % 10 == 0) || (x == 10 && y == 10)) {
-                        std::cout << "Wall at (" << x << "," << y << ") has texture ID " << textureId 
-                                  << " and cell value " << hostMapData[y * width + x] << std::endl;
-                    }
-                } else {
-                    hostMapData[y * width + x] = cellValue;
-                }
+            if (cellType == CellType::Wall) {
+                wallCount++;
             }
         }
     }
     
+    // Second pass: Fill the buffer
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            CellType cellType = map.getCell(x, y);
+            int cellValue = 0;  // Default to empty space
+            
+            // For wall cells, encode the texture ID in the cell value
+            if (cellType == CellType::Wall) {
+                // Get the wall texture ID and encode it
+                int textureId = map.getWallTexture(x, y);
+                // Ensure valid texture ID (0-3)
+                textureId = std::max(0, std::min(3, textureId));
+                // Encode as: (textureId + 1) * 100 + 1 (1 represents wall)
+                cellValue = ((textureId + 1) * 100) + 1;
+                
+            } else {
+                // For non-wall cells, just use the cell type value
+                cellValue = static_cast<int>(cellType);
+            }
+            
+            hostMapData[y * width + x] = cellValue;
+        }
+    }
+        
     // Copy map data to device
     cudaMemcpy(m_deviceMapData, hostMapData, width * height * sizeof(int), cudaMemcpyHostToDevice);
+    
+    // Verify the data transfer by reading back a small portion
+    int* verificationBuffer = new int[100];  // Read back 10x10 section
+    cudaMemcpy(verificationBuffer, m_deviceMapData, 100 * sizeof(int), cudaMemcpyDeviceToHost);
+    
+    delete[] verificationBuffer;
     
     // Free host buffer
     delete[] hostMapData;
@@ -517,7 +518,6 @@ void CudaRenderer::copyTexturesToDevice() {
 }
 
 void CudaRenderer::generateFrame(const Map& map, const Player& player) {
-    std::cout << "CudaRenderer::generateFrame called" << std::endl;
     
     // Copy map data to device
     copyMapToDevice(map, player);
@@ -574,11 +574,9 @@ void CudaRenderer::generateFrame(const Map& map, const Player& player) {
     // Mark frame as ready
     m_frameReady = true;
     
-    std::cout << "CudaRenderer::generateFrame completed" << std::endl;
 }
 
 void CudaRenderer::blitFrameBuffer() {
-    std::cout << "CudaRenderer::blitFrameBuffer called" << std::endl;
     
     if (!m_frameReady) {
         std::cerr << "No frame ready to blit!" << std::endl;
@@ -603,11 +601,9 @@ void CudaRenderer::blitFrameBuffer() {
     // Restore renderer state
     SDL_SetRenderDrawBlendMode(m_sdlRenderer, oldBlendMode);
     
-    std::cout << "CudaRenderer::blitFrameBuffer completed" << std::endl;
 }
 
 void CudaRenderer::render(const Map& map, const Player& player) {
-    std::cout << "CudaRenderer::render called" << std::endl;
     
     // Generate the frame
     generateFrame(map, player);
@@ -615,7 +611,6 @@ void CudaRenderer::render(const Map& map, const Player& player) {
     // Blit the frame buffer
     blitFrameBuffer();
     
-    std::cout << "CudaRenderer::render completed" << std::endl;
 }
 
 void CudaRenderer::renderSprites(const Map& map, const Player& player) {

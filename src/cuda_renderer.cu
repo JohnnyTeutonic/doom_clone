@@ -77,16 +77,22 @@ extern "C" __global__ void raycastKernel(
     int hit = 0; // Was a wall hit?
     int cellValue = 0; // Value of the cell that was hit
     
-    while (hit == 0) {
+    // Debug variables
+    float maxDist = 100.0f; // Maximum ray distance
+    float totalDist = 0.0f; // Current ray distance
+    
+    while (hit == 0 && totalDist < maxDist) {
         // Jump to next map square
         if (sideDistX < sideDistY) {
             sideDistX += deltaDistX;
             mapX += stepX;
             side = 0;
+            totalDist += deltaDistX;
         } else {
             sideDistY += deltaDistY;
             mapY += stepY;
             side = 1;
+            totalDist += deltaDistY;
         }
         
         // Check if ray has hit a wall
@@ -95,9 +101,23 @@ extern "C" __global__ void raycastKernel(
         }
         
         cellValue = mapData[mapY * mapWidth + mapX];
-        if (cellValue > 0) {
+        
+        // Check for walls (either regular walls with value 1 or encoded walls with values > 100)
+        // The encoding is (textureId + 1) * 100 + 1, so valid wall values are 101, 201, 301, 401
+        if (cellValue == 1 || (cellValue > 100 && cellValue <= 401)) {
             hit = 1; // Wall hit
+            
+            // If this is a regular wall (value 1), set it to use texture 0
+            if (cellValue == 1) {
+                cellValue = 101; // Encode as texture 0
+            }
         }
+    }
+    
+    // If no wall was hit within maxDist, treat it as a hit at maxDist
+    if (hit == 0) {
+        float perpWallDist = maxDist;
+        return;
     }
     
     // Calculate distance projected on camera direction
@@ -131,13 +151,10 @@ extern "C" __global__ void raycastKernel(
         texNum = (cellValue / 100) - 1;
         
         // Ensure texNum is valid (0-3)
-        texNum = (texNum < 0) ? 0 : (texNum > 3) ? 3 : texNum;
-    } else {
-        // For regular cells, use the cell value - 1 as the texture index
-        texNum = cellValue - 1;
-        
-        // Ensure texNum is valid (prevent negative indices)
-        if (texNum < 0) texNum = 0;
+        texNum = max(0, min(3, texNum));
+    } else if (cellValue == 1) {
+        // For regular walls, use texture 0
+        texNum = 0;
     }
     
     // Calculate where exactly the wall was hit

@@ -932,9 +932,7 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         std::cout << "No texture manager available for weapon rendering" << std::endl;
         return;
     }
-    
-    std::cout << "Renderer::renderWeapon called with texture ID: " << weaponTextureId << std::endl;
-    
+        
     // Get the weapon texture using the passed texture ID
     const Texture* weaponTexture = m_textureManager->getTexture(weaponTextureId);
     
@@ -973,10 +971,7 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         SDL_RenderFillRect(m_renderer, &barrelRect);
         return;
     }
-    
-    std::cout << "Found weapon texture with ID " << weaponTextureId << ", dimensions: " 
-              << weaponTexture->getWidth() << "x" << weaponTexture->getHeight() << std::endl;
-    
+        
     // Calculate the weapon size (maintain aspect ratio)
     float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
     int weaponHeight = m_screenHeight / 2;  // Take up half the screen height
@@ -1000,7 +995,6 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
     // Get the SDL texture from the Texture object
     SDL_Texture* sdlTexture = weaponTexture->getSDLTexture();
     if (sdlTexture) {
-        std::cout << "Rendering weapon texture with SDL_Texture: " << sdlTexture << std::endl;
         
         // CRITICAL: Save the entire renderer state
         SDL_Renderer* renderer = m_renderer;
