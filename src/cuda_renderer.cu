@@ -5,6 +5,134 @@
 
 #include "cuda_renderer.h"
 
+// Helper functions for CUDA lighting calculations
+__device__ float3 calculatePointLight(
+    const CudaLight& light,
+    float3 normal,
+    float2 position,
+    float distance,
+    float ambientR, float ambientG, float ambientB
+) {
+    float2 lightDir;
+    lightDir.x = light.posX - position.x;
+    lightDir.y = light.posY - position.y;
+    
+    // Normalize light direction
+    float lightDist = sqrtf(lightDir.x * lightDir.x + lightDir.y * lightDir.y);
+    
+    // Skip if point is outside light radius
+    if (lightDist > light.radius) {
+        return make_float3(ambientR, ambientG, ambientB);
+    }
+    
+    // Normalize direction vector
+    if (lightDist > 0.0001f) {
+        lightDir.x /= lightDist;
+        lightDir.y /= lightDist;
+    }
+    
+    // Calculate diffuse factor (dot product of normal and light direction)
+    float diffuse = normal.x * lightDir.x + normal.y * lightDir.y;
+    diffuse = fmaxf(0.0f, diffuse);
+    
+    // Calculate attenuation (falloff with distance)
+    float attenuation = fmaxf(0.0f, 1.0f - (lightDist / light.radius));
+    attenuation = attenuation * attenuation; // Squared falloff for more realistic effect
+    
+    // Calculate the final light contribution
+    float3 result;
+    result.x = light.r * light.intensity * diffuse * attenuation;
+    result.y = light.g * light.intensity * diffuse * attenuation;
+    result.z = light.b * light.intensity * diffuse * attenuation;
+    
+    return result;
+}
+
+__device__ float3 calculateDirectionalLight(
+    const CudaLight& light,
+    float3 normal
+) {
+    // Calculate diffuse factor (dot product of normal and negative light direction)
+    float diffuse = -(normal.x * light.dirX + normal.y * light.dirY);
+    diffuse = fmaxf(0.0f, diffuse);
+    
+    // Calculate the final light contribution
+    float3 result;
+    result.x = light.r * light.intensity * diffuse;
+    result.y = light.g * light.intensity * diffuse;
+    result.z = light.b * light.intensity * diffuse;
+    
+    return result;
+}
+
+__device__ float3 calculateLighting(
+    float2 position,
+    float3 normal,
+    float distance,
+    const float2 playerPos,
+    const CudaLight* lights,
+    int numActiveLights,
+    const CudaAmbientLight& ambient
+) {
+    // Start with ambient light
+    float3 totalLight;
+    totalLight.x = ambient.r * ambient.intensity;
+    totalLight.y = ambient.g * ambient.intensity;
+    totalLight.z = ambient.b * ambient.intensity;
+    
+    // Apply all light sources - make sure we don't exceed array bounds
+    for (int i = 0; i < numActiveLights; i++) {
+        const CudaLight& light = lights[i];
+        
+        // Skip disabled lights
+        if (light.enabled == 0) continue;
+
+        // Calculate light contribution based on type
+        float3 lightColor;
+        
+        switch (light.type) {
+            case 0: // Point
+            case 2: // Flickering
+            case 3: // Pulsing  
+            case 4: // Strobe
+            case 5: // Glow
+                // All point-like lights use the point light calculation
+                lightColor = calculatePointLight(light, normal, position, distance, 
+                                               totalLight.x, totalLight.y, totalLight.z);
+                break;
+                
+            case 1: // Directional
+                // Directional light calculation
+                lightColor = calculateDirectionalLight(light, normal);
+                break;
+                
+            default:
+                // Skip unknown light types
+                continue;
+        }
+        
+        // Add this light's contribution
+        totalLight.x += lightColor.x;
+        totalLight.y += lightColor.y;
+        totalLight.z += lightColor.z;
+    }
+    
+    // Apply distance attenuation
+    float distFactor = fminf(1.0f, 8.0f / distance);
+    
+    // Ensure minimum brightness
+    totalLight.x = fmaxf(0.2f, totalLight.x * distFactor);
+    totalLight.y = fmaxf(0.2f, totalLight.y * distFactor);
+    totalLight.z = fmaxf(0.2f, totalLight.z * distFactor);
+    
+    // Ensure maximum brightness
+    totalLight.x = fminf(1.0f, totalLight.x);
+    totalLight.y = fminf(1.0f, totalLight.y);
+    totalLight.z = fminf(1.0f, totalLight.z);
+    
+    return totalLight;
+}
+
 // CUDA kernel for raycasting
 extern "C" __global__ void raycastKernel(
     uint32_t* frameBuffer,
@@ -19,7 +147,10 @@ extern "C" __global__ void raycastKernel(
     uint32_t* floorTextures,
     uint32_t* ceilingTextures,
     int textureWidth,
-    int textureHeight
+    int textureHeight,
+    CudaLight* lights,
+    int numLights,  // This is the actual count of active lights
+    CudaAmbientLight* ambient
 ) {
     // Calculate pixel coordinates
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -35,10 +166,16 @@ extern "C" __global__ void raycastKernel(
     float dirY = playerData->dirY;
     float planeX = playerData->planeX;
     float planeY = playerData->planeY;
-    float verticalAngle = playerData->verticalAngle;  // This is now the total offset
+    float verticalAngle = playerData->verticalAngle;  // Look up/down angle
+    float jumpHeight = playerData->jumpHeight;        // Current jump height
     
-    // Calculate vertical offset for rendering
-    float totalVerticalOffset = verticalAngle * screenHeight / 2.0f;  // Scale to screen space
+    // Create player position for lighting
+    float2 playerPos = make_float2(posX, posY);
+    
+    // Calculate vertical offsets for rendering
+    float lookOffset = verticalAngle * screenHeight / 2.0f;  // Scale to screen space
+    float jumpOffset = jumpHeight * screenHeight * 0.75f;    // Scale jump height appropriately
+    float totalVerticalOffset = lookOffset + jumpOffset;     // Combine both effects
     
     // Calculate ray position and direction
     float cameraX = 2.0f * x / static_cast<float>(screenWidth) - 1.0f;
@@ -175,50 +312,25 @@ extern "C" __global__ void raycastKernel(
     if (side == 0 && rayDirX > 0) texX = textureWidth - texX - 1;
     if (side == 1 && rayDirY < 0) texX = textureWidth - texX - 1;
     
-    // Calculate lighting for the wall
-    // Ambient light (base lighting)
-    float ambientR = 0.5f;  // Increased from 0.3f
-    float ambientG = 0.5f;  // Increased from 0.3f
-    float ambientB = 0.55f; // Increased from 0.35f (Slightly blue for doom-like atmosphere)
-    
-    // Distance-based lighting attenuation - increased distance factor
-    float distFactor = fminf(1.0f, 12.0f / perpWallDist);  // Increased from 8.0f
-    
-    // Calculate surface normal for directional lighting
-    float normalX = 0.0f;
-    float normalY = 0.0f;
-    
-    // Set normal based on which side of the wall was hit
+    // Calculate surface normal for lighting
+    float3 normal;
     if (side == 0) {
-        normalX = (stepX > 0) ? -1.0f : 1.0f;
-        normalY = 0.0f;
+        normal.x = -stepX;
+        normal.y = 0.0f;
+        normal.z = 0.0f;
     } else {
-        normalX = 0.0f;
-        normalY = (stepY > 0) ? -1.0f : 1.0f;
+        normal.x = 0.0f;
+        normal.y = -stepY;
+        normal.z = 0.0f;
     }
     
-    // Directional light (simulating a light from above)
-    float dirLightX = 0.0f;
-    float dirLightY = -1.0f; // Light coming from above
-    float dirLightIntensity = 0.6f;  // Increased from 0.4f
+    // Calculate surface position for lighting
+    float2 wallPos;
+    wallPos.x = posX + rayDirX * perpWallDist;
+    wallPos.y = posY + rayDirY * perpWallDist;
     
-    // Calculate diffuse lighting (dot product of normal and light direction)
-    float diffuse = fmaxf(0.0f, -(normalX * dirLightX + normalY * dirLightY)) * dirLightIntensity;
-    
-    // Combine ambient and diffuse lighting
-    float lightR = fminf(1.0f, ambientR + diffuse);
-    float lightG = fminf(1.0f, ambientG + diffuse);
-    float lightB = fminf(1.0f, ambientB + diffuse);
-    
-    // Apply distance attenuation
-    lightR *= distFactor;
-    lightG *= distFactor;
-    lightB *= distFactor;
-    
-    // Ensure minimum lighting (prevent pitch black)
-    lightR = fmaxf(0.25f, lightR);  // Increased from 0.15f
-    lightG = fmaxf(0.25f, lightG);  // Increased from 0.15f
-    lightB = fmaxf(0.25f, lightB);  // Increased from 0.15f
+    // Calculate lighting for this wall
+    float3 lighting = calculateLighting(wallPos, normal, perpWallDist, playerPos, lights, numLights, *ambient);
     
     // Draw the wall
     for (int i = drawStart; i <= drawEnd; i++) {
@@ -238,9 +350,9 @@ extern "C" __global__ void raycastKernel(
         uint8_t b = color & 0xFF;
         
         // Apply lighting to the color
-        r = static_cast<uint8_t>(r * lightR);
-        g = static_cast<uint8_t>(g * lightG);
-        b = static_cast<uint8_t>(b * lightB);
+        r = static_cast<uint8_t>(r * lighting.x);
+        g = static_cast<uint8_t>(g * lighting.y);
+        b = static_cast<uint8_t>(b * lighting.z);
         
         // Make color darker for y-sides (additional shading for depth perception)
         if (side == 1) {
@@ -291,6 +403,12 @@ extern "C" __global__ void raycastKernel(
             float floorX = weight * floorXWall + (1.0f - weight) * posX;
             float floorY = weight * floorYWall + (1.0f - weight) * posY;
             
+            // Create floor position for lighting
+            float2 floorPos = make_float2(floorX, floorY);
+            
+            // Create floor normal (facing up)
+            float3 floorNormal = make_float3(0.0f, 0.0f, 1.0f);
+            
             // Get texture coordinates
             int floorTexX = static_cast<int>(floorX * textureWidth) % textureWidth;
             int floorTexY = static_cast<int>(floorY * textureHeight) % textureHeight;
@@ -305,57 +423,39 @@ extern "C" __global__ void raycastKernel(
             // Get ceiling texture pixel - use texture ID 2 (ceiling texture)
             uint32_t ceilingColor = ceilingTextures[floorTexY * textureWidth + floorTexX];
             
-            // Calculate floor lighting
-            // Distance-based lighting with more dramatic falloff for floors
-            float floorDistFactor = fminf(1.0f, 8.0f / currentDist);  // Increased from 5.0f
+            // Calculate lighting for floor
+            float3 floorLighting = calculateLighting(floorPos, floorNormal, currentDist, playerPos, lights, numLights, *ambient);
             
-            // Apply ambient lighting for floor (slightly darker than walls)
-            float floorLightR = ambientR * 0.95f * floorDistFactor;  // Increased from 0.9f
-            float floorLightG = ambientG * 0.95f * floorDistFactor;  // Increased from 0.9f
-            float floorLightB = ambientB * 0.95f * floorDistFactor;  // Increased from 0.9f
-            
-            // Add directional lighting for floor (simulating light from above)
-            float floorDiffuse = 0.5f;  // Increased from 0.3f - Floor always faces up, so diffuse is constant
-            
-            floorLightR = fminf(1.0f, floorLightR + floorDiffuse * floorDistFactor);
-            floorLightG = fminf(1.0f, floorLightG + floorDiffuse * floorDistFactor);
-            floorLightB = fminf(1.0f, floorLightB + floorDiffuse * floorDistFactor);
-            
-            // Ensure minimum lighting
-            floorLightR = fmaxf(0.2f, floorLightR);  // Increased from 0.1f
-            floorLightG = fmaxf(0.2f, floorLightG);  // Increased from 0.1f
-            floorLightB = fmaxf(0.2f, floorLightB);  // Increased from 0.1f
-            
-            // Apply floor lighting
+            // Extract RGB components for floor
             uint8_t fr = (floorColor >> 16) & 0xFF;
             uint8_t fg = (floorColor >> 8) & 0xFF;
             uint8_t fb = floorColor & 0xFF;
             
-            fr = static_cast<uint8_t>(fr * floorLightR);
-            fg = static_cast<uint8_t>(fg * floorLightG);
-            fb = static_cast<uint8_t>(fb * floorLightB);
+            // Apply lighting to floor color
+            fr = static_cast<uint8_t>(fr * floorLighting.x);
+            fg = static_cast<uint8_t>(fg * floorLighting.y);
+            fb = static_cast<uint8_t>(fb * floorLighting.z);
             
+            // Recombine floor color
             floorColor = (0xFF << 24) | (fr << 16) | (fg << 8) | fb;
             
-            // Apply ceiling lighting (slightly brighter than floor)
-            float ceilingLightR = ambientR * floorDistFactor * 1.2f;  // Increased from 1.1f
-            float ceilingLightG = ambientG * floorDistFactor * 1.2f;  // Increased from 1.1f
-            float ceilingLightB = ambientB * floorDistFactor * 1.2f;  // Increased from 1.1f
-            
-            // Ensure minimum lighting
-            ceilingLightR = fmaxf(0.22f, ceilingLightR);  // Increased from 0.12f
-            ceilingLightG = fmaxf(0.22f, ceilingLightG);  // Increased from 0.12f
-            ceilingLightB = fmaxf(0.22f, ceilingLightB);  // Increased from 0.12f
-            
-            // Apply ceiling lighting
+            // Extract RGB components for ceiling
             uint8_t cr = (ceilingColor >> 16) & 0xFF;
             uint8_t cg = (ceilingColor >> 8) & 0xFF;
             uint8_t cb = ceilingColor & 0xFF;
             
-            cr = static_cast<uint8_t>(cr * ceilingLightR);
-            cg = static_cast<uint8_t>(cg * ceilingLightG);
-            cb = static_cast<uint8_t>(cb * ceilingLightB);
+            // Create ceiling normal (facing down)
+            float3 ceilingNormal = make_float3(0.0f, 0.0f, -1.0f);
             
+            // Calculate lighting for ceiling
+            float3 ceilingLighting = calculateLighting(floorPos, ceilingNormal, currentDist, playerPos, lights, numLights, *ambient);
+            
+            // Apply lighting to ceiling color (make ceiling slightly brighter)
+            cr = static_cast<uint8_t>(cr * ceilingLighting.x * 1.1f);
+            cg = static_cast<uint8_t>(cg * ceilingLighting.y * 1.1f);
+            cb = static_cast<uint8_t>(cb * ceilingLighting.z * 1.1f);
+            
+            // Recombine ceiling color
             ceilingColor = (0xFF << 24) | (cr << 16) | (cg << 8) | cb;
             
             // Draw floor pixel using original i coordinate
@@ -384,6 +484,10 @@ extern "C" __global__ void raycastKernel(
         float ceilingX = posX + rayDirXCeiling * currentDist;
         float ceilingY = posY + rayDirYCeiling * currentDist;
         
+        // Create ceiling position and normal for lighting
+        float2 ceilingPos = make_float2(ceilingX, ceilingY);
+        float3 ceilingNormal = make_float3(0.0f, 0.0f, -1.0f);
+        
         // Get texture coordinates
         int ceilingTexX = static_cast<int>(ceilingX * textureWidth) % textureWidth;
         int ceilingTexY = static_cast<int>(ceilingY * textureHeight) % textureHeight;
@@ -395,28 +499,20 @@ extern "C" __global__ void raycastKernel(
         // Get ceiling texture pixel - use texture ID 2 (ceiling texture)
         uint32_t ceilingColor = ceilingTextures[ceilingTexY * textureWidth + ceilingTexX];
         
-        // Calculate ceiling lighting
-        float ceilingDistFactor = fminf(1.0f, 8.0f / currentDist);  // Increased from 5.0f
+        // Calculate lighting for this part of the ceiling
+        float3 ceilingLighting = calculateLighting(ceilingPos, ceilingNormal, currentDist, playerPos, lights, numLights, *ambient);
         
-        // Apply ambient lighting for ceiling
-        float ceilingLightR = ambientR * ceilingDistFactor * 1.2f;  // Increased from 1.1f
-        float ceilingLightG = ambientG * ceilingDistFactor * 1.2f;  // Increased from 1.1f
-        float ceilingLightB = ambientB * ceilingDistFactor * 1.2f;  // Increased from 1.1f
-        
-        // Ensure minimum lighting
-        ceilingLightR = fmaxf(0.22f, ceilingLightR);  // Increased from 0.12f
-        ceilingLightG = fmaxf(0.22f, ceilingLightG);  // Increased from 0.12f
-        ceilingLightB = fmaxf(0.22f, ceilingLightB);  // Increased from 0.12f
-        
-        // Apply ceiling lighting
+        // Extract RGB components
         uint8_t r = (ceilingColor >> 16) & 0xFF;
         uint8_t g = (ceilingColor >> 8) & 0xFF;
         uint8_t b = ceilingColor & 0xFF;
         
-        r = static_cast<uint8_t>(r * ceilingLightR);
-        g = static_cast<uint8_t>(g * ceilingLightG);
-        b = static_cast<uint8_t>(b * ceilingLightB);
+        // Apply lighting (make ceiling slightly brighter)
+        r = static_cast<uint8_t>(r * ceilingLighting.x * 1.1f);
+        g = static_cast<uint8_t>(g * ceilingLighting.y * 1.1f);
+        b = static_cast<uint8_t>(b * ceilingLighting.z * 1.1f);
         
+        // Recombine
         ceilingColor = (0xFF << 24) | (r << 16) | (g << 8) | b;
         
         // Draw ceiling pixel
@@ -440,7 +536,10 @@ extern "C" void launchRaycastKernel(
     uint32_t* floorTextures,
     uint32_t* ceilingTextures,
     int textureWidth,
-    int textureHeight
+    int textureHeight,
+    CudaLight* lights,
+    int numLights,
+    CudaAmbientLight* ambient
 ) {
     raycastKernel<<<gridSize, blockSize>>>(
         frameBuffer,
@@ -455,7 +554,10 @@ extern "C" void launchRaycastKernel(
         floorTextures,
         ceilingTextures,
         textureWidth,
-        textureHeight
+        textureHeight,
+        lights,
+        numLights,
+        ambient
     );
 }
 

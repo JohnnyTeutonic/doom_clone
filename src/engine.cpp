@@ -1830,6 +1830,9 @@ void Engine::setupMap() {
         }
     }
     
+    // Set the engine pointer in the map
+    m_map.setEngine(this);
+    
     // Seed the random number generator
     srand(static_cast<unsigned int>(time(nullptr)));
     

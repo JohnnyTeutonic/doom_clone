@@ -55,6 +55,9 @@ public:
     // Get a pixel at normalized coordinates (0.0 to 1.0)
     Color getPixelNormalized(double u, double v) const;
     
+    // Get raw pixel data for CUDA processing
+    const uint32_t* getPixelData() const;
+    
     // Get the SDL texture
     SDL_Texture* getSDLTexture() const { return m_sdlTexture.get(); }
 };
@@ -106,10 +109,13 @@ public:
         return id;
     }
     
-    // Get a texture by ID
+    // Access a texture by ID
     const Texture* getTexture(int id) const;
     
-    // Get an SDL_Texture by ID
+    // Get the number of textures in the manager
+    int getTextureCount() const { return static_cast<int>(m_textures.size()); }
+    
+    // Access an SDL texture directly by ID
     SDL_Texture* getSDLTexture(int id) const;
     
     // Initialize default textures

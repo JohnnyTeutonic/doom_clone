@@ -4,20 +4,33 @@
 #include <algorithm>
 #include <queue>
 
-Map::Map(int width, int height) : m_width(width), m_height(height) {
-    m_cells.resize(height, std::vector<CellType>(width, CellType::Empty));
-    m_wallTextures.resize(height, std::vector<int>(width, 0));  // Default texture ID is 0
-    m_elevations.resize(height, std::vector<int>(width, 0)); // Default elevation is ground level (0)
-    m_stepHeights.resize(height, std::vector<float>(width, 0.0f)); // Default step height is 0
-    m_doorStates.resize(height, std::vector<DoorState>(width, DoorState::Closed));
-    m_doorOpenAmount.resize(height, std::vector<float>(width, 0.0f));
-    m_secretFound.resize(height, std::vector<bool>(width, false));
-    m_teleportTargets.resize(height, std::vector<std::pair<int, int>>(width, {-1, -1}));
+Map::Map(int width, int height) : 
+    m_width(width), 
+    m_height(height),
+    m_cells(height, std::vector<CellType>(width, CellType::Empty)),
+    m_wallTextures(height, std::vector<int>(width, 0)),
+    m_elevations(height, std::vector<int>(width, 0)),
+    m_stepHeights(height, std::vector<float>(width, 0.0f)),
+    m_doorStates(height, std::vector<DoorState>(width, DoorState::Closed)),
+    m_doorOpenAmount(height, std::vector<float>(width, 0.0f)),
+    m_teleportTargets(height, std::vector<std::pair<int, int>>(width, {0, 0})),
+    m_secretFound(height, std::vector<bool>(width, false)),
+    m_playerSector(0),
+    m_engine(nullptr)
+{
+    // Initially create a simple sector covering the whole map
+    Sector initialSector;
+    initialSector.id = 0;
+    initialSector.vertices = {
+        Vec2(0, 0),
+        Vec2(width, 0),
+        Vec2(width, height),
+        Vec2(0, height)
+    };
+    initialSector.isVisible = true;
+    m_sectors.push_back(initialSector);
     
-    // Initialize sector-based culling data
-    m_cellToSector.resize(height, std::vector<int>(width, -1));
-    m_playerSector = -1;
-    m_visibleSectors.clear();
+    m_cellToSector.resize(height, std::vector<int>(width, 0));
 }
 
 bool Map::loadFromString(const std::string& mapStr) {
@@ -351,8 +364,185 @@ bool Map::isStairStep(int x, int y) const {
 }
 
 bool Map::isSolid(int x, int y) const {
-    CellType cell = getCell(x, y);
-    return cell == CellType::Wall || cell == CellType::Door || cell == CellType::ElevatedWall;
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return true;  // Out of bounds is considered solid
+    }
+    
+    CellType cellType = m_cells[y][x];
+    return cellType == CellType::Wall || 
+           cellType == CellType::ElevatedWall ||
+           cellType == CellType::SecretWall || 
+           (cellType == CellType::Door && m_doorStates[y][x] != DoorState::Open);
+}
+
+// Door methods
+bool Map::isDoor(int x, int y) const {
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false;
+    }
+    return m_cells[y][x] == CellType::Door;
+}
+
+DoorState Map::getDoorState(int x, int y) const {
+    if (!isDoor(x, y)) {
+        return DoorState::Closed;
+    }
+    return m_doorStates[y][x];
+}
+
+float Map::getDoorOpenAmount(int x, int y) const {
+    if (!isDoor(x, y)) {
+        return 0.0f;
+    }
+    return m_doorOpenAmount[y][x];
+}
+
+void Map::setDoorState(int x, int y, DoorState state) {
+    if (!isDoor(x, y)) {
+        return;
+    }
+    m_doorStates[y][x] = state;
+}
+
+void Map::setDoorOpenAmount(int x, int y, float amount) {
+    if (!isDoor(x, y)) {
+        return;
+    }
+    m_doorOpenAmount[y][x] = amount;
+}
+
+void Map::updateDoors(double deltaTime) {
+    for (int y = 0; y < m_height; y++) {
+        for (int x = 0; x < m_width; x++) {
+            if (!isDoor(x, y)) {
+                continue;
+            }
+            
+            // Update door open amount based on state
+            switch (m_doorStates[y][x]) {
+                case DoorState::Opening:
+                    m_doorOpenAmount[y][x] += deltaTime;
+                    if (m_doorOpenAmount[y][x] >= 1.0f) {
+                        m_doorOpenAmount[y][x] = 1.0f;
+                        m_doorStates[y][x] = DoorState::Open;
+                    }
+                    break;
+                    
+                case DoorState::Closing:
+                    m_doorOpenAmount[y][x] -= deltaTime;
+                    if (m_doorOpenAmount[y][x] <= 0.0f) {
+                        m_doorOpenAmount[y][x] = 0.0f;
+                        m_doorStates[y][x] = DoorState::Closed;
+                    }
+                    break;
+                    
+                case DoorState::Closed:
+                    m_doorOpenAmount[y][x] = 0.0f;
+                    break;
+                    
+                case DoorState::Open:
+                    m_doorOpenAmount[y][x] = 1.0f;
+                    break;
+            }
+        }
+    }
+}
+
+void Map::toggleDoor(int x, int y) {
+    if (!isDoor(x, y)) {
+        return;
+    }
+    
+    DoorState currentState = m_doorStates[y][x];
+    switch (currentState) {
+        case DoorState::Closed:
+        case DoorState::Closing:
+            m_doorStates[y][x] = DoorState::Opening;
+            break;
+            
+        case DoorState::Open:
+        case DoorState::Opening:
+            m_doorStates[y][x] = DoorState::Closing;
+            break;
+    }
+}
+
+bool Map::activateDoor(int x, int y) {
+    if (!isDoor(x, y)) {
+        return false;
+    }
+    
+    toggleDoor(x, y);
+    return true;
+}
+
+// Secret wall methods
+bool Map::isSecretWall(int x, int y) const {
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false;
+    }
+    return m_cells[y][x] == CellType::SecretWall;
+}
+
+bool Map::isSecretFound(int x, int y) const {
+    if (!isSecretWall(x, y)) {
+        return false;
+    }
+    return m_secretFound[y][x];
+}
+
+void Map::setSecretFound(int x, int y, bool found) {
+    if (!isSecretWall(x, y)) {
+        return;
+    }
+    m_secretFound[y][x] = found;
+}
+
+bool Map::activateSecret(int x, int y) {
+    if (!isSecretWall(x, y)) {
+        return false;
+    }
+    
+    setSecretFound(x, y, true);
+    return true;
+}
+
+// Teleport methods
+bool Map::isTeleportPad(int x, int y) const {
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false;
+    }
+    return m_cells[y][x] == CellType::TeleportPad;
+}
+
+std::pair<int, int> Map::getTeleportTarget(int x, int y) const {
+    if (!isTeleportPad(x, y)) {
+        return {-1, -1};
+    }
+    return m_teleportTargets[y][x];
+}
+
+void Map::setTeleportTarget(int x, int y, int targetX, int targetY) {
+    if (!isTeleportPad(x, y)) {
+        return;
+    }
+    m_teleportTargets[y][x] = {targetX, targetY};
+}
+
+bool Map::activateTeleport(int x, int y, Vec2& outDestination) {
+    if (!isTeleportPad(x, y)) {
+        return false;
+    }
+    
+    std::pair<int, int> target = getTeleportTarget(x, y);
+    if (target.first < 0 || target.first >= m_width || target.second < 0 || target.second >= m_height) {
+        return false;
+    }
+    
+    // Set the destination to the center of the target cell
+    outDestination.x = target.first + 0.5;
+    outDestination.y = target.second + 0.5;
+    return true;
 }
 
 // Create sectors based on the map layout

@@ -153,6 +153,13 @@ public:
         updateCachedAmbientLight();
     }
 
+    // Getters for ambient properties
+    Color getAmbientColor() const { return m_ambientColor; }
+    double getAmbientIntensity() const { return m_ambientIntensity; }
+    
+    // Get the lights vector for CUDA processing
+    const std::vector<Light>& getLights() const { return m_lights; }
+    
     // Add a new light
     int addLight(const Light& light) {
         m_lights.push_back(light);
@@ -392,7 +399,6 @@ public:
     void setCullDistance(double distance) { m_cullDistance = distance; }
     void setUpdateFrequency(int frequency) { m_updateFrequency = std::max(1, frequency); }
     
-    const std::vector<Light>& getLights() const { return m_lights; }
     Light* getLight(int index) {
         if (index >= 0 && index < m_lights.size()) {
             return &m_lights[index];

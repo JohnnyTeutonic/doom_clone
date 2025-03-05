@@ -5,6 +5,9 @@
 #include <string>
 #include "utils.h"
 
+// Forward declaration to avoid circular dependency
+class Engine;
+
 // Map cell types
 enum class CellType {
     Empty = 0,
@@ -62,6 +65,9 @@ private:
     int m_playerSector;  // Current sector the player is in
     std::vector<int> m_visibleSectors;  // List of currently visible sectors
     
+    // Reference to the engine
+    Engine* m_engine;
+    
 public:
     Map(int width = 20, int height = 20);
     ~Map();
@@ -92,35 +98,61 @@ public:
     // Cast a ray from start to direction and find the first wall it hits
     // Returns the distance to the wall and sets outHitX and outHitY
     double castRay(double startX, double startY, double dirX, double dirY, 
-                  double& outHitX, double& outHitY, int& outHitTexture) const;
-
-    // Collision detection
-    bool isSolid(int x, int y) const;
-
-    // Door methods
+                   double& outHitX, double& outHitY, int& outHitTexture) const;
+    
+    // Door management
+    bool isDoor(int x, int y) const;
     DoorState getDoorState(int x, int y) const;
+    float getDoorOpenAmount(int x, int y) const;
     void setDoorState(int x, int y, DoorState state);
+    void setDoorOpenAmount(int x, int y, float amount);
     void updateDoors(double deltaTime);
+    void toggleDoor(int x, int y);
     bool activateDoor(int x, int y);  // Returns true if door was activated
     
-    // Secret wall methods
+    // Elevation management
+    int getCellElevation(int x, int y) const;
+    void setCellElevation(int x, int y, int elevation);
+    
+    // Step height management (for stairs)
+    float getStepHeight(int x, int y) const;
+    void setStepHeight(int x, int y, float height);
+    
+    // Stairs detection
+    bool isStairs(int x, int y) const;
+    bool isStairStep(int x, int y) const;
+    
+    // Solid (wall, door) detection
+    bool isSolid(int x, int y) const;
+    
+    // Secret wall management
     bool isSecretWall(int x, int y) const;
     bool isSecretFound(int x, int y) const;
     void setSecretFound(int x, int y, bool found);
     bool activateSecret(int x, int y);  // Returns true if secret was activated
     
-    // Teleport methods
+    // Teleportation management
     bool isTeleportPad(int x, int y) const;
-    int getTeleportTarget(int x, int y) const;
+    std::pair<int, int> getTeleportTarget(int x, int y) const;
     void setTeleportTarget(int x, int y, int targetX, int targetY);
     bool activateTeleport(int x, int y, Vec2& outDestination);  // Returns true if teleport was activated
     
-    // Sector-based culling methods
+    // Create sectors for visibility culling
     void createSectors();
+    
+    // Update sector visibility based on player position
     void updateVisibility(const Vec2& playerPos);
+    
+    // Check if a sector is visible
     bool isSectorVisible(int sectorId) const;
+    
+    // Get the sector at a specific position
     int getSectorAt(double x, double y) const;
+    
+    // Get the sector ID for a map cell
     int getSectorId(int x, int y) const { return m_cellToSector[y][x]; }
+    
+    // Check if two positions are in the same sector
     bool isInSameSector(double x1, double y1, double x2, double y2) const;
     
     // Get the current player sector
@@ -131,17 +163,9 @@ public:
     const std::vector<int>& getVisibleSectors() const { return m_visibleSectors; }
     const std::vector<Sector>& getSectors() const { return m_sectors; }
     
-    // Elevation methods
-    int getCellElevation(int x, int y) const;
-    void setCellElevation(int x, int y, int elevation);
-    
-    // Step height methods
-    float getStepHeight(int x, int y) const;
-    void setStepHeight(int x, int y, float height);
-    
-    // Stairs methods
-    bool isStairs(int x, int y) const;
-    bool isStairStep(int x, int y) const;
+    // Engine reference management
+    void setEngine(Engine* engine) { m_engine = engine; }
+    Engine* getEngine() const { return m_engine; }
 };
 
 #endif // MAP_H 

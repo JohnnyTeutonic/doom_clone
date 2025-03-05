@@ -252,19 +252,40 @@ Color Texture::getPixel(int x, int y) const {
 }
 
 Color Texture::getPixelNormalized(double u, double v) const {
-    // Normalize coordinates to [0, 1]
-    u = u - floor(u);
-    v = v - floor(v);
+    // Check if texture is loaded
+    if (m_width == 0 || m_height == 0) {
+        return Color(0, 0, 0);
+    }
     
-    // Convert to pixel coordinates
-    int x = static_cast<int>(u * m_width);
-    int y = static_cast<int>(v * m_height);
+    // Convert normalized coordinates to pixel coordinates
+    int x = static_cast<int>(u * m_width) % m_width;
+    int y = static_cast<int>(v * m_height) % m_height;
     
-    // Handle edge cases
-    if (x == m_width) x = m_width - 1;
-    if (y == m_height) y = m_height - 1;
+    // Handle negative coordinates
+    if (x < 0) x += m_width;
+    if (y < 0) y += m_height;
     
     return getPixel(x, y);
+}
+
+// Implementation of getPixelData
+const uint32_t* Texture::getPixelData() const {
+    // Create a static buffer to hold the converted data
+    // This is not thread-safe but works for our purposes
+    static std::vector<uint32_t> buffer;
+    
+    // Resize the buffer if necessary
+    buffer.resize(m_width * m_height);
+    
+    // Convert Color pixels to uint32_t ARGB format
+    for (int y = 0; y < m_height; y++) {
+        for (int x = 0; x < m_width; x++) {
+            Color color = getPixel(x, y);
+            buffer[y * m_width + x] = (0xFF << 24) | (color.r << 16) | (color.g << 8) | color.b;
+        }
+    }
+    
+    return buffer.data();
 }
 
 // TextureManager implementation

@@ -7,6 +7,7 @@
 #include "map.h"
 #include "player.h"
 #include "texture.h"
+#include "lighting.h"  // Include lighting system header
 
 // Structure to hold player data for CUDA
 struct PlayerData {
@@ -19,6 +20,45 @@ struct PlayerData {
     float verticalAngle;  // Look up/down angle
     float jumpHeight;     // Current jump height
 };
+
+// Light types for CUDA
+enum class CudaLightType {
+    Point = 0,       // Light emanating from a point
+    Directional = 1, // Light coming from a direction
+    Flickering = 2,  // Light that flickers
+    Pulsing = 3,     // Light that pulses
+    Strobe = 4,      // Light that strobes on and off
+    Glow = 5         // Ambient glow
+};
+
+// Structure to hold light data for CUDA
+struct CudaLight {
+    int type;  // Use int instead of CudaLightType for CUDA compatibility
+    float posX;
+    float posY;
+    float dirX;
+    float dirY;
+    float r;
+    float g;
+    float b;
+    float intensity;
+    float radius;
+    float effectSpeed;
+    float effectIntensity;
+    float effectTimer;
+    int enabled;
+};
+
+// Structure to hold ambient light data
+struct CudaAmbientLight {
+    float r;
+    float g;
+    float b;
+    float intensity;
+};
+
+// Maximum number of lights supported in CUDA kernel
+#define MAX_CUDA_LIGHTS 32
 
 // Forward declaration of CUDA wrapper function
 extern "C" void launchRaycastKernel(
@@ -36,7 +76,10 @@ extern "C" void launchRaycastKernel(
     uint32_t* floorTextures,
     uint32_t* ceilingTextures,
     int textureWidth,
-    int textureHeight
+    int textureHeight,
+    CudaLight* lights,          // Add light array parameter
+    int numLights,              // Add number of lights parameter
+    CudaAmbientLight* ambient   // Add ambient light parameter
 );
 
 // CUDA Renderer class for hardware-accelerated rendering
@@ -64,8 +107,11 @@ private:
     uint32_t* m_deviceWallTextures;
     uint32_t* m_deviceFloorTextures;
     uint32_t* m_deviceCeilingTextures;
+    CudaLight* m_deviceLights;          // Add device memory for lights
+    CudaAmbientLight* m_deviceAmbient;  // Add device memory for ambient light
     int m_wallTextureWidth;
     int m_wallTextureHeight;
+    int m_numActiveLights;              // Number of active lights
     
     // CUDA stream
     cudaStream_t m_cudaStream;
@@ -79,6 +125,7 @@ private:
     // Copy map and texture data to device
     void copyMapToDevice(const Map& map, const Player& player);
     void copyTexturesToDevice();
+    void copyLightsToDevice(const LightingSystem& lightingSystem); // Add method to copy lights
     
     void renderSprites(const Map& map, const Player& player);
     void renderUI(const Player& player);
@@ -104,4 +151,7 @@ public:
     
     // Check if CUDA is available
     static bool isCudaAvailable();
+    
+    // Debug methods
+    void printDeviceInfo() const;
 }; 
