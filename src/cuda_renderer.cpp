@@ -304,12 +304,6 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
         }
     }
     
-    // Debug: Print wall counts
-    std::cout << "Wall texture counts:" << std::endl;
-    for (int i = 0; i < 4; i++) {
-        std::cout << "  Texture ID " << i << ": " << wallCounts[i] << " walls" << std::endl;
-    }
-    
     // Copy map data to device
     cudaMemcpy(m_deviceMapData, hostMapData, width * height * sizeof(int), cudaMemcpyHostToDevice);
     
@@ -391,9 +385,6 @@ void CudaRenderer::copyTexturesToDevice() {
         // Copy data from surface to our texture data array
         SDL_LockSurface(wallSurface);
         
-        // Debug: Print some pixel values to verify texture data
-        std::cout << "Texture ID " << texId << " sample pixels:" << std::endl;
-        
         for (int y = 0; y < m_wallTextureHeight; y++) {
             for (int x = 0; x < m_wallTextureWidth; x++) {
                 int srcIndex = y * (wallSurface->pitch / 4) + x;
@@ -410,7 +401,6 @@ void CudaRenderer::copyTexturesToDevice() {
         SDL_DestroyTexture(wallTarget);
         
         wallTexturesLoaded = true;
-        std::cout << "Successfully loaded wall texture ID " << texId << std::endl;
     }
     
     // Get floor texture (ID 1)
@@ -484,7 +474,6 @@ void CudaRenderer::copyTexturesToDevice() {
                 SDL_DestroyTexture(ceilingTarget);
                 
                 floorCeilingLoaded = true;
-                std::cout << "Successfully loaded floor and ceiling textures" << std::endl;
             }
             
             SDL_FreeSurface(floorSurface);
