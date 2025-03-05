@@ -1098,7 +1098,11 @@ bool Engine::loadAssets() {
     m_enemyTextureFrames.resize(enemyFrameCount);
     
     // Create a surface for the enemy sprite sheet
-    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0, 0, 0, 0);
+    SDL_Surface* enemySurface = SDL_CreateRGBSurface(0, 64, 64, 32, 
+                                                    0xFF000000,  // Red mask
+                                                    0x00FF0000,  // Green mask
+                                                    0x0000FF00,  // Blue mask
+                                                    0x000000FF); // Alpha mask - important for transparency
     if (enemySurface) {
         // Lock surface for direct pixel access
         SDL_LockSurface(enemySurface);
@@ -1108,7 +1112,7 @@ bool Engine::loadAssets() {
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
                 // Default color (red body)
-                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
                 
                 // Calculate distance from center for smoother edges
                 double centerX = enemySurface->w / 2.0;
@@ -1131,7 +1135,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 5) {
-                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1143,7 +1147,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
                         }
                     }
                 }
@@ -1163,7 +1167,7 @@ bool Engine::loadAssets() {
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
                 // Default color (red body)
-                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
                 
                 // Calculate distance from center for smoother edges
                 double centerX = enemySurface->w / 2.0;
@@ -1186,7 +1190,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 5) {
-                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1198,7 +1202,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
                         }
                     }
                 }
@@ -1215,7 +1219,7 @@ bool Engine::loadAssets() {
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
                 // Default color (red body)
-                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
                 
                 // Calculate distance from center for smoother edges
                 double centerX = enemySurface->w / 2.0;
@@ -1238,7 +1242,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 5) {
-                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1250,7 +1254,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
                         }
                     }
                 }
@@ -1267,7 +1271,7 @@ bool Engine::loadAssets() {
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
                 // Default color (red body)
-                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
+                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
                 
                 // Calculate distance from center for smoother edges
                 double centerX = enemySurface->w / 2.0;
@@ -1290,7 +1294,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 5) {
-                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1302,7 +1306,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
                         }
                     }
                 }
@@ -1397,7 +1401,11 @@ bool Engine::loadAssets() {
     m_impTextureFrames.resize(impFrameCount);
     
     // Create a surface for the Imp sprite sheet
-    SDL_Surface* impSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0, 0, 0, 0);
+    SDL_Surface* impSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 
+                                                  0xFF000000,  // Red mask
+                                                  0x00FF0000,  // Green mask
+                                                  0x0000FF00,  // Blue mask
+                                                  0x000000FF); // Alpha mask - important for transparency
     if (impSurface) {
         SDL_LockSurface(impSurface);
         
@@ -1417,7 +1425,7 @@ bool Engine::loadAssets() {
                 // Create a circular shape with smooth edges
                 if (distFromCenter <= radius) {
                     // Inside the circle - brown body
-                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
                     
                     // Add eyes (yellow)
                     if ((y >= 15 && y <= 20) && 
@@ -1429,7 +1437,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 3) {
-                            color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(impSurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1441,7 +1449,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                            color = SDL_MapRGBA(impSurface->format, 139, 0, 0, 255);
                         }
                     }
                     
@@ -1450,14 +1458,14 @@ bool Engine::loadAssets() {
                         // Calculate spike pattern
                         double spikeX = x % 8;
                         if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                            color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
                         }
                     }
                     
                     // Add spikes on shoulders
                     if ((y >= 20 && y <= 25) && 
                         ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
                     }
                 }
                 
@@ -1487,7 +1495,7 @@ bool Engine::loadAssets() {
                 // Create a circular shape with smooth edges
                 if (distFromCenter <= radius) {
                     // Inside the circle - brown body
-                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
                     
                     // Add eyes (yellow)
                     if ((y >= 15 && y <= 20) && 
@@ -1499,7 +1507,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 3) {
-                            color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(impSurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1511,7 +1519,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                            color = SDL_MapRGBA(impSurface->format, 139, 0, 0, 255);
                         }
                     }
                     
@@ -1520,14 +1528,14 @@ bool Engine::loadAssets() {
                         // Calculate spike pattern
                         double spikeX = x % 8;
                         if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                            color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
                         }
                     }
                     
                     // Add spikes on shoulders
                     if ((y >= 20 && y <= 25) && 
                         ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
                     }
                 }
                 
@@ -1555,7 +1563,7 @@ bool Engine::loadAssets() {
                 // Create a circular shape with smooth edges
                 if (distFromCenter <= radius) {
                     // Inside the circle - brown body
-                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
                     
                     // Add eyes (yellow)
                     if ((y >= 15 && y <= 20) && 
@@ -1567,7 +1575,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 3) {
-                            color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                            color = SDL_MapRGBA(impSurface->format, 255, 255, 0, 255);
                         }
                     }
                     
@@ -1579,7 +1587,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                            color = SDL_MapRGBA(impSurface->format, 139, 0, 0, 255);
                         }
                     }
                     
@@ -1588,14 +1596,14 @@ bool Engine::loadAssets() {
                         // Calculate spike pattern
                         double spikeX = x % 8;
                         if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                            color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
                         }
                     }
                     
                     // Add spikes on shoulders
                     if ((y >= 20 && y <= 25) && 
                         ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
                     }
                 }
                 
@@ -1623,7 +1631,7 @@ bool Engine::loadAssets() {
                 // Create a circular shape with smooth edges
                 if (distFromCenter <= radius) {
                     // Inside the circle - brown body
-                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
                     
                     // Add eyes (red for attack)
                     if ((y >= 15 && y <= 20) && 
@@ -1635,7 +1643,7 @@ bool Engine::loadAssets() {
                         double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
                         
                         if (eyeDist < 3) {
-                            color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                            color = SDL_MapRGBA(impSurface->format, 255, 0, 0, 255);
                         }
                     }
                     
@@ -1647,7 +1655,7 @@ bool Engine::loadAssets() {
                         double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
                         
                         if (mouthDist < 6) {
-                            color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                            color = SDL_MapRGBA(impSurface->format, 255, 0, 0, 255);
                         }
                     }
                     

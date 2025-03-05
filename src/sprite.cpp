@@ -73,8 +73,8 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
     enum class EnemyState { Idle, Patrol, Chase, Attack, Maintain };
     
     // Define distance thresholds
-    const double ATTACK_DISTANCE = 1.5;
-    const double MINIMUM_DISTANCE = 2.5; // Increased from 1.2 to 2.5 to keep enemies further away
+    const double ATTACK_DISTANCE = 3.0;
+    const double MINIMUM_DISTANCE = 2.5; // Already increased from 1.2 to 2.5
     const double CHASE_DISTANCE = 8.0;
     
     // Determine the current state
@@ -129,30 +129,36 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
             break;
             
         case EnemyState::Chase:
-            // Move towards player at increased speed
+            // Move towards player at increased speed, but stop at attack distance
             {
                 // Update direction to face player
                 m_direction = toPlayer.normalized();
                 
-                // Move towards player
-                Vec2 newPos = m_position + m_direction * m_moveSpeed * deltaTime;
-                if (canMoveTo(newPos, map)) {
-                    m_position = newPos;
-                } else {
-                    // If blocked, try to find a path around obstacles
-                    // Try moving laterally
-                    Vec2 lateralDir(-m_direction.y, m_direction.x);
-                    Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                // Only move closer if we're outside the attack distance
+                if (distToPlayer > ATTACK_DISTANCE) {
+                    // Calculate how far to move this frame
+                    double moveDistance = std::min(m_moveSpeed * deltaTime, distToPlayer - ATTACK_DISTANCE);
                     
-                    if (canMoveTo(lateralPos, map)) {
-                        m_position = lateralPos;
+                    // Move towards player
+                    Vec2 newPos = m_position + m_direction * moveDistance;
+                    if (canMoveTo(newPos, map)) {
+                        m_position = newPos;
                     } else {
-                        // Try the other lateral direction
-                        lateralDir = Vec2(m_direction.y, -m_direction.x);
-                        lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                        // If blocked, try to find a path around obstacles
+                        // Try moving laterally
+                        Vec2 lateralDir(-m_direction.y, m_direction.x);
+                        Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
                         
                         if (canMoveTo(lateralPos, map)) {
                             m_position = lateralPos;
+                        } else {
+                            // Try the other lateral direction
+                            lateralDir = Vec2(m_direction.y, -m_direction.x);
+                            lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                            
+                            if (canMoveTo(lateralPos, map)) {
+                                m_position = lateralPos;
+                            }
                         }
                     }
                 }
@@ -169,13 +175,47 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
             break;
             
         case EnemyState::Attack:
-            // Attack the player but maintain minimum distance
-            // In a real game, this would deal damage to the player
-            m_direction = toPlayer.normalized();
-            
-            // Use the fourth animation frame (attack) if available
-            if (m_isAnimated && m_frameCount > 3) {
-                m_currentFrame = 3;
+            // Attack the player while maintaining optimal attack distance
+            {
+                // Face the player
+                m_direction = toPlayer.normalized();
+                
+                // Calculate optimal attack distance
+                double optimalDistance = (ATTACK_DISTANCE + MINIMUM_DISTANCE) / 2.0;
+                double distanceDiff = distToPlayer - optimalDistance;
+                
+                // If we're not at the optimal distance, adjust position
+                if (std::abs(distanceDiff) > 0.3) { // Add a small tolerance
+                    // Move towards or away from player to maintain optimal distance
+                    Vec2 moveDir = distanceDiff > 0 ? m_direction : -m_direction;
+                    double moveSpeed = std::min(std::abs(distanceDiff), m_moveSpeed * deltaTime);
+                    
+                    Vec2 newPos = m_position + moveDir * moveSpeed;
+                    if (canMoveTo(newPos, map)) {
+                        m_position = newPos;
+                    } else {
+                        // If blocked, try strafing sideways
+                        Vec2 strafeDir(-m_direction.y, m_direction.x);
+                        Vec2 strafePos = m_position + strafeDir * m_moveSpeed * deltaTime;
+                        
+                        if (canMoveTo(strafePos, map)) {
+                            m_position = strafePos;
+                        } else {
+                            // Try the other strafe direction
+                            strafeDir = Vec2(m_direction.y, -m_direction.x);
+                            strafePos = m_position + strafeDir * m_moveSpeed * deltaTime;
+                            
+                            if (canMoveTo(strafePos, map)) {
+                                m_position = strafePos;
+                            }
+                        }
+                    }
+                }
+                
+                // Use the fourth animation frame (attack) if available
+                if (m_isAnimated && m_frameCount > 3) {
+                    m_currentFrame = 3;
+                }
             }
             break;
             
@@ -185,27 +225,52 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
                 // Direction is away from player
                 m_direction = (m_position - playerPos).normalized();
                 
-                // Move away from player more quickly
-                Vec2 newPos = m_position + m_direction * m_moveSpeed * 2.0 * deltaTime; // Increased speed multiplier from 1.2 to 2.0
+                // Calculate target position that's at least MINIMUM_DISTANCE away from player
+                double currentDist = distToPlayer;
+                double targetDist = MINIMUM_DISTANCE + 0.5; // Add a small buffer
+                double moveDistance = std::min(m_moveSpeed * 2.5 * deltaTime, targetDist - currentDist);
                 
-                // Check if we can move there and it's not too far from player
+                // Move away from player more quickly
+                Vec2 newPos = m_position + m_direction * moveDistance;
+                
+                // Check if we can move there
                 if (canMoveTo(newPos, map)) {
                     m_position = newPos;
                 } else {
-                    // If we can't back up directly, try moving laterally
-                    Vec2 lateralDir(-m_direction.y, m_direction.x);
-                    Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * 1.5 * deltaTime; // Increased lateral movement speed
+                    // If we can't back up directly, try moving laterally at an angle
+                    // Try multiple angles to find a clear path
+                    bool foundPath = false;
                     
-                    if (canMoveTo(lateralPos, map)) {
-                        m_position = lateralPos;
-                    } else {
-                        // Try the other lateral direction
-                        lateralDir = Vec2(m_direction.y, -m_direction.x);
-                        lateralPos = m_position + lateralDir * m_moveSpeed * 1.5 * deltaTime; // Increased lateral movement speed
+                    for (int i = 1; i <= 4; i++) {
+                        // Try increasingly wider angles (±30°, ±60°, ±90°, ±120°)
+                        double angle = (i * 30.0) * M_PI / 180.0;
                         
-                        if (canMoveTo(lateralPos, map)) {
-                            m_position = lateralPos;
+                        // Try right turn
+                        Vec2 rightDir = m_direction;
+                        rightDir.rotate(angle);
+                        Vec2 rightPos = m_position + rightDir * m_moveSpeed * 2.0 * deltaTime;
+                        
+                        if (canMoveTo(rightPos, map)) {
+                            m_position = rightPos;
+                            foundPath = true;
+                            break;
                         }
+                        
+                        // Try left turn
+                        Vec2 leftDir = m_direction;
+                        leftDir.rotate(-angle);
+                        Vec2 leftPos = m_position + leftDir * m_moveSpeed * 2.0 * deltaTime;
+                        
+                        if (canMoveTo(leftPos, map)) {
+                            m_position = leftPos;
+                            foundPath = true;
+                            break;
+                        }
+                    }
+                    
+                    // If we still can't move, try a random direction as a last resort
+                    if (!foundPath) {
+                        changeDirection(map);
                     }
                 }
                 

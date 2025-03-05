@@ -324,6 +324,9 @@ int TextureManager::createTextureFromSurface(SDL_Surface* surface) {
         return -1;
     }
     
+    // Set the texture blend mode to enable alpha blending
+    SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+    
     // Get surface dimensions
     texture->m_width = surface->w;
     texture->m_height = surface->h;

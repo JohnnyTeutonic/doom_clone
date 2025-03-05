@@ -57,6 +57,7 @@ struct Vec2 {
     Vec2 operator-(const Vec2& other) const { return Vec2(x - other.x, y - other.y); }
     Vec2 operator*(double scalar) const { return Vec2(x * scalar, y * scalar); }
     Vec2 operator/(double scalar) const { return Vec2(x / scalar, y / scalar); }
+    Vec2 operator-() const { return Vec2(-x, -y); }
 };
 
 // Simple color class
