@@ -60,4 +60,33 @@ public:
     bool isInitialized() const { return m_initialized; }
 };
 
+// Sound effect types
+enum class SoundEffect {
+    PlayerHurt,
+    PlayerDeath,
+    EnemyHurt,
+    EnemyDeath,
+    WeaponFire,
+    WeaponReload,
+    ItemPickup,
+    DoorOpen,
+    DoorClose,
+    Explosion,
+    
+    // Doom-specific sounds
+    WeaponShotgun,
+    WeaponChainsaw,
+    WeaponRocketLaunch,
+    WeaponPlasmaFire,
+    WeaponBFG,
+    PowerupPickup,
+    TeleportSound,
+    MonsterAlert,
+    MonsterPain,
+    MonsterDeath,
+    ImpAttack,
+    ImpDeath,
+    PlayerGrunt
+};
+
 #endif // AUDIO_H 

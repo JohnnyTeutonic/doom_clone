@@ -1,5 +1,6 @@
 #include "sprite.h"
 #include "texture.h"
+#include "player.h"
 #include <algorithm>
 #include <iostream>
 
@@ -29,6 +30,7 @@ Sprite::Sprite(double x, double y, double size, int textureId, SpriteType type)
     , m_specialMoveTimer(0.0)
     , m_specialMoveCooldown(3.0)  // 3 seconds between special moves
     , m_lastPlayerPos(0, 0)
+    , m_itemType(ItemType::None)  // Default item type
 {
 }
 
@@ -72,7 +74,7 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
     
     // Define distance thresholds
     const double ATTACK_DISTANCE = 1.5;
-    const double MINIMUM_DISTANCE = 1.2; // Minimum distance to maintain from player
+    const double MINIMUM_DISTANCE = 2.5; // Increased from 1.2 to 2.5 to keep enemies further away
     const double CHASE_DISTANCE = 8.0;
     
     // Determine the current state
@@ -183,8 +185,8 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
                 // Direction is away from player
                 m_direction = (m_position - playerPos).normalized();
                 
-                // Move away from player
-                Vec2 newPos = m_position + m_direction * m_moveSpeed * 1.2 * deltaTime;
+                // Move away from player more quickly
+                Vec2 newPos = m_position + m_direction * m_moveSpeed * 2.0 * deltaTime; // Increased speed multiplier from 1.2 to 2.0
                 
                 // Check if we can move there and it's not too far from player
                 if (canMoveTo(newPos, map)) {
@@ -192,14 +194,14 @@ void Sprite::updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& p
                 } else {
                     // If we can't back up directly, try moving laterally
                     Vec2 lateralDir(-m_direction.y, m_direction.x);
-                    Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                    Vec2 lateralPos = m_position + lateralDir * m_moveSpeed * 1.5 * deltaTime; // Increased lateral movement speed
                     
                     if (canMoveTo(lateralPos, map)) {
                         m_position = lateralPos;
                     } else {
                         // Try the other lateral direction
                         lateralDir = Vec2(m_direction.y, -m_direction.x);
-                        lateralPos = m_position + lateralDir * m_moveSpeed * deltaTime;
+                        lateralPos = m_position + lateralDir * m_moveSpeed * 1.5 * deltaTime; // Increased lateral movement speed
                         
                         if (canMoveTo(lateralPos, map)) {
                             m_position = lateralPos;
@@ -593,6 +595,98 @@ void Sprite::moveCharge(double deltaTime, const Map& map, const Vec2& playerPos)
             m_currentFrame = 0;
         }
     }
+}
+
+void Sprite::applyItemEffect(Player* player) {
+    if (!player || m_type != SpriteType::Item) return;
+    
+    // Apply effect based on item type
+    switch (m_itemType) {
+        case ItemType::HealthSmall:
+            player->setHealth(player->getHealth() + 10);
+            std::cout << "Picked up small health pack (+10 health)" << std::endl;
+            break;
+            
+        case ItemType::HealthMedium:
+            player->setHealth(player->getHealth() + 25);
+            std::cout << "Picked up medikit (+25 health)" << std::endl;
+            break;
+            
+        case ItemType::HealthLarge:
+            player->setHealth(player->getHealth() + 100);
+            std::cout << "Picked up soulsphere (+100 health)" << std::endl;
+            break;
+            
+        case ItemType::ArmorSmall:
+            player->addArmor(5);
+            std::cout << "Picked up armor bonus (+5 armor)" << std::endl;
+            break;
+            
+        case ItemType::ArmorMedium:
+            player->setArmor(100);
+            std::cout << "Picked up green armor (100 armor)" << std::endl;
+            break;
+            
+        case ItemType::ArmorLarge:
+            player->setArmor(200);
+            std::cout << "Picked up blue armor (200 armor)" << std::endl;
+            break;
+            
+        case ItemType::AmmoSmall:
+            player->setAmmo(player->getAmmo() + 5);
+            std::cout << "Picked up small ammo pack (+5 ammo)" << std::endl;
+            break;
+            
+        case ItemType::AmmoMedium:
+            player->setAmmo(player->getAmmo() + 20);
+            std::cout << "Picked up medium ammo pack (+20 ammo)" << std::endl;
+            break;
+            
+        case ItemType::AmmoLarge:
+            player->setAmmo(player->getAmmo() + 100);
+            std::cout << "Picked up large ammo pack (+100 ammo)" << std::endl;
+            break;
+            
+        case ItemType::WeaponShotgun:
+            player->setCurrentWeapon(WeaponType::Shotgun);
+            player->setAmmo(player->getAmmo() + 8);
+            std::cout << "Picked up shotgun" << std::endl;
+            break;
+            
+        case ItemType::WeaponChainsaw:
+            player->setCurrentWeapon(WeaponType::Chainsaw);
+            std::cout << "Picked up chainsaw" << std::endl;
+            break;
+            
+        case ItemType::WeaponRocket:
+            player->setCurrentWeapon(WeaponType::RocketLauncher);
+            player->setAmmo(player->getAmmo() + 2);
+            std::cout << "Picked up rocket launcher" << std::endl;
+            break;
+            
+        case ItemType::WeaponPlasma:
+            player->setCurrentWeapon(WeaponType::PlasmaGun);
+            player->setAmmo(player->getAmmo() + 40);
+            std::cout << "Picked up plasma gun" << std::endl;
+            break;
+            
+        case ItemType::PowerupBerserk:
+            player->activatePowerUp(PowerUpType::Berserk, 30.0);
+            std::cout << "Picked up berserk pack (30 seconds)" << std::endl;
+            break;
+            
+        case ItemType::PowerupInvulnerability:
+            player->activatePowerUp(PowerUpType::Invulnerability, 30.0);
+            std::cout << "Picked up invulnerability (30 seconds)" << std::endl;
+            break;
+            
+        default:
+            std::cout << "Picked up unknown item" << std::endl;
+            break;
+    }
+    
+    // Deactivate the item after it's picked up
+    m_isActive = false;
 }
 
 // SpriteManager implementation

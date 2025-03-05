@@ -12,19 +12,24 @@ Projectile::Projectile(int id, const Vec2& position, const Vec2& direction, doub
     , m_acceleration(0, 0)                 // Initialize acceleration
     , m_speed(speed)
     , m_damage(damage)
-    , m_lifetime(0.0)
-    , m_maxLifetime(5.0)  // 5 seconds default lifetime
+    , m_lifetime(2.0)
+    , m_maxLifetime(2.0)
     , m_active(true)
     , m_hasCollided(false)
-    , m_textureId(-1)     // Default to no texture
-    , m_type(ProjectileType::Bullet)  // Default to bullet type
-    , m_gravity(0.0)      // Default: no gravity
-    , m_airResistance(0.0) // Default: no air resistance
-    , m_mass(1.0)         // Default mass
-    , m_bounciness(0.0)   // Default: no bounce
-    , m_bounceCount(0)    // No bounces yet
+    , m_textureId(0)
+    , m_type(ProjectileType::Bullet)
+    , m_size(0.1)          // Default size
+    , m_color(255, 255, 255) // Default color
+    , m_explosionRadius(0.0)
+    , m_explosionDamage(0.0)
+    , m_gravity(0.0)
+    , m_airResistance(0.0)
+    , m_mass(1.0)
+    , m_bounciness(0.0)
+    , m_bounceCount(0)
     , m_maxBounces(0)     // Default: no bouncing
     , m_usePhysics(false) // Default: use simple movement
+    , m_bounceFactor(0.0) // Default: no bounce
 {
 }
 
@@ -277,45 +282,48 @@ ProjectileManager::~ProjectileManager() {
 int ProjectileManager::createProjectile(const Vec2& position, const Vec2& direction, ProjectileType type, double speed, double damage) {
     Projectile* projectile = new Projectile(m_nextId++, position, direction, speed, damage);
     
-    // Set the projectile type
+    // Set properties based on projectile type
     projectile->m_type = type;
     
-    // Set the texture ID based on projectile type
     switch (type) {
         case ProjectileType::Bullet:
-            projectile->m_textureId = m_bulletTextureId;
+            projectile->m_size = 0.1;
+            projectile->m_lifetime = 2.0;
             projectile->m_usePhysics = false;  // Bullets use simple physics
-            projectile->m_maxLifetime = 2.0;   // Shorter lifetime
             break;
             
         case ProjectileType::Rocket:
-            projectile->m_textureId = m_rocketTextureId;
+            projectile->m_size = 0.3;
+            projectile->m_lifetime = 5.0;
             projectile->m_usePhysics = true;   // Rockets use advanced physics
-            projectile->m_gravity = 0.5;       // Slight gravity
-            projectile->m_airResistance = 0.01; // Some air resistance
-            projectile->m_maxLifetime = 4.0;   // Medium lifetime
+            projectile->m_explosionRadius = 2.0;
+            projectile->m_explosionDamage = damage * 0.7;  // Explosion does 70% of direct hit damage
             break;
             
         case ProjectileType::Plasma:
-            projectile->m_textureId = m_plasmaTextureId;
-            projectile->m_usePhysics = true;   // Plasma uses advanced physics
-            projectile->m_gravity = 0.0;       // No gravity
-            projectile->m_airResistance = 0.05; // Higher air resistance
-            projectile->m_maxLifetime = 3.0;   // Medium lifetime
+            projectile->m_size = 0.2;
+            projectile->m_lifetime = 1.5;
+            projectile->m_usePhysics = false;
+            projectile->m_color = Color(0, 255, 255);  // Cyan color
             break;
             
         case ProjectileType::Grenade:
-            projectile->m_textureId = m_grenadeTextureId;
-            projectile->m_usePhysics = true;   // Grenades use advanced physics
-            projectile->m_gravity = 9.8;       // Full gravity
-            projectile->m_airResistance = 0.02; // Some air resistance
-            projectile->m_bounciness = 0.6;    // Bouncy
-            projectile->m_maxBounces = 3;      // Can bounce multiple times
-            projectile->m_maxLifetime = 5.0;   // Longer lifetime
+            projectile->m_size = 0.25;
+            projectile->m_lifetime = 3.0;
+            projectile->m_usePhysics = true;
+            projectile->m_gravity = 5.0;       // Affected by gravity
+            projectile->m_bounceFactor = 0.6;  // Bounces off surfaces
+            projectile->m_explosionRadius = 3.0;
+            projectile->m_explosionDamage = damage;
             break;
             
-        default:
-            projectile->m_textureId = m_defaultBulletTexture;
+        case ProjectileType::BFG:
+            projectile->m_size = 0.5;          // Large projectile
+            projectile->m_lifetime = 4.0;
+            projectile->m_usePhysics = false;
+            projectile->m_color = Color(0, 255, 0);  // Green color
+            projectile->m_explosionRadius = 5.0;     // Massive explosion radius
+            projectile->m_explosionDamage = damage;  // Full damage in explosion
             break;
     }
     
@@ -374,6 +382,42 @@ void ProjectileManager::update(double deltaTime, const Map& map) {
             }
         }
         
+        // Update lifetime
+        projectile->m_lifetime -= deltaTime;
+        if (projectile->m_lifetime <= 0) {
+            // Handle explosion for rockets, grenades, and BFG
+            if (projectile->m_type == ProjectileType::Rocket || 
+                projectile->m_type == ProjectileType::Grenade ||
+                projectile->m_type == ProjectileType::BFG) {
+                createExplosion(projectile->m_position, projectile->m_explosionRadius, projectile->m_explosionDamage);
+            }
+            
+            projectile->m_active = false;
+            ++it;
+            continue;
+        }
+        
+        // Special behavior for BFG projectile
+        if (projectile->m_type == ProjectileType::BFG) {
+            // BFG projectiles damage enemies in their path
+            if (m_spriteManager) {
+                std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+                
+                for (Sprite* sprite : sprites) {
+                    if (!sprite || sprite->isDying() || !sprite->isActive()) continue;
+                    
+                    // Calculate distance from sprite to BFG projectile
+                    double dist = (sprite->getPosition() - projectile->m_position).length();
+                    
+                    // BFG damages enemies within a certain radius as it travels
+                    if (dist < 2.0) {
+                        // Apply a portion of the damage
+                        sprite->takeDamage(projectile->m_damage * 0.1 * deltaTime);
+                    }
+                }
+            }
+        }
+        
         // Remove inactive projectiles
         if (!projectile->isActive()) {
             delete projectile;
@@ -386,5 +430,36 @@ void ProjectileManager::update(double deltaTime, const Map& map) {
 
 int ProjectileManager::getActiveCount() const {
     return static_cast<int>(m_activeProjectiles.size());
+}
+
+void ProjectileManager::createExplosion(const Vec2& position, double radius, double damage) {
+    if (!m_spriteManager) return;
+    
+    std::cout << "Creating explosion at (" << position.x << ", " << position.y << ") with radius " << radius << " and damage " << damage << std::endl;
+    
+    // Get all sprites
+    std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+    
+    // Check each sprite for distance to explosion
+    for (Sprite* sprite : sprites) {
+        if (!sprite || !sprite->isActive() || sprite->isDying()) continue;
+        
+        // Calculate distance from sprite to explosion center
+        double distance = (sprite->getPosition() - position).length();
+        
+        // Check if sprite is within explosion radius
+        if (distance <= radius) {
+            // Calculate damage based on distance (more damage closer to center)
+            double distanceFactor = 1.0 - (distance / radius); // 1.0 at center, 0.0 at edge
+            double explosionDamage = damage * distanceFactor;
+            
+            // Apply damage to sprite
+            sprite->takeDamage(explosionDamage);
+            
+            std::cout << "Explosion hit sprite at distance " << distance << ", dealing " << explosionDamage << " damage" << std::endl;
+        }
+    }
+    
+    // TODO: Add visual effects for explosion
 }
 

@@ -10,10 +10,11 @@ class TextureManager;
 
 // Different types of projectiles
 enum class ProjectileType {
-    Bullet,
-    Rocket,
-    Plasma,
-    Grenade  // New type for bouncing projectiles
+    Bullet,     // Standard bullet
+    Rocket,     // Explosive rocket
+    Plasma,     // Energy projectile
+    Grenade,    // Bouncing explosive
+    BFG         // Big Fucking Gun projectile
 };
 
 // Material properties for different surfaces
@@ -38,6 +39,8 @@ public:
     int getId() const { return m_id; }
     int getTextureId() const { return m_textureId; }
     ProjectileType getType() const { return m_type; }
+    double getSize() const { return m_size; }
+    const Color& getColor() const { return m_color; }
     
     // Physics setters
     void setGravity(double gravity) { m_gravity = gravity; }
@@ -63,6 +66,14 @@ private:
     int m_textureId;
     ProjectileType m_type;
     
+    // Visual properties
+    double m_size;        // Size of the projectile
+    Color m_color;        // Color of the projectile
+    
+    // Explosion properties
+    double m_explosionRadius;  // Radius of explosion
+    double m_explosionDamage;  // Damage caused by explosion
+    
     // Physics properties
     double m_gravity;         // Gravity strength (negative for downward)
     double m_airResistance;   // Air resistance coefficient
@@ -71,6 +82,7 @@ private:
     int m_bounceCount;        // Current bounce count
     int m_maxBounces;         // Maximum number of bounces before deactivating
     bool m_usePhysics;        // Whether to use physics simulation
+    double m_bounceFactor;    // Factor for bouncing (similar to bounciness)
     
     // Helper methods for physics
     void applyPhysics(double deltaTime, const Map& map);
@@ -106,6 +118,9 @@ public:
     const std::vector<Projectile*>& getActiveProjectiles() const { return m_activeProjectiles; }
     Projectile* getProjectile(size_t index);
     int getActiveCount() const;
+
+    // Create an explosion at the specified position
+    void createExplosion(const Vec2& position, double radius, double damage);
 
 private:
     int m_nextId;

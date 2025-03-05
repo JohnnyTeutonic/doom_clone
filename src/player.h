@@ -14,7 +14,22 @@ enum class WeaponType {
     Shotgun,
     RocketLauncher,
     PlasmaGun,
-    GrenadeLauncher  // New weapon type
+    GrenadeLauncher,
+    Chainsaw,       // New melee weapon
+    SuperShotgun,   // Double-barreled shotgun
+    BFG9000         // Ultimate area weapon
+};
+
+// Power-up types
+enum class PowerUpType {
+    None,
+    Berserk,        // Increases melee damage and turns screen red
+    Invulnerability, // Makes player invulnerable for a short time
+    RadiationSuit,   // Protects from damaging floors
+    Invisibility,    // Makes player partially invisible to enemies
+    ComputerMap,     // Reveals the entire map
+    LightAmp,        // Increases brightness (night vision)
+    MegaSphere       // Full health and armor
 };
 
 class Player {
@@ -45,6 +60,15 @@ private:
     // Reference to managers (not owned)
     ProjectileManager* m_projectileManager;
     SpriteManager* m_spriteManager;
+    
+    // Armor system
+    double m_armor;       // Current armor value
+    double m_maxArmor;    // Maximum armor value
+    
+    // Power-up system
+    PowerUpType m_activePowerUp;
+    double m_powerUpTimer;
+    double m_powerUpDuration;
     
 public:
     Player();
@@ -107,6 +131,19 @@ public:
     
     // Teleport player to a new position
     void teleport(double x, double y);
+    
+    // Armor methods
+    double getArmor() const { return m_armor; }
+    double getMaxArmor() const { return m_maxArmor; }
+    void setArmor(double armor) { m_armor = std::min(armor, m_maxArmor); }
+    void addArmor(double amount) { m_armor = std::min(m_armor + amount, m_maxArmor); }
+    
+    // Power-up methods
+    PowerUpType getActivePowerUp() const { return m_activePowerUp; }
+    double getPowerUpTimeRemaining() const { return m_powerUpTimer; }
+    void activatePowerUp(PowerUpType type, double duration);
+    void updatePowerUps(double deltaTime);
+    bool hasPowerUp(PowerUpType type) const { return m_activePowerUp == type && m_powerUpTimer > 0; }
 };
 
 #endif // PLAYER_H 

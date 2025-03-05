@@ -336,10 +336,10 @@ void Engine::processInput() {
             m_player.strafeRight(m_deltaTime, m_map);
         }
         if (keyboardState[SDL_SCANCODE_LEFT]) {
-            m_player.rotateLeft(m_deltaTime);
+            m_player.rotateRight(m_deltaTime);  // Changed from rotateLeft to rotateRight
         }
         if (keyboardState[SDL_SCANCODE_RIGHT]) {
-            m_player.rotateRight(m_deltaTime);
+            m_player.rotateLeft(m_deltaTime);   // Changed from rotateRight to rotateLeft
         }
         
         // Vertical looking - use direct keyboard state for up and down arrow keys
@@ -462,6 +462,15 @@ void Engine::processInput() {
             m_prevKeyboardState[SDL_SCANCODE_5] = false;
         }
         
+        // Add chainsaw weapon on key 6
+        if (keyboardState[SDL_SCANCODE_6] && !m_prevKeyboardState[SDL_SCANCODE_6]) {
+            m_player.setCurrentWeapon(WeaponType::Chainsaw);
+            showNotification("Switched to chainsaw", 2.0);
+            m_prevKeyboardState[SDL_SCANCODE_6] = true;
+        } else if (!keyboardState[SDL_SCANCODE_6]) {
+            m_prevKeyboardState[SDL_SCANCODE_6] = false;
+        }
+        
         // Throw grenade directly with G key
         if (keyboardState[SDL_SCANCODE_G] && !m_prevKeyboardState[SDL_SCANCODE_G]) {
             if (m_player.throwGrenade()) {
@@ -548,9 +557,9 @@ void Engine::processInput() {
     if (mouseX != 0) {
         // Use the existing rotation methods with the mouse input
         if (mouseX > 0) {
-            m_player.rotateLeft(m_deltaTime * mouseX * 0.01);
+            m_player.rotateLeft(m_deltaTime * mouseX * 0.01);  // Reverted back to original rotateLeft
         } else {
-            m_player.rotateRight(m_deltaTime * -mouseX * 0.01);
+            m_player.rotateRight(m_deltaTime * -mouseX * 0.01);  // Reverted back to original rotateRight
         }
     }
     
@@ -1019,21 +1028,47 @@ bool Engine::loadAssets() {
         Uint32* pixels = static_cast<Uint32*>(enemySurface->pixels);
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
-                // Base color (dark red)
+                // Default color (red body)
                 Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
                 
-                // Add some details (eyes, mouth)
-                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
-                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
-                    // Eyes (yellow)
-                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
-                }
-                else if (x >= 20 && x <= 44 && y >= 40 && y <= 45) {
-                    // Mouth (black)
-                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                // Calculate distance from center for smoother edges
+                double centerX = enemySurface->w / 2.0;
+                double centerY = enemySurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = enemySurface->w / 2.0 - 2.0;
+                
+                // Create a circular shape with smooth edges
+                if (distFromCenter > radius) {
+                    // Outside the circle - transparent
+                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+                } else {
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 25) && 
+                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
+                        double eyeCenterY = 20;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 5) {
+                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                        }
+                    }
+                    
+                    // Add mouth (black)
+                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 32;
+                        double mouthCenterY = 40;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                        }
+                    }
                 }
                 
-                // Set the pixel
                 pixels[y * enemySurface->w + x] = color;
             }
         }
@@ -1048,21 +1083,47 @@ bool Engine::loadAssets() {
         pixels = static_cast<Uint32*>(enemySurface->pixels);
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
-                // Base color (dark red)
+                // Default color (red body)
                 Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
                 
-                // Add some details (eyes, mouth)
-                if ((x >= 15 && x <= 25 && y >= 18 && y <= 25) || 
-                    (x >= 38 && x <= 48 && y >= 18 && y <= 25)) {
-                    // Eyes (yellow) - narrowed
-                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
-                }
-                else if (x >= 20 && x <= 44 && y >= 40 && y <= 45) {
-                    // Mouth (black)
-                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                // Calculate distance from center for smoother edges
+                double centerX = enemySurface->w / 2.0;
+                double centerY = enemySurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = enemySurface->w / 2.0 - 2.0;
+                
+                // Create a circular shape with smooth edges
+                if (distFromCenter > radius) {
+                    // Outside the circle - transparent
+                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+                } else {
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 25) && 
+                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
+                        double eyeCenterY = 20;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 5) {
+                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                        }
+                    }
+                    
+                    // Add mouth (black)
+                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 32;
+                        double mouthCenterY = 40;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                        }
+                    }
                 }
                 
-                // Set the pixel
                 pixels[y * enemySurface->w + x] = color;
             }
         }
@@ -1074,21 +1135,47 @@ bool Engine::loadAssets() {
         pixels = static_cast<Uint32*>(enemySurface->pixels);
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
-                // Base color (dark red)
+                // Default color (red body)
                 Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
                 
-                // Add some details (eyes, mouth)
-                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
-                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
-                    // Eyes (yellow)
-                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
-                }
-                else if (x >= 20 && x <= 44 && y >= 38 && y <= 48) {
-                    // Mouth (black) - open wider
-                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                // Calculate distance from center for smoother edges
+                double centerX = enemySurface->w / 2.0;
+                double centerY = enemySurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = enemySurface->w / 2.0 - 2.0;
+                
+                // Create a circular shape with smooth edges
+                if (distFromCenter > radius) {
+                    // Outside the circle - transparent
+                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+                } else {
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 25) && 
+                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
+                        double eyeCenterY = 20;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 5) {
+                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                        }
+                    }
+                    
+                    // Add mouth (black)
+                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 32;
+                        double mouthCenterY = 40;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                        }
+                    }
                 }
                 
-                // Set the pixel
                 pixels[y * enemySurface->w + x] = color;
             }
         }
@@ -1100,27 +1187,47 @@ bool Engine::loadAssets() {
         pixels = static_cast<Uint32*>(enemySurface->pixels);
         for (int y = 0; y < enemySurface->h; y++) {
             for (int x = 0; x < enemySurface->w; x++) {
-                // Base color (bright red - angry)
-                Uint32 color = SDL_MapRGB(enemySurface->format, 255, 0, 0);
+                // Default color (red body)
+                Uint32 color = SDL_MapRGB(enemySurface->format, 180, 0, 0);
                 
-                // Add some details (eyes, mouth)
-                if ((x >= 15 && x <= 25 && y >= 15 && y <= 25) || 
-                    (x >= 38 && x <= 48 && y >= 15 && y <= 25)) {
-                    // Eyes (bright yellow)
-                    color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
-                }
-                else if (x >= 15 && x <= 49 && y >= 35 && y <= 50) {
-                    // Mouth (black) - wide open with teeth
-                    color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                // Calculate distance from center for smoother edges
+                double centerX = enemySurface->w / 2.0;
+                double centerY = enemySurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = enemySurface->w / 2.0 - 2.0;
+                
+                // Create a circular shape with smooth edges
+                if (distFromCenter > radius) {
+                    // Outside the circle - transparent
+                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+                } else {
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 25) && 
+                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
+                        double eyeCenterY = 20;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 5) {
+                            color = SDL_MapRGB(enemySurface->format, 255, 255, 0);
+                        }
+                    }
                     
-                    // Add teeth
-                    if ((y == 35 || y == 36) && 
-                        ((x >= 20 && x <= 25) || (x >= 30 && x <= 35) || (x >= 40 && x <= 45))) {
-                        color = SDL_MapRGB(enemySurface->format, 255, 255, 255);
+                    // Add mouth (black)
+                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 32;
+                        double mouthCenterY = 40;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(enemySurface->format, 0, 0, 0);
+                        }
                     }
                 }
                 
-                // Set the pixel
                 pixels[y * enemySurface->w + x] = color;
             }
         }
@@ -1219,29 +1326,60 @@ bool Engine::loadAssets() {
         Uint32* pixels = static_cast<Uint32*>(impSurface->pixels);
         for (int y = 0; y < impSurface->h; y++) {
             for (int x = 0; x < impSurface->w; x++) {
-                // Default color (brown body)
-                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                // Default color (transparent)
+                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
                 
-                // Add eyes (yellow)
-                if ((y >= 15 && y <= 20) && 
-                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                    color = SDL_MapRGB(impSurface->format, 255, 255, 0);
-                }
+                // Calculate distance from center for smoother edges
+                double centerX = impSurface->w / 2.0;
+                double centerY = impSurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = impSurface->w / 2.0 - 2.0;
                 
-                // Add mouth (dark red)
-                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                    color = SDL_MapRGB(impSurface->format, 139, 0, 0);
-                }
-                
-                // Add spikes on head (lighter brown)
-                if (y < 15 && (x % 8 < 4) && y > 5) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Add spikes on shoulders
-                if ((y >= 20 && y <= 25) && 
-                    ((x <= 15) || (x >= 49))) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                // Create a circular shape with smooth edges
+                if (distFromCenter <= radius) {
+                    // Inside the circle - brown body
+                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 20) && 
+                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
+                        double eyeCenterY = 17.5;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 3) {
+                            color = SDL_MapRGB(impSurface->format, 255, 255, 0);
+                        }
+                    }
+                    
+                    // Add mouth (dark red)
+                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 31.5;
+                        double mouthCenterY = 32.5;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                        }
+                    }
+                    
+                    // Add spikes on head (lighter brown)
+                    if (y < 15 && y > 5) {
+                        // Calculate spike pattern
+                        double spikeX = x % 8;
+                        if (spikeX < 4 && y < 15 - spikeX) {
+                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        }
+                    }
+                    
+                    // Add spikes on shoulders
+                    if ((y >= 20 && y <= 25) && 
+                        ((x <= 15) || (x >= 49))) {
+                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                    }
                 }
                 
                 pixels[y * impSurface->w + x] = color;
@@ -1258,40 +1396,59 @@ bool Engine::loadAssets() {
         pixels = static_cast<Uint32*>(impSurface->pixels);
         for (int y = 0; y < impSurface->h; y++) {
             for (int x = 0; x < impSurface->w; x++) {
-                // Default color (brown body)
-                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                // Default color (transparent)
+                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
                 
-                // Add eyes (yellow)
-                if ((y >= 15 && y <= 20) && 
-                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                    color = SDL_MapRGB(impSurface->format, 255, 255, 0);
-                }
+                // Calculate distance from center for smoother edges
+                double centerX = impSurface->w / 2.0;
+                double centerY = impSurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = impSurface->w / 2.0 - 2.0;
                 
-                // Add mouth (dark red)
-                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                    color = SDL_MapRGB(impSurface->format, 139, 0, 0);
-                }
-                
-                // Add spikes on head (lighter brown)
-                if (y < 15 && (x % 8 < 4) && y > 5) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Add spikes on shoulders
-                if ((y >= 20 && y <= 25) && 
-                    ((x <= 15) || (x >= 49))) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Modify legs for walking animation
-                if (y >= 45) {
-                    if (x < 32) {
-                        // Left leg forward
-                        if (x >= 20 && x <= 30 && y >= 50) {
-                            color = SDL_MapRGB(impSurface->format, 139, 69, 19);
-                        } else {
-                            color = SDL_MapRGB(impSurface->format, 0, 0, 0);
+                // Create a circular shape with smooth edges
+                if (distFromCenter <= radius) {
+                    // Inside the circle - brown body
+                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 20) && 
+                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
+                        double eyeCenterY = 17.5;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 3) {
+                            color = SDL_MapRGB(impSurface->format, 255, 255, 0);
                         }
+                    }
+                    
+                    // Add mouth (dark red)
+                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 31.5;
+                        double mouthCenterY = 32.5;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                        }
+                    }
+                    
+                    // Add spikes on head (lighter brown)
+                    if (y < 15 && y > 5) {
+                        // Calculate spike pattern
+                        double spikeX = x % 8;
+                        if (spikeX < 4 && y < 15 - spikeX) {
+                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        }
+                    }
+                    
+                    // Add spikes on shoulders
+                    if ((y >= 20 && y <= 25) && 
+                        ((x <= 15) || (x >= 49))) {
+                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
                     }
                 }
                 
@@ -1307,40 +1464,59 @@ bool Engine::loadAssets() {
         pixels = static_cast<Uint32*>(impSurface->pixels);
         for (int y = 0; y < impSurface->h; y++) {
             for (int x = 0; x < impSurface->w; x++) {
-                // Default color (brown body)
-                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                // Default color (transparent)
+                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
                 
-                // Add eyes (yellow)
-                if ((y >= 15 && y <= 20) && 
-                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                    color = SDL_MapRGB(impSurface->format, 255, 255, 0);
-                }
+                // Calculate distance from center for smoother edges
+                double centerX = impSurface->w / 2.0;
+                double centerY = impSurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = impSurface->w / 2.0 - 2.0;
                 
-                // Add mouth (dark red)
-                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                    color = SDL_MapRGB(impSurface->format, 139, 0, 0);
-                }
-                
-                // Add spikes on head (lighter brown)
-                if (y < 15 && (x % 8 < 4) && y > 5) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Add spikes on shoulders
-                if ((y >= 20 && y <= 25) && 
-                    ((x <= 15) || (x >= 49))) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Modify legs for walking animation
-                if (y >= 45) {
-                    if (x >= 32) {
-                        // Right leg forward
-                        if (x >= 33 && x <= 43 && y >= 50) {
-                            color = SDL_MapRGB(impSurface->format, 139, 69, 19);
-                        } else {
-                            color = SDL_MapRGB(impSurface->format, 0, 0, 0);
+                // Create a circular shape with smooth edges
+                if (distFromCenter <= radius) {
+                    // Inside the circle - brown body
+                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                    
+                    // Add eyes (yellow)
+                    if ((y >= 15 && y <= 20) && 
+                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
+                        double eyeCenterY = 17.5;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 3) {
+                            color = SDL_MapRGB(impSurface->format, 255, 255, 0);
                         }
+                    }
+                    
+                    // Add mouth (dark red)
+                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 31.5;
+                        double mouthCenterY = 32.5;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(impSurface->format, 139, 0, 0);
+                        }
+                    }
+                    
+                    // Add spikes on head (lighter brown)
+                    if (y < 15 && y > 5) {
+                        // Calculate spike pattern
+                        double spikeX = x % 8;
+                        if (spikeX < 4 && y < 15 - spikeX) {
+                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        }
+                    }
+                    
+                    // Add spikes on shoulders
+                    if ((y >= 20 && y <= 25) && 
+                        ((x <= 15) || (x >= 49))) {
+                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
                     }
                 }
                 
@@ -1356,44 +1532,59 @@ bool Engine::loadAssets() {
         pixels = static_cast<Uint32*>(impSurface->pixels);
         for (int y = 0; y < impSurface->h; y++) {
             for (int x = 0; x < impSurface->w; x++) {
-                // Default color (brown body)
-                Uint32 color = SDL_MapRGB(impSurface->format, 139, 69, 19);
+                // Default color (transparent)
+                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
                 
-                // Add eyes (red for attack)
-                if ((y >= 15 && y <= 20) && 
-                    ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                    color = SDL_MapRGB(impSurface->format, 255, 0, 0);
-                }
+                // Calculate distance from center for smoother edges
+                double centerX = impSurface->w / 2.0;
+                double centerY = impSurface->h / 2.0;
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                double radius = impSurface->w / 2.0 - 2.0;
                 
-                // Add mouth (bright red for attack)
-                if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                    color = SDL_MapRGB(impSurface->format, 255, 0, 0);
-                }
-                
-                // Add spikes on head (lighter brown)
-                if (y < 15 && (x % 8 < 4) && y > 5) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Add spikes on shoulders
-                if ((y >= 20 && y <= 25) && 
-                    ((x <= 15) || (x >= 49))) {
-                    color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                }
-                
-                // Add fireball effect
-                if ((y >= 25 && y <= 40) && (x >= 15 && x <= 48)) {
-                    // Calculate distance from center of fireball
-                    int centerX = 32;
-                    int centerY = 32;
-                    double dist = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                // Create a circular shape with smooth edges
+                if (distFromCenter <= radius) {
+                    // Inside the circle - brown body
+                    color = SDL_MapRGB(impSurface->format, 139, 69, 19);
                     
-                    if (dist < 10) {
-                        // Inner fireball (bright orange)
-                        color = SDL_MapRGB(impSurface->format, 255, 165, 0);
-                    } else if (dist < 15) {
-                        // Outer fireball (red)
-                        color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                    // Add eyes (red for attack)
+                    if ((y >= 15 && y <= 20) && 
+                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
+                        
+                        // Calculate distance from eye center for smooth eyes
+                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
+                        double eyeCenterY = 17.5;
+                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
+                        
+                        if (eyeDist < 3) {
+                            color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                        }
+                    }
+                    
+                    // Add mouth (bright red for attack)
+                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
+                        // Calculate distance from mouth center for smooth mouth
+                        double mouthCenterX = 31.5;
+                        double mouthCenterY = 32.5;
+                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
+                        
+                        if (mouthDist < 6) {
+                            color = SDL_MapRGB(impSurface->format, 255, 0, 0);
+                        }
+                    }
+                    
+                    // Add spikes on head (lighter brown)
+                    if (y < 15 && y > 5) {
+                        // Calculate spike pattern
+                        double spikeX = x % 8;
+                        if (spikeX < 4 && y < 15 - spikeX) {
+                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
+                        }
+                    }
+                    
+                    // Add spikes on shoulders
+                    if ((y >= 20 && y <= 25) && 
+                        ((x <= 15) || (x >= 49))) {
+                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
                     }
                 }
                 
@@ -1597,29 +1788,34 @@ void Engine::setupMap() {
     // Add lights at key locations using the lighting system instead of addLight
     if (m_renderer) {
         // Light at the north staircase entrance
-        Light northLight = Light::createPointLight(
+        Light northLight = Light::createFlickeringLight(
             Vec2(stair1EndX, stair1EndY + 1),
             Color(255, 204, 153),  // Warm light
             1.15f,                 // Intensity increased by 15%
-            9.2f                   // Radius increased by 15%
+            9.2f,                  // Radius increased by 15%
+            1.0f,                  // Flicker speed
+            0.3f                   // Flicker amount
         );
         m_renderer->getLightingSystem().addLight(northLight);
         
         // Light at the east staircase entrance
-        Light eastLight = Light::createPointLight(
+        Light eastLight = Light::createFlickeringLight(
             Vec2(stair2EndX - 1, stair2EndY),
             Color(153, 204, 255),  // Cool light
-            1.15f,                 // Intensity increased by 15%
-            9.2f                   // Radius increased by 15%
+            1.15f,               // Intensity increased by 15%
+            9.2f,                // Radius increased by 15%
+            1.2f,                // Flicker speed
+            0.25f                // Flicker amount
         );
         m_renderer->getLightingSystem().addLight(eastLight);
         
         // Light in the central chamber
-        Light centerLight = Light::createPointLight(
+        Light centerLight = Light::createPulsingLight(
             Vec2(secondLevelStartX + secondLevelWidth/2, secondLevelStartY + secondLevelHeight/2),
             Color(204, 102, 230),  // Purple light
             1.15f,                 // Intensity increased by 15%
-            11.5f                  // Radius increased by 15%
+            11.5f,                 // Radius increased by 15%
+            0.5f                   // Pulse speed
         );
         m_renderer->getLightingSystem().addLight(centerLight);
         
@@ -1636,12 +1832,43 @@ void Engine::setupMap() {
                 float g = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
                 float b = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
                 
-                Light randomLight = Light::createPointLight(
-                    Vec2(lightX, lightY),
-                    Color(r * 255, g * 255, b * 255),
-                    0.92f,                 // Intensity increased by 15%
-                    5.75f                  // Radius increased by 15%
-                );
+                // Randomly choose a light type
+                int lightType = rand() % 3;
+                Light randomLight;
+                
+                switch (lightType) {
+                    case 0:
+                        randomLight = Light::createFlickeringLight(
+                            Vec2(lightX, lightY),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            5.75f,                 // Radius increased by 15%
+                            1.0f + (rand() % 100) / 100.0f,  // Random flicker speed
+                            0.2f + (rand() % 100) / 500.0f   // Random flicker amount
+                        );
+                        break;
+                        
+                    case 1:
+                        randomLight = Light::createPulsingLight(
+                            Vec2(lightX, lightY),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            5.75f,                 // Radius increased by 15%
+                            0.3f + (rand() % 100) / 200.0f   // Random pulse speed
+                        );
+                        break;
+                        
+                    case 2:
+                    default:
+                        randomLight = Light::createGlowLight(
+                            Vec2(lightX, lightY),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            5.75f                  // Radius increased by 15%
+                        );
+                        break;
+                }
+                
                 m_renderer->getLightingSystem().addLight(randomLight);
             }
         }
@@ -1690,16 +1917,14 @@ void Engine::setupMap() {
                     continue;
                 }
                 else if (x < m_map.getWidth()/2 && y >= m_map.getHeight()/2) {
-                    // Bottom-left quadrant: random walls
-                    createWall = rand() % 3 == 0;
+                    // Bottom-left quadrant: change from random walls to grid pattern similar to top-left
+                    if ((x % 8 == 0 || y % 8 == 0) && (x % 8 != 4 && y % 8 != 4)) {
+                        createWall = true;
+                    }
                 }
                 else {
-                    // Bottom-right quadrant: circular pattern
-                    int centerX = 3 * m_map.getWidth() / 4;
-                    int centerY = 3 * m_map.getHeight() / 4;
-                    int distance = static_cast<int>(sqrt(pow(x - centerX, 2) + pow(y - centerY, 2)));
-                    
-                    if (distance % 5 == 0) {
+                    // Bottom-right quadrant: change from circular pattern to grid pattern with larger spacing
+                    if ((x % 10 == 0 || y % 10 == 0) && (x % 10 != 5 && y % 10 != 5)) {
                         createWall = true;
                     }
                 }
@@ -1762,11 +1987,11 @@ void Engine::setupMap() {
     
     // Add a special light in the Imp area
     if (m_renderer) {
-        Light impAreaLight = Light::createPointLight(
+        Light impAreaLight = Light::createGlowLight(
             Vec2(impAreaCenterX, impAreaCenterY),
-            Color(255, 100, 0),  // Orange-red light for the Imp area
-            1.3f,                // Higher intensity
-            12.0f                // Larger radius
+            Color(255, 50, 0),  // Lava-red light for the Imp area
+            1.3f,               // Higher intensity
+            12.0f               // Larger radius
         );
         m_renderer->getLightingSystem().addLight(impAreaLight);
     }
@@ -1784,30 +2009,73 @@ void Engine::setupMap() {
                 float g = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
                 float b = 0.5f + static_cast<float>(rand()) / RAND_MAX * 0.5f;
                 
-                Light groundLight = Light::createPointLight(
-                    Vec2(x, y),
-                    Color(r * 255, g * 255, b * 255),
-                    0.92f,                 // Intensity increased by 15%
-                    6.0f                   // Radius
-                );
+                // Randomly choose a light type
+                int lightType = rand() % 4;
+                Light groundLight;
+                
+                switch (lightType) {
+                    case 0:
+                        groundLight = Light::createPointLight(
+                            Vec2(x, y),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            6.0f                   // Radius
+                        );
+                        break;
+                        
+                    case 1:
+                        groundLight = Light::createFlickeringLight(
+                            Vec2(x, y),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            6.0f,                  // Radius
+                            1.0f + (rand() % 100) / 100.0f,  // Random flicker speed
+                            0.3f + (rand() % 100) / 500.0f   // Random flicker amount
+                        );
+                        break;
+                        
+                    case 2:
+                        groundLight = Light::createPulsingLight(
+                            Vec2(x, y),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            6.0f,                  // Radius
+                            0.3f + (rand() % 100) / 200.0f   // Random pulse speed
+                        );
+                        break;
+                        
+                    case 3:
+                    default:
+                        groundLight = Light::createStrobeLight(
+                            Vec2(x, y),
+                            Color(r * 255, g * 255, b * 255),
+                            0.92f,                 // Intensity increased by 15%
+                            6.0f,                  // Radius
+                            0.2f + (rand() % 100) / 200.0f   // Random strobe speed
+                        );
+                        break;
+                }
+                
                 m_renderer->getLightingSystem().addLight(groundLight);
             }
         }
         
         // Add lights at staircase entrances
-        Light stair1Light = Light::createPointLight(
+        Light stair1Light = Light::createPulsingLight(
             Vec2(stair1StartX, stair1StartY),
             Color(255, 204, 153),  // Warm light
             1.0f,                  // Intensity
-            8.0f                   // Radius
+            8.0f,                  // Radius
+            0.5f                   // Pulse speed
         );
         m_renderer->getLightingSystem().addLight(stair1Light);
         
-        Light stair2Light = Light::createPointLight(
+        Light stair2Light = Light::createPulsingLight(
             Vec2(stair2StartX, stair2StartY),
             Color(153, 204, 255),  // Cool light
             1.0f,                  // Intensity
-            8.0f                   // Radius
+            8.0f,                  // Radius
+            0.5f                   // Pulse speed
         );
         m_renderer->getLightingSystem().addLight(stair2Light);
     }
@@ -1837,7 +2105,7 @@ void Engine::createSpritesFromMap() {
                 
                 if (createImp && !m_impTextureFrames.empty()) {
                     // Create an Imp enemy sprite
-                    double size = 0.9; // Imps are slightly larger
+                    double size = 0.7; // Reduced from 0.9 to make Imps smaller
                     int textureId = m_impTexture; // Use the Imp texture
                     int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
                     
@@ -1862,7 +2130,7 @@ void Engine::createSpritesFromMap() {
                     }
                 } else {
                     // Create a regular enemy sprite
-                    double size = 0.8; // Standard enemy size
+                    double size = 0.6; // Reduced from 0.8 to make enemies smaller
                     int textureId = m_enemyTexture; // Use the enemy texture
                     int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
                     

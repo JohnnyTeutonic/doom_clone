@@ -8,6 +8,7 @@
 
 // Forward declarations
 class TextureManager;
+class Player;  // Add forward declaration for Player
 
 // Different types of sprites
 enum class SpriteType {
@@ -16,6 +17,26 @@ enum class SpriteType {
     Decoration,
     Projectile,
     ImpEnemy  // New Imp enemy type from Doom
+};
+
+// Different types of items
+enum class ItemType {
+    None,
+    HealthSmall,     // +10 health (Health Bonus)
+    HealthMedium,    // +25 health (Medikit)
+    HealthLarge,     // +100 health (Soulsphere)
+    ArmorSmall,      // +5 armor (Armor Bonus)
+    ArmorMedium,     // +100 armor (Green Armor)
+    ArmorLarge,      // +200 armor (Blue Armor)
+    AmmoSmall,       // +5 ammo
+    AmmoMedium,      // +20 ammo
+    AmmoLarge,       // +100 ammo
+    WeaponShotgun,   // Shotgun pickup
+    WeaponChainsaw,  // Chainsaw pickup
+    WeaponRocket,    // Rocket Launcher pickup
+    WeaponPlasma,    // Plasma Gun pickup
+    PowerupBerserk,  // Berserk powerup
+    PowerupInvulnerability // Invulnerability powerup
 };
 
 // Different movement types for the Imp enemy
@@ -60,6 +81,9 @@ private:
     double m_specialMoveCooldown;       // Cooldown between special moves
     Vec2 m_lastPlayerPos;               // Last known player position for tracking
     
+    // Item properties
+    ItemType m_itemType;   // Type of item (if this is an item)
+    
 public:
     Sprite(double x, double y, double size, int textureId, SpriteType type);
     
@@ -103,6 +127,13 @@ public:
     // Imp-specific methods
     void setImpMovementType(ImpMovementType type) { m_impMovementType = type; }
     ImpMovementType getImpMovementType() const { return m_impMovementType; }
+    
+    // Item methods
+    ItemType getItemType() const { return m_itemType; }
+    void setItemType(ItemType type) { m_itemType = type; }
+    
+    // Apply item effect to player
+    void applyItemEffect(Player* player);
     
 private:
     // AI methods

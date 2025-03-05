@@ -18,7 +18,17 @@ enum class CellType {
     StairStep2 = 8,    // Second step of stairs (50% elevation)
     StairStep3 = 9,     // Third step of stairs (75% elevation)
     Floor = 10,
-    ElevatedFloor = 11
+    ElevatedFloor = 11,
+    SecretWall = 12,    // Wall that can be opened to reveal a secret area
+    TeleportPad = 13    // Teleports player to another location
+};
+
+// Door states
+enum class DoorState {
+    Closed,
+    Opening,
+    Open,
+    Closing
 };
 
 class Map {
@@ -29,6 +39,14 @@ private:
     std::vector<int> m_wallTextures;  // texture ID for each wall cell
     std::vector<int> m_cellElevation; // Elevation level for each cell (0=ground, 1=elevated)
     std::vector<float> m_stepHeight;  // Fractional height for stairs (0.0-1.0)
+    
+    // Door properties
+    std::vector<DoorState> m_doorStates;
+    std::vector<double> m_doorTimers;
+    std::vector<int> m_doorTargets;   // Target cell index for teleport pads
+    
+    // Secret wall properties
+    std::vector<bool> m_secretFound;  // Whether a secret wall has been found
 
 public:
     Map();
@@ -80,6 +98,24 @@ public:
 
     // Collision detection
     bool isSolid(int x, int y) const;
+
+    // Door methods
+    DoorState getDoorState(int x, int y) const;
+    void setDoorState(int x, int y, DoorState state);
+    void updateDoors(double deltaTime);
+    bool activateDoor(int x, int y);  // Returns true if door was activated
+    
+    // Secret wall methods
+    bool isSecretWall(int x, int y) const;
+    bool isSecretFound(int x, int y) const;
+    void setSecretFound(int x, int y, bool found);
+    bool activateSecret(int x, int y);  // Returns true if secret was activated
+    
+    // Teleport methods
+    bool isTeleportPad(int x, int y) const;
+    int getTeleportTarget(int x, int y) const;
+    void setTeleportTarget(int x, int y, int targetX, int targetY);
+    bool activateTeleport(int x, int y, Vec2& outDestination);  // Returns true if teleport was activated
 };
 
 #endif // MAP_H 

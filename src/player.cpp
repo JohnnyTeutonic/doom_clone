@@ -23,6 +23,11 @@ Player::Player()
     , m_timeSinceLastShot(0.0)
     , m_grenades(3)        // Start with 3 grenades
     , m_throwPower(10.0)   // Default throw power
+    , m_armor(0.0)         // Start with no armor
+    , m_maxArmor(100.0)    // Maximum armor value
+    , m_activePowerUp(PowerUpType::None)
+    , m_powerUpTimer(0.0)
+    , m_powerUpDuration(0.0)
 {
 }
 
@@ -48,6 +53,9 @@ void Player::update(double deltaTime, const Map& map) {
     if (m_timeSinceLastShot < m_weaponCooldown) {
         m_timeSinceLastShot += deltaTime;
     }
+    
+    // Update power-ups
+    updatePowerUps(deltaTime);
 }
 
 void Player::moveForward(double deltaTime, const Map& map) {
@@ -501,11 +509,11 @@ void Player::setVerticalAngle(double angle) {
 void Player::setCurrentWeapon(WeaponType weapon) {
     m_currentWeapon = weapon;
     
-    // Update weapon properties based on type
-    switch (m_currentWeapon) {
+    // Set weapon properties based on type
+    switch (weapon) {
         case WeaponType::Pistol:
             m_weaponDamage = 30.0;
-            m_weaponCooldown = 0.5;
+            m_weaponCooldown = 0.4;
             break;
             
         case WeaponType::Shotgun:
@@ -515,17 +523,37 @@ void Player::setCurrentWeapon(WeaponType weapon) {
             
         case WeaponType::RocketLauncher:
             m_weaponDamage = 100.0;
-            m_weaponCooldown = 1.2;
+            m_weaponCooldown = 1.0;
             break;
             
         case WeaponType::PlasmaGun:
             m_weaponDamage = 25.0;
-            m_weaponCooldown = 0.2;
+            m_weaponCooldown = 0.1;  // Rapid fire
             break;
             
         case WeaponType::GrenadeLauncher:
             m_weaponDamage = 75.0;
-            m_weaponCooldown = 1.0;
+            m_weaponCooldown = 1.2;
+            break;
+            
+        case WeaponType::Chainsaw:
+            m_weaponDamage = 40.0;
+            m_weaponCooldown = 0.1;  // Continuous damage
+            break;
+            
+        case WeaponType::SuperShotgun:
+            m_weaponDamage = 90.0;   // Double the damage of regular shotgun
+            m_weaponCooldown = 1.2;  // Slower reload
+            break;
+            
+        case WeaponType::BFG9000:
+            m_weaponDamage = 200.0;  // Massive damage
+            m_weaponCooldown = 3.0;  // Long cooldown
+            break;
+            
+        default:
+            m_weaponDamage = 25.0;
+            m_weaponCooldown = 0.5;
             break;
     }
 }
@@ -563,7 +591,7 @@ bool Player::fire() {
     
     // Check for close-range hits first (hitscan for very close enemies)
     bool hitCloseEnemy = false;
-    const double CLOSE_RANGE = 1.5; // Maximum distance for close-range detection
+    const double CLOSE_RANGE = 2.5; // Increased from 1.5 to 2.5 for better close-range detection
     
     // Sort sprites by distance to player (closest first)
     std::sort(sprites.begin(), sprites.end(), [this](Sprite* a, Sprite* b) {
@@ -590,8 +618,8 @@ bool Player::fire() {
         // Normalize by the length of toSprite to get the actual cosine
         double cosAngle = dotProduct / distToSprite;
         
-        // Check if sprite is within a 60-degree cone in front of player (cos(30°) ≈ 0.866)
-        if (cosAngle > 0.866) {
+        // Check if sprite is within a 90-degree cone in front of player (cos(45°) ≈ 0.707)
+        if (cosAngle > 0.707) {
             // Hit the close enemy directly!
             double damage = m_weaponDamage;
             
@@ -703,6 +731,50 @@ bool Player::fire() {
             break;
         }
         
+        case WeaponType::SuperShotgun:
+        {
+            // Super shotgun has wider spread and more pellets
+            double spreadAmount = 0.2;
+            
+            // Center bullet
+            bool centerBulletSuccess = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::Bullet,
+                15.0,
+                m_weaponDamage * 0.5
+            ) >= 0;
+            success |= centerBulletSuccess;
+            
+            // Create 8 spread bullets (4 left, 4 right)
+            for (int i = 1; i <= 4; i++) {
+                // Left spread
+                Vec2 leftDir = m_direction;
+                leftDir.rotate(-spreadAmount * i);
+                bool leftSuccess = m_projectileManager->createProjectile(
+                    bulletPos,
+                    leftDir,
+                    ProjectileType::Bullet,
+                    15.0,
+                    m_weaponDamage * 0.3  // Reduced damage for spread bullets
+                ) >= 0;
+                success |= leftSuccess;
+                
+                // Right spread
+                Vec2 rightDir = m_direction;
+                rightDir.rotate(spreadAmount * i);
+                bool rightSuccess = m_projectileManager->createProjectile(
+                    bulletPos,
+                    rightDir,
+                    ProjectileType::Bullet,
+                    15.0,
+                    m_weaponDamage * 0.3
+                ) >= 0;
+                success |= rightSuccess;
+            }
+            break;
+        }
+        
         case WeaponType::RocketLauncher:
         {
             // Single rocket with physics
@@ -738,6 +810,57 @@ bool Player::fire() {
             break;
         }
         
+        case WeaponType::Chainsaw:
+        {
+            // Chainsaw is a melee weapon - check for close enemies
+            const double CHAINSAW_RANGE = 1.0;
+            bool hitEnemy = false;
+            
+            if (m_spriteManager) {
+                std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+                
+                for (Sprite* sprite : sprites) {
+                    if (!sprite || sprite->isDying() || !sprite->isActive()) continue;
+                    
+                    // Calculate vector from player to sprite
+                    Vec2 toSprite = sprite->getPosition() - m_position;
+                    double distToSprite = toSprite.length();
+                    
+                    // Skip if too far away
+                    if (distToSprite > CHAINSAW_RANGE) continue;
+                    
+                    // Calculate dot product to check if sprite is in front of player
+                    double dotProduct = m_direction.x * toSprite.x + m_direction.y * toSprite.y;
+                    double cosAngle = dotProduct / distToSprite;
+                    
+                    // Check if sprite is within a 90-degree cone in front of player (cos(45°) ≈ 0.7071)
+                    if (cosAngle > 0.7071) {
+                        // Hit the enemy with chainsaw!
+                        sprite->takeDamage(m_weaponDamage * 0.2); // Apply a portion of damage per tick
+                        hitEnemy = true;
+                    }
+                }
+            }
+            
+            success = hitEnemy;
+            break;
+        }
+        
+        case WeaponType::BFG9000:
+        {
+            // Create a large BFG projectile
+            int bfgId = m_projectileManager->createProjectile(
+                bulletPos,
+                m_direction,
+                ProjectileType::BFG,
+                8.0,
+                m_weaponDamage
+            );
+            
+            success = (bfgId >= 0);
+            break;
+        }
+        
         case WeaponType::GrenadeLauncher:
         {
             // This should be handled by throwGrenade(), but just in case
@@ -763,10 +886,35 @@ void Player::reload() {
 }
 
 void Player::takeDamage(double amount) {
+    // Check for invulnerability
+    if (hasPowerUp(PowerUpType::Invulnerability)) {
+        return;  // No damage when invulnerable
+    }
+    
+    // Apply armor reduction if available
+    if (m_armor > 0) {
+        // Armor absorbs 2/3 of damage in Doom
+        double armorAbsorption = amount * 2.0 / 3.0;
+        
+        // Ensure we don't use more armor than available
+        armorAbsorption = std::min(armorAbsorption, m_armor);
+        
+        // Reduce armor
+        m_armor -= armorAbsorption;
+        
+        // Remaining damage goes to health
+        amount -= armorAbsorption;
+    }
+    
+    // Apply damage to health
     m_health -= amount;
+    
+    // Ensure health doesn't go below 0
     if (m_health < 0) {
         m_health = 0;
     }
+    
+    std::cout << "Player took " << amount << " damage. Health: " << m_health << std::endl;
 }
 
 void Player::teleport(double x, double y) {
@@ -874,4 +1022,77 @@ bool Player::throwGrenade() {
     std::cout << "  Failed to create grenade projectile!" << std::endl;
     std::cout << "=======================================" << std::endl;
     return false;
+}
+
+void Player::activatePowerUp(PowerUpType type, double duration) {
+    m_activePowerUp = type;
+    m_powerUpTimer = duration;
+    m_powerUpDuration = duration;
+    
+    // Apply immediate effects
+    switch (type) {
+        case PowerUpType::Berserk:
+            // Increase melee damage and heal player
+            m_health = std::min(m_health + 50.0, 100.0);
+            break;
+            
+        case PowerUpType::MegaSphere:
+            // Full health and armor
+            m_health = 200.0;  // Boost health beyond normal max
+            m_armor = 200.0;   // Boost armor beyond normal max
+            m_maxArmor = 200.0; // Temporarily increase max armor
+            break;
+            
+        default:
+            break;
+    }
+}
+
+void Player::updatePowerUps(double deltaTime) {
+    if (m_activePowerUp != PowerUpType::None && m_powerUpTimer > 0) {
+        // Decrease timer
+        m_powerUpTimer -= deltaTime;
+        
+        // Apply continuous effects
+        switch (m_activePowerUp) {
+            case PowerUpType::Berserk:
+                // Berserk increases melee damage
+                if (m_currentWeapon == WeaponType::Chainsaw) {
+                    m_weaponDamage = 100.0;  // Increased damage with chainsaw
+                }
+                break;
+                
+            case PowerUpType::Invulnerability:
+                // Invulnerability is handled in takeDamage method
+                break;
+                
+            case PowerUpType::LightAmp:
+                // Light amplification is handled in the renderer
+                break;
+                
+            default:
+                break;
+        }
+        
+        // Check if power-up has expired
+        if (m_powerUpTimer <= 0) {
+            // Reset effects when power-up expires
+            switch (m_activePowerUp) {
+                case PowerUpType::Berserk:
+                    // Reset weapon damage
+                    setCurrentWeapon(m_currentWeapon);  // Reset damage based on current weapon
+                    break;
+                    
+                case PowerUpType::MegaSphere:
+                    // Reset max armor to normal
+                    m_maxArmor = 100.0;
+                    break;
+                    
+                default:
+                    break;
+            }
+            
+            m_activePowerUp = PowerUpType::None;
+        }
+    }
 } 
