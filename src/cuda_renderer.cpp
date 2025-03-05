@@ -264,6 +264,9 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
     // Get visible sectors
     const std::vector<int>& visibleSectors = map.getVisibleSectors();
     
+    // Debug: Count walls with each texture ID
+    int wallCounts[4] = {0, 0, 0, 0};
+    
     // Fill host buffer with map data, applying sector culling
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -281,10 +284,16 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
                     // Then multiply by 100 and add the cell type (1 for wall)
                     // This way, the cell value will be 101, 201, 301, or 401 for walls with different textures
                     int textureId = map.getWallTexture(x, y);
+                    
+                    // Count walls with each texture ID
+                    if (textureId >= 0 && textureId < 4) {
+                        wallCounts[textureId]++;
+                    }
+                    
                     hostMapData[y * width + x] = ((textureId + 1) * 100) + cellValue;
                     
-                    // Debug output
-                    if (x == 10 && y == 10) {
+                    // Debug output for more walls
+                    if ((x % 10 == 0 && y % 10 == 0) || (x == 10 && y == 10)) {
                         std::cout << "Wall at (" << x << "," << y << ") has texture ID " << textureId 
                                   << " and cell value " << hostMapData[y * width + x] << std::endl;
                     }
@@ -293,6 +302,12 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
                 }
             }
         }
+    }
+    
+    // Debug: Print wall counts
+    std::cout << "Wall texture counts:" << std::endl;
+    for (int i = 0; i < 4; i++) {
+        std::cout << "  Texture ID " << i << ": " << wallCounts[i] << " walls" << std::endl;
     }
     
     // Copy map data to device
@@ -315,7 +330,10 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
 
 void CudaRenderer::copyTexturesToDevice() {
     // Check if texture manager is available
-    if (!m_textureManager) return;
+    if (!m_textureManager) {
+        std::cerr << "Error: Texture manager is null" << std::endl;
+        return;
+    }
     
     // Create temporary buffers for texture data
     const int numWallTextures = 4; // Load 4 wall textures (IDs 0-3)
@@ -373,6 +391,9 @@ void CudaRenderer::copyTexturesToDevice() {
         // Copy data from surface to our texture data array
         SDL_LockSurface(wallSurface);
         
+        // Debug: Print some pixel values to verify texture data
+        std::cout << "Texture ID " << texId << " sample pixels:" << std::endl;
+        
         for (int y = 0; y < m_wallTextureHeight; y++) {
             for (int x = 0; x < m_wallTextureWidth; x++) {
                 int srcIndex = y * (wallSurface->pitch / 4) + x;
@@ -380,6 +401,7 @@ void CudaRenderer::copyTexturesToDevice() {
                 Uint32* wallPixels = (Uint32*)wallSurface->pixels;
                 
                 wallTextureData[destIndex] = wallPixels[srcIndex];
+                
             }
         }
         

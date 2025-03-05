@@ -154,6 +154,51 @@ extern "C" __global__ void raycastKernel(
     if (side == 0 && rayDirX > 0) texX = textureWidth - texX - 1;
     if (side == 1 && rayDirY < 0) texX = textureWidth - texX - 1;
     
+    // Calculate lighting for the wall
+    // Ambient light (base lighting)
+    float ambientR = 0.5f;  // Increased from 0.3f
+    float ambientG = 0.5f;  // Increased from 0.3f
+    float ambientB = 0.55f; // Increased from 0.35f (Slightly blue for doom-like atmosphere)
+    
+    // Distance-based lighting attenuation - increased distance factor
+    float distFactor = fminf(1.0f, 12.0f / perpWallDist);  // Increased from 8.0f
+    
+    // Calculate surface normal for directional lighting
+    float normalX = 0.0f;
+    float normalY = 0.0f;
+    
+    // Set normal based on which side of the wall was hit
+    if (side == 0) {
+        normalX = (stepX > 0) ? -1.0f : 1.0f;
+        normalY = 0.0f;
+    } else {
+        normalX = 0.0f;
+        normalY = (stepY > 0) ? -1.0f : 1.0f;
+    }
+    
+    // Directional light (simulating a light from above)
+    float dirLightX = 0.0f;
+    float dirLightY = -1.0f; // Light coming from above
+    float dirLightIntensity = 0.6f;  // Increased from 0.4f
+    
+    // Calculate diffuse lighting (dot product of normal and light direction)
+    float diffuse = fmaxf(0.0f, -(normalX * dirLightX + normalY * dirLightY)) * dirLightIntensity;
+    
+    // Combine ambient and diffuse lighting
+    float lightR = fminf(1.0f, ambientR + diffuse);
+    float lightG = fminf(1.0f, ambientG + diffuse);
+    float lightB = fminf(1.0f, ambientB + diffuse);
+    
+    // Apply distance attenuation
+    lightR *= distFactor;
+    lightG *= distFactor;
+    lightB *= distFactor;
+    
+    // Ensure minimum lighting (prevent pitch black)
+    lightR = fmaxf(0.25f, lightR);  // Increased from 0.15f
+    lightG = fmaxf(0.25f, lightG);  // Increased from 0.15f
+    lightB = fmaxf(0.25f, lightB);  // Increased from 0.15f
+    
     // Draw the wall
     for (int i = drawStart; i <= drawEnd; i++) {
         // Calculate y coordinate on the texture
@@ -166,21 +211,25 @@ extern "C" __global__ void raycastKernel(
         // Get texture pixel - use texNum as the texture index
         uint32_t color = wallTextures[texNum * textureWidth * textureHeight + texY * textureWidth + texX];
         
-        // Make color darker for y-sides
+        // Extract RGB components
+        uint8_t r = (color >> 16) & 0xFF;
+        uint8_t g = (color >> 8) & 0xFF;
+        uint8_t b = color & 0xFF;
+        
+        // Apply lighting to the color
+        r = static_cast<uint8_t>(r * lightR);
+        g = static_cast<uint8_t>(g * lightG);
+        b = static_cast<uint8_t>(b * lightB);
+        
+        // Make color darker for y-sides (additional shading for depth perception)
         if (side == 1) {
-            // Extract RGB components
-            uint8_t r = (color >> 16) & 0xFF;
-            uint8_t g = (color >> 8) & 0xFF;
-            uint8_t b = color & 0xFF;
-            
-            // Darken
-            r = static_cast<uint8_t>(r * 0.7f);
-            g = static_cast<uint8_t>(g * 0.7f);
-            b = static_cast<uint8_t>(b * 0.7f);
-            
-            // Recombine
-            color = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            r = static_cast<uint8_t>(r * 0.8f);
+            g = static_cast<uint8_t>(g * 0.8f);
+            b = static_cast<uint8_t>(b * 0.8f);
         }
+        
+        // Recombine
+        color = (0xFF << 24) | (r << 16) | (g << 8) | b;
         
         // Draw pixel
         frameBuffer[i * screenWidth + x] = color;
@@ -232,26 +281,56 @@ extern "C" __global__ void raycastKernel(
             // Get ceiling texture pixel - use texture ID 2 (ceiling texture)
             uint32_t ceilingColor = ceilingTextures[floorTexY * textureWidth + floorTexX];
             
-            // Apply distance-based darkening for floor
+            // Calculate floor lighting
+            // Distance-based lighting with more dramatic falloff for floors
+            float floorDistFactor = fminf(1.0f, 8.0f / currentDist);  // Increased from 5.0f
+            
+            // Apply ambient lighting for floor (slightly darker than walls)
+            float floorLightR = ambientR * 0.95f * floorDistFactor;  // Increased from 0.9f
+            float floorLightG = ambientG * 0.95f * floorDistFactor;  // Increased from 0.9f
+            float floorLightB = ambientB * 0.95f * floorDistFactor;  // Increased from 0.9f
+            
+            // Add directional lighting for floor (simulating light from above)
+            float floorDiffuse = 0.5f;  // Increased from 0.3f - Floor always faces up, so diffuse is constant
+            
+            floorLightR = fminf(1.0f, floorLightR + floorDiffuse * floorDistFactor);
+            floorLightG = fminf(1.0f, floorLightG + floorDiffuse * floorDistFactor);
+            floorLightB = fminf(1.0f, floorLightB + floorDiffuse * floorDistFactor);
+            
+            // Ensure minimum lighting
+            floorLightR = fmaxf(0.2f, floorLightR);  // Increased from 0.1f
+            floorLightG = fmaxf(0.2f, floorLightG);  // Increased from 0.1f
+            floorLightB = fmaxf(0.2f, floorLightB);  // Increased from 0.1f
+            
+            // Apply floor lighting
             uint8_t fr = (floorColor >> 16) & 0xFF;
             uint8_t fg = (floorColor >> 8) & 0xFF;
             uint8_t fb = floorColor & 0xFF;
             
-            float distFactor = fminf(1.0f, 5.0f / currentDist);
-            fr = static_cast<uint8_t>(fr * distFactor);
-            fg = static_cast<uint8_t>(fg * distFactor);
-            fb = static_cast<uint8_t>(fb * distFactor);
+            fr = static_cast<uint8_t>(fr * floorLightR);
+            fg = static_cast<uint8_t>(fg * floorLightG);
+            fb = static_cast<uint8_t>(fb * floorLightB);
             
             floorColor = (0xFF << 24) | (fr << 16) | (fg << 8) | fb;
             
-            // Apply distance-based darkening for ceiling
+            // Apply ceiling lighting (slightly brighter than floor)
+            float ceilingLightR = ambientR * floorDistFactor * 1.2f;  // Increased from 1.1f
+            float ceilingLightG = ambientG * floorDistFactor * 1.2f;  // Increased from 1.1f
+            float ceilingLightB = ambientB * floorDistFactor * 1.2f;  // Increased from 1.1f
+            
+            // Ensure minimum lighting
+            ceilingLightR = fmaxf(0.22f, ceilingLightR);  // Increased from 0.12f
+            ceilingLightG = fmaxf(0.22f, ceilingLightG);  // Increased from 0.12f
+            ceilingLightB = fmaxf(0.22f, ceilingLightB);  // Increased from 0.12f
+            
+            // Apply ceiling lighting
             uint8_t cr = (ceilingColor >> 16) & 0xFF;
             uint8_t cg = (ceilingColor >> 8) & 0xFF;
             uint8_t cb = ceilingColor & 0xFF;
             
-            cr = static_cast<uint8_t>(cr * distFactor);
-            cg = static_cast<uint8_t>(cg * distFactor);
-            cb = static_cast<uint8_t>(cb * distFactor);
+            cr = static_cast<uint8_t>(cr * ceilingLightR);
+            cg = static_cast<uint8_t>(cg * ceilingLightG);
+            cb = static_cast<uint8_t>(cb * ceilingLightB);
             
             ceilingColor = (0xFF << 24) | (cr << 16) | (cg << 8) | cb;
             
@@ -292,15 +371,27 @@ extern "C" __global__ void raycastKernel(
         // Get ceiling texture pixel - use texture ID 2 (ceiling texture)
         uint32_t ceilingColor = ceilingTextures[ceilingTexY * textureWidth + ceilingTexX];
         
-        // Apply distance-based darkening
+        // Calculate ceiling lighting
+        float ceilingDistFactor = fminf(1.0f, 8.0f / currentDist);  // Increased from 5.0f
+        
+        // Apply ambient lighting for ceiling
+        float ceilingLightR = ambientR * ceilingDistFactor * 1.2f;  // Increased from 1.1f
+        float ceilingLightG = ambientG * ceilingDistFactor * 1.2f;  // Increased from 1.1f
+        float ceilingLightB = ambientB * ceilingDistFactor * 1.2f;  // Increased from 1.1f
+        
+        // Ensure minimum lighting
+        ceilingLightR = fmaxf(0.22f, ceilingLightR);  // Increased from 0.12f
+        ceilingLightG = fmaxf(0.22f, ceilingLightG);  // Increased from 0.12f
+        ceilingLightB = fmaxf(0.22f, ceilingLightB);  // Increased from 0.12f
+        
+        // Apply ceiling lighting
         uint8_t r = (ceilingColor >> 16) & 0xFF;
         uint8_t g = (ceilingColor >> 8) & 0xFF;
         uint8_t b = ceilingColor & 0xFF;
         
-        float distFactor = fminf(1.0f, 5.0f / currentDist);
-        r = static_cast<uint8_t>(r * distFactor);
-        g = static_cast<uint8_t>(g * distFactor);
-        b = static_cast<uint8_t>(b * distFactor);
+        r = static_cast<uint8_t>(r * ceilingLightR);
+        g = static_cast<uint8_t>(g * ceilingLightG);
+        b = static_cast<uint8_t>(b * ceilingLightB);
         
         ceilingColor = (0xFF << 24) | (r << 16) | (g << 8) | b;
         
