@@ -379,9 +379,9 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
         cudaError_t error = cudaMemcpy(m_deviceMapData, hostMapData.data(), mapWidth * mapHeight * sizeof(int), cudaMemcpyHostToDevice);
         if (error != cudaSuccess) {
             std::cerr << "Failed to copy map data to device: " << cudaGetErrorString(error) << std::endl;
-            return;
-        }
-        
+        return;
+    }
+    
         // Create player data safely
         PlayerData hostPlayerData;
         
@@ -452,8 +452,8 @@ void CudaRenderer::copyTexturesToDevice() {
         
         // Initialize with default patterns as fallbacks
         for (int i = 0; i < 4; i++) {
-            for (int y = 0; y < m_wallTextureHeight; y++) {
-                for (int x = 0; x < m_wallTextureWidth; x++) {
+        for (int y = 0; y < m_wallTextureHeight; y++) {
+            for (int x = 0; x < m_wallTextureWidth; x++) {
                     bool isEven = ((x / 8) + (y / 8)) % 2 == 0;
                     uint32_t color = isEven ? 0xFFAAAAAA : 0xFF555555;
                     
@@ -482,8 +482,8 @@ void CudaRenderer::copyTexturesToDevice() {
         }
         
         // Default ceiling texture (gradient)
-        for (int y = 0; y < m_wallTextureHeight; y++) {
-            for (int x = 0; x < m_wallTextureWidth; x++) {
+                for (int y = 0; y < m_wallTextureHeight; y++) {
+                    for (int x = 0; x < m_wallTextureWidth; x++) {
                 uint8_t value = static_cast<uint8_t>(128 + (y * 127) / m_wallTextureHeight);
                 uint32_t color = 0xFF000000 | (value << 16) | (value << 8) | value;
                 ceilingTextureData[y * m_wallTextureWidth + x] = color;
@@ -599,57 +599,57 @@ void CudaRenderer::generateFrame(const Map& map, const Player& player) {
             // Copy lights to device
             copyLightsToDevice(lightingSystem);
         }
-        
-        // Copy map data to device
-        copyMapToDevice(map, player);
-        
-        // Copy textures to device if needed
-        copyTexturesToDevice();
-        
-        // Set up kernel launch parameters
-        dim3 blockSize(16, 16);
-        dim3 gridSize((m_screenWidth + blockSize.x - 1) / blockSize.x, 
-                      (m_screenHeight + blockSize.y - 1) / blockSize.y);
-        
-        // Launch kernel using a wrapper function
-        launchRaycastKernel(
-            gridSize,
-            blockSize,
-            m_deviceFrameBuffer,
-            m_deviceZBuffer,
-            m_screenWidth,
-            m_screenHeight,
-            m_deviceMapData,
-            map.getWidth(),
-            map.getHeight(),
-            m_devicePlayerData,
-            m_deviceWallTextures,
-            m_deviceFloorTextures,
-            m_deviceCeilingTextures,
-            m_wallTextureWidth,
+    
+    // Copy map data to device
+    copyMapToDevice(map, player);
+    
+    // Copy textures to device if needed
+    copyTexturesToDevice();
+    
+    // Set up kernel launch parameters
+    dim3 blockSize(16, 16);
+    dim3 gridSize((m_screenWidth + blockSize.x - 1) / blockSize.x, 
+                  (m_screenHeight + blockSize.y - 1) / blockSize.y);
+    
+    // Launch kernel using a wrapper function
+    launchRaycastKernel(
+        gridSize,
+        blockSize,
+        m_deviceFrameBuffer,
+        m_deviceZBuffer,
+        m_screenWidth,
+        m_screenHeight,
+        m_deviceMapData,
+        map.getWidth(),
+        map.getHeight(),
+        m_devicePlayerData,
+        m_deviceWallTextures,
+        m_deviceFloorTextures,
+        m_deviceCeilingTextures,
+        m_wallTextureWidth,
             m_wallTextureHeight,
             m_deviceLights,
             m_numActiveLights,
             m_deviceAmbient
-        );
-        
-        // Check for kernel errors
-        cudaError_t cudaStatus = cudaGetLastError();
-        if (cudaStatus != cudaSuccess) {
-            std::cerr << "Kernel launch failed: " << cudaGetErrorString(cudaStatus) << std::endl;
-            m_frameReady = false;
-            return;
-        }
-        
-        // Wait for kernel to finish
-        cudaStatus = cudaDeviceSynchronize();
-        if (cudaStatus != cudaSuccess) {
-            std::cerr << "cudaDeviceSynchronize failed: " << cudaGetErrorString(cudaStatus) << std::endl;
-            m_frameReady = false;
-            return;
-        }
-        
-        // Copy frame buffer back to host
+    );
+    
+    // Check for kernel errors
+    cudaError_t cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess) {
+        std::cerr << "Kernel launch failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        m_frameReady = false;
+        return;
+    }
+    
+    // Wait for kernel to finish
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        std::cerr << "cudaDeviceSynchronize failed: " << cudaGetErrorString(cudaStatus) << std::endl;
+        m_frameReady = false;
+        return;
+    }
+    
+    // Copy frame buffer back to host
         cudaStatus = cudaMemcpy(m_hostFrameBuffer, m_deviceFrameBuffer, 
                    m_screenWidth * m_screenHeight * sizeof(uint32_t), 
                    cudaMemcpyDeviceToHost);
@@ -658,13 +658,13 @@ void CudaRenderer::generateFrame(const Map& map, const Player& player) {
             m_frameReady = false;
             return;
         }
-        
-        // Update SDL texture with frame buffer
-        SDL_UpdateTexture(m_frameTexture, NULL, m_hostFrameBuffer, m_screenWidth * sizeof(uint32_t));
-        
+    
+    // Update SDL texture with frame buffer
+    SDL_UpdateTexture(m_frameTexture, NULL, m_hostFrameBuffer, m_screenWidth * sizeof(uint32_t));
+    
         // Set frame ready flag
-        m_frameReady = true;
-        
+    m_frameReady = true;
+    
     } catch (const std::exception& e) {
         std::cerr << "Exception in generateFrame: " << e.what() << std::endl;
         m_frameReady = false;
