@@ -20,6 +20,7 @@ Renderer::Renderer()
     , m_showWeapon(true)
     , m_showCeilings(true)  // Initialize ceiling rendering to on by default
     , m_lightingEnabled(true)
+    , m_muzzleFlashEnabled(false)  // Disable muzzle flash by default
     , m_performanceLevel(PerformanceLevel::Medium)
     , m_frameCount(0)
     , m_fpsTimer(0.0)
@@ -1038,7 +1039,7 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
     }
     
     // Render muzzle flash if needed
-    if (flashIntensity > 0.0) {
+    if (flashIntensity > 0.0 && m_muzzleFlashEnabled) {
         renderMuzzleFlash(flashIntensity);
     }
 }
@@ -1263,8 +1264,8 @@ void Renderer::renderProjectiles(const Player& player) {
 }
 
 void Renderer::renderMuzzleFlash(double intensity) {
-    // Skip if intensity is too low
-    if (intensity <= 0.01) return;
+    // Skip if intensity is too low or muzzle flash is disabled
+    if (intensity <= 0.01 || !m_muzzleFlashEnabled) return;
     
     // Calculate flash size based on intensity
     int flashSize = static_cast<int>(30 * intensity);

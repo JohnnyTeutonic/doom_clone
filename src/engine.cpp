@@ -29,6 +29,8 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_currentWeaponTexture(-1)
     , m_weaponRecoil(0.0)
     , m_flashIntensity(0.0)
+    , m_weaponRecoilRecovery(2.0)  // Initialize weapon recoil recovery rate
+    , m_flashDecay(5.0)  // Initialize flash decay rate
     , m_notificationTimer(0.0)
     , m_notificationDuration(0.0)
     , m_notificationTexture(nullptr)
@@ -188,7 +190,13 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
             m_useCuda = false;
             delete m_cudaRenderer;
             m_cudaRenderer = nullptr;
+        } else {
+            // Disable muzzle flash when using CUDA to prevent the yellow circle
+            m_renderer->toggleMuzzleFlash(); // This will enable it since it's disabled by default
         }
+    } else {
+        // Enable muzzle flash for CPU renderer
+        m_renderer->toggleMuzzleFlash();
     }
     
     // Create sprite manager
@@ -676,7 +684,8 @@ void Engine::render() {
                         m_currentWeaponTexture = m_weaponTexture; // Fix the variable too
                     }
                     
-                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, textureToUse);
+                    // When using CUDA, pass 0.0 for flashIntensity to avoid the muzzle flash effect
+                    m_renderer->renderWeapon(m_player, m_weaponRecoil, 0.0, textureToUse);
                 }
                 
                 // Render sprites
@@ -711,7 +720,8 @@ void Engine::render() {
                         m_currentWeaponTexture = m_weaponTexture; // Fix the variable too
                     }
                     
-                    m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, textureToUse);
+                    // When using CUDA, pass 0.0 for flashIntensity to avoid the muzzle flash effect
+                    m_renderer->renderWeapon(m_player, m_weaponRecoil, 0.0, textureToUse);
                 }
                 
                 // Render notification if active

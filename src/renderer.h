@@ -58,6 +58,7 @@ private:
     // Performance settings
     PerformanceLevel m_performanceLevel;
     bool m_lightingEnabled;
+    bool m_muzzleFlashEnabled;  // Flag to enable/disable muzzle flash
     
     // FPS counter
     int m_frameCount;
@@ -164,6 +165,8 @@ public:
         m_lightingEnabled = !m_lightingEnabled; 
         m_lightingSystem.setEnabled(m_lightingEnabled);
     }
+    
+    void toggleMuzzleFlash() { m_muzzleFlashEnabled = !m_muzzleFlashEnabled; }
     
     // Getters for display options
     bool isShowingFPS() const { return m_showFPS; }
