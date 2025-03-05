@@ -255,4 +255,25 @@ void InputHandler::setMouseCapture(bool capture) {
 
 bool InputHandler::isMouseCaptured() const {
     return SDL_GetRelativeMouseMode() == SDL_TRUE;
+}
+
+bool InputHandler::isActionTriggered(InputAction action) const {
+    // Find the key bound to this action
+    for (const auto& binding : m_keyBindings) {
+        if (binding.second == action) {
+            // Check if this key was just pressed
+            return isKeyPressed(binding.first);
+        }
+    }
+    return false;
+}
+
+bool InputHandler::isAnyKeyPressed() const {
+    // Check if any key was just pressed
+    for (const auto& [key, isDown] : m_keyStates) {
+        if (isDown && !m_prevKeyStates.count(key)) {
+            return true;
+        }
+    }
+    return false;
 } 

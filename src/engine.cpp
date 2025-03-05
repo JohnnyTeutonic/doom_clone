@@ -17,7 +17,7 @@ Engine::Engine(int screenWidth, int screenHeight)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_audioSystem(nullptr)
+    , m_audioSystem(nullptr)  // Initialize to nullptr
     , m_wallTexture(-1)
     , m_floorTexture(-1)
     , m_ceilingTexture(-1)
@@ -57,9 +57,6 @@ Engine::Engine(int screenWidth, int screenHeight)
     
     // Initialize projectile manager
     m_projectileManager = new ProjectileManager();
-    
-    // Initialize audio system
-    m_audioSystem = new AudioSystem();
     
     // Initialize input handler
     m_inputHandler.init();
@@ -217,13 +214,6 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_projectileManager->setSpriteManager(m_spriteManager);
     std::cout << "Connected sprite manager to projectile manager" << std::endl;
     
-    // Load all game assets
-    if (!loadAssets()) {
-        std::cerr << "Failed to load game assets!" << std::endl;
-        return false;
-    }
-    std::cout << "Game assets loaded successfully" << std::endl;
-    
     // Initialize the map
     m_map = Map(40, 40);  // Create map with doubled size (40x40 instead of 20x20)
     
@@ -248,14 +238,25 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_running = true;
     
     // Initialize audio system
-    m_audioSystem = new AudioSystem();
-    if (!m_audioSystem->init()) {
-        std::cerr << "Failed to initialize audio system!" << std::endl;
-        // Continue anyway, audio is not critical
-    } else {
-        std::cout << "Audio system initialized: " << m_audioSystem << std::endl;
-        
-        // Load and play the background music
+    if (!m_audioSystem) {
+        m_audioSystem = new AudioSystem();
+        if (!m_audioSystem->init()) {
+            std::cerr << "Failed to initialize audio system!" << std::endl;
+            // Continue anyway, audio is not critical
+        } else {
+            std::cout << "Audio system initialized: " << m_audioSystem << std::endl;
+        }
+    }
+    
+    // Load all game assets (including sounds)
+    if (!loadAssets()) {
+        std::cerr << "Failed to load game assets!" << std::endl;
+        return false;
+    }
+    std::cout << "Game assets loaded successfully" << std::endl;
+    
+    // Load and play the background music
+    if (m_audioSystem) {
         std::string musicPath = "assets/music/M_E1M1.mid";
         if (m_audioSystem->loadMusic(musicPath)) {
             if (m_musicEnabled) {
@@ -457,6 +458,10 @@ void Engine::processInput() {
                         restartGame();
                     }
                     break;
+                    
+                case SDLK_F9:  // Test sound effects with F9 key
+                    testSoundEffects();
+                    break;
             }
         }
     }
@@ -466,146 +471,57 @@ void Engine::processInput() {
         return;
     }
     
-    // Get keyboard state
-    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
-    
-    // Movement
-    if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
-        m_player.moveForward(m_deltaTime, m_map);
-    }
-    if (keyboardState[SDL_SCANCODE_S] || keyboardState[SDL_SCANCODE_DOWN]) {
-        m_player.moveBackward(m_deltaTime, m_map);
-    }
-    if (keyboardState[SDL_SCANCODE_A] || keyboardState[SDL_SCANCODE_LEFT]) {
-        m_player.strafeLeft(m_deltaTime, m_map);
-    }
-    if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
-        m_player.strafeRight(m_deltaTime, m_map);
-    }
-    
-    // Weapon switching - DIRECT approach with SDL key states
-    // Track key states manually to detect presses
-    static bool prevKey1Down = false;
-    static bool prevKey2Down = false;
-    static bool prevKey3Down = false;
-    
-    // Check key 1 for pistol
-    bool key1Down = keyboardState[SDL_SCANCODE_1] != 0;
-    if (key1Down && !prevKey1Down) {
-        std::cout << "DIRECT KEY DETECTION: Key 1 pressed - switching to pistol" << std::endl;
-        m_player.setCurrentWeapon(WeaponType::Pistol);
-        m_currentWeaponTexture = m_weaponTexture;
-        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Pistol)" << std::endl;
-        showNotification("Pistol selected", 1.0);
-    }
-    prevKey1Down = key1Down;
-    
-    // Check key 2 for machine gun
-    bool key2Down = keyboardState[SDL_SCANCODE_2] != 0;
-    if (key2Down && !prevKey2Down) {
-        std::cout << "DIRECT KEY DETECTION: Key 2 pressed - switching to machine gun" << std::endl;
-        m_player.setCurrentWeapon(WeaponType::MachineGun);
-        m_currentWeaponTexture = m_machineGunTexture;
-        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Machine Gun)" << std::endl;
-        showNotification("Machine Gun selected", 1.0);
-    }
-    prevKey2Down = key2Down;
-    
-    // Check key 3 for rocket launcher
-    bool key3Down = keyboardState[SDL_SCANCODE_3] != 0;
-    if (key3Down && !prevKey3Down) {
-        std::cout << "DIRECT KEY DETECTION: Key 3 pressed - switching to rocket launcher" << std::endl;
-        m_player.setCurrentWeapon(WeaponType::RocketLauncher);
-        m_currentWeaponTexture = m_rocketLauncherTexture;
-        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Rocket Launcher)" << std::endl;
-        showNotification("Rocket Launcher selected", 1.0);
-    }
-    prevKey3Down = key3Down;
-    
-    // Additional debugging - print the state of all relevant keys
-    if (keyboardState[SDL_SCANCODE_1] || keyboardState[SDL_SCANCODE_2] || keyboardState[SDL_SCANCODE_3]) {
-        std::cout << "Key states: 1=" << (keyboardState[SDL_SCANCODE_1] ? "down" : "up") 
-                  << ", 2=" << (keyboardState[SDL_SCANCODE_2] ? "down" : "up")
-                  << ", 3=" << (keyboardState[SDL_SCANCODE_3] ? "down" : "up") << std::endl;
-    }
-    
-    // Rotation with mouse
-    int mouseRelX = m_inputHandler.getMouseRelX();
-    int mouseRelY = m_inputHandler.getMouseRelY();
-    
-    if (mouseRelX != 0) {
-        m_player.rotateLeft(m_deltaTime * mouseRelX * 0.1);
-    }
-    
-    if (mouseRelY != 0) {
-        // Vertical look with mouse
-        if (mouseRelY > 0) {
-            m_player.lookDown(m_deltaTime * mouseRelY * 0.1);
-        } else if (mouseRelY < 0) {
-            m_player.lookUp(m_deltaTime * -mouseRelY * 0.1);
-        }
-    }
-    
-    // Reset mouse relative movement
-    m_inputHandler.resetMouseRel();
-    
-    // Weapon firing
-    bool shouldFire = false;
-    
-    // Check for space bar firing
-    if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
-        shouldFire = true;
-        m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
-    } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
-        m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
-    }
-    
-    // Check for left mouse button firing
-    if (m_inputHandler.isLeftMouseDown() && !m_prevMouseLeftDown) {
-        shouldFire = true;
-        m_prevMouseLeftDown = true;
-    } else if (!m_inputHandler.isLeftMouseDown()) {
-        m_prevMouseLeftDown = false;
-    }
-    
-    // Fire weapon if either input was triggered
-    if (shouldFire) {
-        if (m_player.fire()) {
-            // Apply recoil effect
-            m_weaponRecoil = 0.1;
+    // Handle input based on game state
+    switch (m_gameState) {
+        case GameState::MainMenu:
+            handleMainMenuInput();
+            break;
             
-            // Apply muzzle flash effect
-            m_flashIntensity = 1.0;
+        case GameState::Playing:
+            handlePlayingInput();
+            break;
             
-            // Play sound effect
-            if (m_audioSystem) {
-                switch (m_player.getCurrentWeapon()) {
-                    case WeaponType::Pistol:
-                        m_audioSystem->playSoundEffect("pistol_fire");
-                        break;
-                    case WeaponType::Shotgun:
-                        m_audioSystem->playSoundEffect("shotgun_fire");
-                        break;
-                    case WeaponType::MachineGun:
-                        m_audioSystem->playSoundEffect("machinegun_fire");
-                        break;
-                    case WeaponType::RocketLauncher:
-                        m_audioSystem->playSoundEffect("rocket_fire");
-                        break;
-                    case WeaponType::PlasmaGun:
-                        m_audioSystem->playSoundEffect("plasma_fire");
-                        break;
-                    case WeaponType::Chainsaw:
-                        m_audioSystem->playSoundEffect("chainsaw_fire");
-                        break;
-                    default:
-                        m_audioSystem->playSoundEffect("pistol_fire");
-                        break;
-                }
+        case GameState::Paused:
+            handlePausedInput();
+            break;
+            
+        case GameState::GameOver:
+        case GameState::Victory:
+            // Any key returns to main menu
+            if (m_inputHandler.isAnyKeyPressed()) {
+                setState(GameState::MainMenu);
             }
-            
-            std::cout << "Weapon fired!" << std::endl;
-        }
+            break;
+    }
+    
+    // Handle global input actions
+    if (m_inputHandler.isActionTriggered(InputAction::Quit)) {
+        m_running = false;
+    }
+    
+    if (m_inputHandler.isActionTriggered(InputAction::ToggleMusic)) {
+        toggleMusic();
+    }
+    
+    if (m_inputHandler.isActionTriggered(InputAction::IncreaseMusicVolume)) {
+        setMusicVolume(m_audioSystem->getMusicVolume() + 8);
+    }
+    
+    if (m_inputHandler.isActionTriggered(InputAction::DecreaseMusicVolume)) {
+        setMusicVolume(m_audioSystem->getMusicVolume() - 8);
+    }
+    
+    if (m_inputHandler.isActionTriggered(InputAction::IncreaseSfxVolume)) {
+        setSfxVolume(m_audioSystem->getSfxVolume() + 8);
+    }
+    
+    if (m_inputHandler.isActionTriggered(InputAction::DecreaseSfxVolume)) {
+        setSfxVolume(m_audioSystem->getSfxVolume() - 8);
+    }
+    
+    // Debug actions
+    if (m_inputHandler.isActionTriggered(InputAction::TestSound)) {
+        testSoundEffects();
     }
 }
 
@@ -836,6 +752,63 @@ bool Engine::loadAssets() {
     m_weaponTexture = -1;
     m_machineGunTexture = -1;
     m_rocketLauncherTexture = -1;
+    
+    // Load sound effects first
+    if (m_audioSystem) {
+        std::cout << "Loading weapon sound effects..." << std::endl;
+        
+        // Path to weapon sounds
+        std::string soundPath = "assets/sounds/weapons/";
+        
+        // Check if directory exists
+        std::cout << "Checking sound directory: " << soundPath << std::endl;
+        
+        // Check each sound file before loading
+        std::vector<std::string> requiredSounds = {
+            "dspistol.wav",
+            "dsplasma.wav",
+            "dsrlaunc.wav"
+        };
+        
+        bool allFilesExist = true;
+        for (const auto& sound : requiredSounds) {
+            std::string fullPath = soundPath + sound;
+            FILE* file = fopen(fullPath.c_str(), "rb");
+            if (file) {
+                std::cout << "Found sound file: " << fullPath << std::endl;
+                fclose(file);
+            } else {
+                std::cerr << "Missing sound file: " << fullPath << std::endl;
+                allFilesExist = false;
+            }
+        }
+        
+        if (!allFilesExist) {
+            std::cerr << "WARNING: Some sound files are missing!" << std::endl;
+        }
+        
+        // Load pistol sound
+        if (!m_audioSystem->loadSoundEffect("pistol_fire", soundPath + "dspistol.wav")) {
+            std::cerr << "Failed to load pistol sound effect!" << std::endl;
+        }
+        
+        // Load plasma/machine gun sound
+        if (!m_audioSystem->loadSoundEffect("machinegun_fire", soundPath + "dsplasma.wav")) {
+            std::cerr << "Failed to load machine gun sound effect!" << std::endl;
+        }
+        
+        // Load rocket launcher sound
+        if (!m_audioSystem->loadSoundEffect("rocket_fire", soundPath + "dsrlaunc.wav")) {
+            std::cerr << "Failed to load rocket launcher sound effect!" << std::endl;
+        }
+        
+        // Load weapon switch sound - fall back to pistol sound if not available
+        if (!m_audioSystem->loadSoundEffect("weapon_switch", soundPath + "dspistol.wav")) {
+            std::cerr << "Failed to load weapon switch sound effect, using pistol sound as fallback" << std::endl;
+        }
+        
+        std::cout << "Weapon sound effects loading completed" << std::endl;
+    }
     
     std::string assetsPath = "assets/textures/";
     
@@ -2482,6 +2455,9 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_6, InputAction::Weapon6);
     m_inputHandler.bindKey(SDL_SCANCODE_7, InputAction::Weapon7);
     
+    // Debug keys
+    m_inputHandler.bindKey(SDL_SCANCODE_F9, InputAction::TestSound);
+    
     // Enable mouse capture for looking around
     m_inputHandler.setMouseCapture(true);
 }
@@ -2525,6 +2501,29 @@ void Engine::setSfxVolume(int volume) {
 bool Engine::isMusicPlaying() const {
     if (!m_audioSystem) return false;
     return m_audioSystem->isMusicPlaying();
+}
+
+void Engine::testSoundEffects() {
+    if (!m_audioSystem) return;
+    
+    std::cout << "Testing sound effects..." << std::endl;
+    
+    // Play each weapon sound with a small delay
+    m_audioSystem->playSoundEffect("pistol_fire");
+    SDL_Delay(500); // 500ms delay
+    
+    m_audioSystem->playSoundEffect("machinegun_fire");
+    SDL_Delay(500);
+    
+    m_audioSystem->playSoundEffect("rocket_fire");
+    SDL_Delay(500);
+    
+    m_audioSystem->playSoundEffect("weapon_switch");
+    
+    std::cout << "Sound effect test complete" << std::endl;
+    
+    // Show notification
+    showNotification("Sound test complete", 2.0);
 }
 
 void Engine::showNotification(const std::string& text, double duration) {
@@ -2638,4 +2637,212 @@ void Engine::renderPauseOverlay() {
             SDL_FreeSurface(menuSurface);
         }
     }
-} 
+}
+
+void Engine::handlePlayingInput() {
+    // Get keyboard state
+    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
+    
+    // Movement
+    if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
+        m_player.moveForward(m_deltaTime, m_map);
+    }
+    if (keyboardState[SDL_SCANCODE_S] || keyboardState[SDL_SCANCODE_DOWN]) {
+        m_player.moveBackward(m_deltaTime, m_map);
+    }
+    if (keyboardState[SDL_SCANCODE_A] || keyboardState[SDL_SCANCODE_LEFT]) {
+        m_player.strafeLeft(m_deltaTime, m_map);
+    }
+    if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
+        m_player.strafeRight(m_deltaTime, m_map);
+    }
+    
+    // Weapon switching - DIRECT approach with SDL key states
+    // Track key states manually to detect presses
+    static bool prevKey1Down = false;
+    static bool prevKey2Down = false;
+    static bool prevKey3Down = false;
+    
+    // Check key 1 for pistol
+    bool key1Down = keyboardState[SDL_SCANCODE_1] != 0;
+    if (key1Down && !prevKey1Down) {
+        std::cout << "DIRECT KEY DETECTION: Key 1 pressed - switching to pistol" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::Pistol);
+        m_currentWeaponTexture = m_weaponTexture;
+        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Pistol)" << std::endl;
+        showNotification("Pistol selected", 1.0);
+        
+        // Play weapon switch sound
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("weapon_switch");
+        }
+    }
+    prevKey1Down = key1Down;
+    
+    // Check key 2 for machine gun
+    bool key2Down = keyboardState[SDL_SCANCODE_2] != 0;
+    if (key2Down && !prevKey2Down) {
+        std::cout << "DIRECT KEY DETECTION: Key 2 pressed - switching to machine gun" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::MachineGun);
+        m_currentWeaponTexture = m_machineGunTexture;
+        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Machine Gun)" << std::endl;
+        showNotification("Machine Gun selected", 1.0);
+        
+        // Play weapon switch sound
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("weapon_switch");
+        }
+    }
+    prevKey2Down = key2Down;
+    
+    // Check key 3 for rocket launcher
+    bool key3Down = keyboardState[SDL_SCANCODE_3] != 0;
+    if (key3Down && !prevKey3Down) {
+        std::cout << "DIRECT KEY DETECTION: Key 3 pressed - switching to rocket launcher" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::RocketLauncher);
+        m_currentWeaponTexture = m_rocketLauncherTexture;
+        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Rocket Launcher)" << std::endl;
+        showNotification("Rocket Launcher selected", 1.0);
+        
+        // Play weapon switch sound
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("weapon_switch");
+        }
+    }
+    prevKey3Down = key3Down;
+    
+    // Rotation with mouse
+    int mouseRelX = m_inputHandler.getMouseRelX();
+    int mouseRelY = m_inputHandler.getMouseRelY();
+    
+    if (mouseRelX != 0) {
+        m_player.rotateLeft(m_deltaTime * mouseRelX * 0.1);
+    }
+    
+    if (mouseRelY != 0) {
+        // Vertical look with mouse
+        if (mouseRelY > 0) {
+            m_player.lookDown(m_deltaTime * mouseRelY * 0.1);
+        } else if (mouseRelY < 0) {
+            m_player.lookUp(m_deltaTime * -mouseRelY * 0.1);
+        }
+    }
+    
+    // Reset mouse relative movement
+    m_inputHandler.resetMouseRel();
+    
+    // Weapon firing
+    bool shouldFire = false;
+    
+    // Check for space bar firing
+    if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
+        shouldFire = true;
+        m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
+    } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
+        m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
+    }
+    
+    // Check for left mouse button firing
+    if (m_inputHandler.isLeftMouseDown() && !m_prevMouseLeftDown) {
+        shouldFire = true;
+        m_prevMouseLeftDown = true;
+    } else if (!m_inputHandler.isLeftMouseDown()) {
+        m_prevMouseLeftDown = false;
+    }
+    
+    // Fire weapon if either input was triggered
+    if (shouldFire) {
+        // Play sound effect FIRST based on the current weapon
+        WeaponType currentWeapon = m_player.getCurrentWeapon();
+        bool soundPlayed = false;
+        
+        if (m_audioSystem) {
+            // Always play the sound effect first, regardless of whether the weapon fires successfully
+            switch (currentWeapon) {
+                case WeaponType::Pistol:
+                    // Play pistol sound (dspistol.wav)
+                    std::cout << "Playing pistol sound effect" << std::endl;
+                    soundPlayed = m_audioSystem->playSoundEffect("pistol_fire");
+                    break;
+                    
+                case WeaponType::MachineGun:
+                    // Play machine gun sound (dsplasma.wav)
+                    std::cout << "Playing machine gun sound effect" << std::endl;
+                    soundPlayed = m_audioSystem->playSoundEffect("machinegun_fire");
+                    break;
+                    
+                case WeaponType::RocketLauncher:
+                    // Play rocket launcher sound (dsrlaunc.wav)
+                    std::cout << "Playing rocket launcher sound effect" << std::endl;
+                    soundPlayed = m_audioSystem->playSoundEffect("rocket_fire");
+                    break;
+                    
+                case WeaponType::Shotgun:
+                    // Fall back to pistol sound for now
+                    soundPlayed = m_audioSystem->playSoundEffect("pistol_fire");
+                    break;
+                    
+                case WeaponType::PlasmaGun:
+                    // Use plasma sound (same as machine gun)
+                    soundPlayed = m_audioSystem->playSoundEffect("machinegun_fire");
+                    break;
+                    
+                case WeaponType::Chainsaw:
+                    // Fall back to pistol sound for now
+                    soundPlayed = m_audioSystem->playSoundEffect("pistol_fire");
+                    break;
+                    
+                default:
+                    // Default to pistol sound
+                    soundPlayed = m_audioSystem->playSoundEffect("pistol_fire");
+                    break;
+            }
+        }
+        
+        // Apply visual effects regardless of whether the projectile is created
+        m_weaponRecoil = 0.1;
+        m_flashIntensity = 1.0;
+        
+        // Now attempt to fire the weapon
+        bool fireResult = m_player.fire();
+        
+        // Log results
+        if (soundPlayed) {
+            std::cout << "Weapon sound played successfully" << std::endl;
+        } else {
+            std::cout << "Failed to play weapon sound!" << std::endl;
+        }
+        
+        if (fireResult) {
+            std::cout << "Weapon fired successfully!" << std::endl;
+        } else {
+            std::cout << "Weapon projectile creation failed" << std::endl;
+        }
+    }
+}
+
+void Engine::handleMainMenuInput() {
+    // Handle main menu input
+    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
+    
+    if (keyboardState[SDL_SCANCODE_RETURN]) {
+        setState(GameState::Playing);
+    }
+    
+    if (keyboardState[SDL_SCANCODE_ESCAPE]) {
+        m_running = false;
+    }
+}
+
+void Engine::handlePausedInput() {
+    // Handle paused state input
+    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
+    
+    if (keyboardState[SDL_SCANCODE_ESCAPE]) {
+        setState(GameState::Playing);
+    }
+    
+    if (keyboardState[SDL_SCANCODE_Q]) {
+        setState(GameState::MainMenu);
+    }
+}

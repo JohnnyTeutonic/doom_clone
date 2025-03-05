@@ -602,6 +602,7 @@ bool Player::fire() {
     std::cout << "  Weapon damage: " << m_weaponDamage << std::endl;
     std::cout << "  Ammo remaining: " << m_ammo << std::endl;
     
+    // Always decrement ammo and reset cooldown, even if projectile creation fails
     m_ammo--;
     m_timeSinceLastShot = 0.0;  // Reset cooldown
     

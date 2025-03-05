@@ -37,7 +37,8 @@ enum class InputAction {
     Weapon4,
     Weapon5,
     Weapon6,
-    Weapon7
+    Weapon7,
+    TestSound  // New action for testing sounds
 };
 
 // Input handler class to manage keyboard and mouse input
@@ -101,6 +102,10 @@ public:
     bool isActionActive(InputAction action) const;
     bool isActionJustPressed(InputAction action) const;
     bool isActionJustReleased(InputAction action) const;
+    
+    // Action methods
+    bool isActionTriggered(InputAction action) const;
+    bool isAnyKeyPressed() const;
     
     // Key binding methods
     void bindKey(SDL_Scancode key, InputAction action);

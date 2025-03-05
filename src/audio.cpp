@@ -17,6 +17,10 @@ AudioSystem::~AudioSystem() {
 }
 
 bool AudioSystem::init(int audioRate, Uint16 audioFormat, int audioChannels, int audioBuffers) {
+    std::cout << "[AUDIO] Initializing audio system..." << std::endl;
+    std::cout << "[AUDIO] Rate: " << audioRate << ", Format: " << audioFormat 
+              << ", Channels: " << audioChannels << ", Buffers: " << audioBuffers << std::endl;
+    
     // Store audio settings
     m_audioRate = audioRate;
     m_audioFormat = audioFormat;
@@ -25,17 +29,27 @@ bool AudioSystem::init(int audioRate, Uint16 audioFormat, int audioChannels, int
     
     // Initialize SDL_mixer
     if (Mix_OpenAudio(m_audioRate, m_audioFormat, m_audioChannels, m_audioBuffers) < 0) {
-        std::cerr << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << std::endl;
+        std::cerr << "[AUDIO] SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << std::endl;
         return false;
     }
     
+    std::cout << "[AUDIO] SDL_mixer initialized successfully" << std::endl;
+    
+    // Allocate more channels for sound effects (default is 8)
+    // This allows multiple sound effects to play simultaneously
+    Mix_AllocateChannels(32);
+    std::cout << "[AUDIO] Allocated 32 channels for sound effects" << std::endl;
+    
     // Initialize MIDI support
-    Mix_Init(MIX_INIT_MID);
+    int flags = Mix_Init(MIX_INIT_MID);
+    std::cout << "[AUDIO] Mix_Init flags: " << flags << std::endl;
     
     // Set default volumes
     Mix_VolumeMusic(m_musicVolume);
+    Mix_Volume(-1, m_sfxVolume);  // Set volume for all channels
+    std::cout << "[AUDIO] Set default volumes - Music: " << m_musicVolume << ", SFX: " << m_sfxVolume << std::endl;
     
-    std::cout << "Audio system initialized successfully" << std::endl;
+    std::cout << "[AUDIO] Audio system initialized successfully" << std::endl;
     m_initialized = true;
     return true;
 }
@@ -163,21 +177,39 @@ bool AudioSystem::loadSoundEffect(const std::string& name, const std::string& fi
 }
 
 bool AudioSystem::playSoundEffect(const std::string& name, int loops) {
-    if (!m_initialized) return false;
+    if (!m_initialized) {
+        std::cerr << "[AUDIO] Cannot play sound - system not initialized!" << std::endl;
+        return false;
+    }
     
     // Find the sound effect
     auto it = m_soundEffects.find(name);
     if (it == m_soundEffects.end()) {
-        std::cerr << "Sound effect not found: " << name << std::endl;
+        std::cerr << "[AUDIO] Sound effect not found: " << name << std::endl;
+        std::cerr << "[AUDIO] Available sounds:" << std::endl;
+        for (const auto& pair : m_soundEffects) {
+            std::cerr << "  - " << pair.first << std::endl;
+        }
         return false;
     }
     
-    // Play the sound effect on the first available channel
-    if (Mix_PlayChannel(-1, it->second, loops) == -1) {
-        std::cerr << "Failed to play sound effect! SDL_mixer Error: " << Mix_GetError() << std::endl;
-        return false;
+    std::cout << "[AUDIO] Attempting to play sound: " << name << std::endl;
+    
+    // Try to play the sound effect on the first available channel
+    int channel = Mix_PlayChannel(-1, it->second, loops);
+    if (channel == -1) {
+        std::cerr << "[AUDIO] Failed to play sound effect! SDL_mixer Error: " << Mix_GetError() << std::endl;
+        
+        // Force play on channel 0 as a fallback
+        channel = Mix_PlayChannel(0, it->second, loops);
+        if (channel == -1) {
+            std::cerr << "[AUDIO] Fallback also failed! SDL_mixer Error: " << Mix_GetError() << std::endl;
+            return false;
+        }
+        std::cout << "[AUDIO] Forced sound effect to play on channel 0" << std::endl;
     }
     
+    std::cout << "[AUDIO] Successfully played sound effect '" << name << "' on channel " << channel << std::endl;
     return true;
 }
 

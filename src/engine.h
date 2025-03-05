@@ -90,6 +90,9 @@ public:
     void setSfxVolume(int volume);
     bool isMusicPlaying() const;
     
+    // Debug function to test sound playback
+    void testSoundEffects();
+    
     // Notification system
     void showNotification(const std::string& text, double duration);
     
@@ -98,6 +101,11 @@ private:
     void update();
     void render();
     bool loadAssets();
+    
+    // Input handling methods
+    void handlePlayingInput();
+    void handleMainMenuInput();
+    void handlePausedInput();
     
     // Window and rendering
     SDL_Window* m_window;
