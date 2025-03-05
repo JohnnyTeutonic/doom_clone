@@ -134,8 +134,9 @@ void Renderer::renderView(const Map& map, const Player& player) {
     const Vec2& plane = player.getPlane();
     double verticalAngle = player.getVerticalAngle();  // Get the vertical look angle
     
-    // Calculate vertical offset based on vertical angle
-    int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
+    // Calculate vertical offset based on both looking angle and jumping
+    // Scale the jumping effect to be more noticeable
+    int verticalOffset = static_cast<int>((verticalAngle * 2.0) * m_screenHeight / 2);
     
     // Get player's elevation level (determine from map cell)
     int playerX = static_cast<int>(pos.x);
@@ -148,6 +149,9 @@ void Renderer::renderView(const Map& map, const Player& player) {
         // Calculate ray position and direction
         double cameraX = 2.0 * x / static_cast<double>(m_screenWidth) - 1.0;
         Vec2 rayDir = dir + plane * cameraX;
+        
+        // Apply vertical offset to wall and sprite rendering
+        int effectiveVerticalOffset = verticalOffset;
         
         // Calculate which box of the map we're in
         Vec2 mapPos(static_cast<int>(pos.x), static_cast<int>(pos.y));
@@ -276,10 +280,10 @@ void Renderer::renderView(const Map& map, const Player& player) {
             heightOffset = -m_screenHeight / 3; // Move the wall lower
         }
         
-        // Apply vertical angle to wall placement
-        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
+        // Calculate drawing boundaries with vertical offset
+        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + effectiveVerticalOffset + heightOffset;
         if (drawStart < 0) drawStart = 0;
-        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
+        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + effectiveVerticalOffset + heightOffset;
         if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
 
         // Get wall texture or render special stair graphics

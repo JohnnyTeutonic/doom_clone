@@ -2353,7 +2353,8 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_D, InputAction::StrafeRight);
     m_inputHandler.bindKey(SDL_SCANCODE_LEFT, InputAction::RotateLeft);
     m_inputHandler.bindKey(SDL_SCANCODE_RIGHT, InputAction::RotateRight);
-    m_inputHandler.bindKey(SDL_SCANCODE_SPACE, InputAction::Fire);
+    m_inputHandler.bindKey(SDL_SCANCODE_SPACE, InputAction::Jump);  // Changed from Fire to Jump
+    m_inputHandler.bindKey(SDL_SCANCODE_LCTRL, InputAction::Fire);  // Add left control as the new fire button
     m_inputHandler.bindKey(SDL_SCANCODE_R, InputAction::Reload);
     m_inputHandler.bindKey(SDL_SCANCODE_ESCAPE, InputAction::Menu);
     m_inputHandler.bindKey(SDL_SCANCODE_Q, InputAction::Quit);
@@ -2580,89 +2581,20 @@ void Engine::handlePlayingInput() {
         m_player.strafeRight(m_deltaTime, m_map);
     }
     
-    // Weapon switching - DIRECT approach with SDL key states
-    // Track key states manually to detect presses
-    static bool prevKey1Down = false;
-    static bool prevKey2Down = false;
-    static bool prevKey3Down = false;
-    
-    // Check key 1 for pistol
-    bool key1Down = keyboardState[SDL_SCANCODE_1] != 0;
-    if (key1Down && !prevKey1Down) {
-        std::cout << "DIRECT KEY DETECTION: Key 1 pressed - switching to pistol" << std::endl;
-        m_player.setCurrentWeapon(WeaponType::Pistol);
-        m_currentWeaponTexture = m_weaponTexture;
-        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Pistol)" << std::endl;
-        showNotification("Pistol selected", 1.0);
-        
-        // Play weapon switch sound
-        if (m_audioSystem) {
-            m_audioSystem->playSoundEffect("weapon_switch");
-        }
+    // Jumping
+    if (keyboardState[SDL_SCANCODE_SPACE]) {
+        m_player.jump();
     }
-    prevKey1Down = key1Down;
-    
-    // Check key 2 for machine gun
-    bool key2Down = keyboardState[SDL_SCANCODE_2] != 0;
-    if (key2Down && !prevKey2Down) {
-        std::cout << "DIRECT KEY DETECTION: Key 2 pressed - switching to machine gun" << std::endl;
-        m_player.setCurrentWeapon(WeaponType::MachineGun);
-        m_currentWeaponTexture = m_machineGunTexture;
-        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Machine Gun)" << std::endl;
-        showNotification("Machine Gun selected", 1.0);
-        
-        // Play weapon switch sound
-        if (m_audioSystem) {
-            m_audioSystem->playSoundEffect("weapon_switch");
-        }
-    }
-    prevKey2Down = key2Down;
-    
-    // Check key 3 for rocket launcher
-    bool key3Down = keyboardState[SDL_SCANCODE_3] != 0;
-    if (key3Down && !prevKey3Down) {
-        std::cout << "DIRECT KEY DETECTION: Key 3 pressed - switching to rocket launcher" << std::endl;
-        m_player.setCurrentWeapon(WeaponType::RocketLauncher);
-        m_currentWeaponTexture = m_rocketLauncherTexture;
-        std::cout << "Changed weapon texture to: " << m_currentWeaponTexture << " (Rocket Launcher)" << std::endl;
-        showNotification("Rocket Launcher selected", 1.0);
-        
-        // Play weapon switch sound
-        if (m_audioSystem) {
-            m_audioSystem->playSoundEffect("weapon_switch");
-        }
-    }
-    prevKey3Down = key3Down;
-    
-    // Rotation with mouse
-    int mouseRelX = m_inputHandler.getMouseRelX();
-    int mouseRelY = m_inputHandler.getMouseRelY();
-    
-    if (mouseRelX != 0) {
-        m_player.rotateLeft(m_deltaTime * mouseRelX * 0.1);
-    }
-    
-    if (mouseRelY != 0) {
-        // Vertical look with mouse
-        if (mouseRelY > 0) {
-            m_player.lookDown(m_deltaTime * mouseRelY * 0.1);
-        } else if (mouseRelY < 0) {
-            m_player.lookUp(m_deltaTime * -mouseRelY * 0.1);
-        }
-    }
-    
-    // Reset mouse relative movement
-    m_inputHandler.resetMouseRel();
     
     // Weapon firing
     bool shouldFire = false;
     
-    // Check for space bar firing
-    if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
+    // Check for left control firing
+    if (keyboardState[SDL_SCANCODE_LCTRL] && !m_prevKeyboardState[SDL_SCANCODE_LCTRL]) {
         shouldFire = true;
-        m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
-    } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
-        m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
+        m_prevKeyboardState[SDL_SCANCODE_LCTRL] = true;
+    } else if (!keyboardState[SDL_SCANCODE_LCTRL]) {
+        m_prevKeyboardState[SDL_SCANCODE_LCTRL] = false;
     }
     
     // Check for left mouse button firing

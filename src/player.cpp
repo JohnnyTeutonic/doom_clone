@@ -28,6 +28,11 @@ Player::Player()
     , m_activePowerUp(PowerUpType::None)
     , m_powerUpTimer(0.0)
     , m_powerUpDuration(0.0)
+    , m_isJumping(false)
+    , m_verticalVelocity(0.0)
+    , m_jumpForce(12.0)     // Increased jump force for better feel
+    , m_gravity(30.0)      // Increased gravity for snappier jumps
+    , m_groundLevel(0.0)   // Ground level reference
 {
 }
 
@@ -38,8 +43,10 @@ void Player::init(double x, double y, double dirX, double dirY) {
     // Set camera plane perpendicular to direction (for 66 degree FOV)
     m_plane = Vec2(-m_direction.y, m_direction.x) * 0.66;
     
-    // Reset vertical angle
+    // Reset vertical angle and jumping state
     m_verticalAngle = 0.0;
+    m_verticalVelocity = 0.0;
+    m_isJumping = false;
     
     // Reset weapon state
     m_currentWeapon = WeaponType::Pistol;
@@ -56,6 +63,16 @@ void Player::update(double deltaTime, const Map& map) {
     
     // Update power-ups
     updatePowerUps(deltaTime);
+    
+    // Update jumping physics
+    updateJump(deltaTime);
+    
+    // Debug output for jump state
+    if (m_isJumping || m_verticalVelocity != 0.0) {
+        std::cout << "Jump State - IsJumping: " << m_isJumping 
+                  << ", Velocity: " << m_verticalVelocity 
+                  << ", Position: " << m_verticalAngle << std::endl;
+    }
 }
 
 void Player::moveForward(double deltaTime, const Map& map) {
@@ -1138,4 +1155,32 @@ void Player::updatePowerUps(double deltaTime) {
             m_activePowerUp = PowerUpType::None;
         }
     }
+}
+
+void Player::jump() {
+    if (isOnGround()) {
+        m_isJumping = true;
+        m_verticalVelocity = m_jumpForce;
+    }
+}
+
+void Player::updateJump(double deltaTime) {
+    if (m_isJumping) {
+        // Apply gravity
+        m_verticalVelocity -= m_gravity * deltaTime;
+        
+        // Update vertical position
+        m_verticalAngle += m_verticalVelocity * deltaTime;
+        
+        // Check if we've hit the ground
+        if (m_verticalAngle <= m_groundLevel) {
+            m_verticalAngle = m_groundLevel;
+            m_verticalVelocity = 0.0;
+            m_isJumping = false;
+        }
+    }
+}
+
+bool Player::isOnGround() const {
+    return !m_isJumping && m_verticalAngle <= m_groundLevel;
 } 

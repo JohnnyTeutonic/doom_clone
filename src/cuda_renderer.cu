@@ -35,11 +35,18 @@ extern "C" __global__ void raycastKernel(
     float dirY = playerData->dirY;
     float planeX = playerData->planeX;
     float planeY = playerData->planeY;
+    float verticalAngle = playerData->verticalAngle;
+    
+    // Calculate vertical offset for jumping
+    int verticalOffset = static_cast<int>((verticalAngle * 2.0f) * screenHeight / 2);
     
     // Calculate ray position and direction
     float cameraX = 2.0f * x / static_cast<float>(screenWidth) - 1.0f;
     float rayDirX = dirX + planeX * cameraX;
     float rayDirY = dirY + planeY * cameraX;
+    
+    // Apply vertical offset to drawing calculations
+    int effectiveY = y - verticalOffset;
     
     // Map position
     int mapX = static_cast<int>(posX);
@@ -129,7 +136,7 @@ extern "C" __global__ void raycastKernel(
     }
     
     // Save z-buffer value
-    zBuffer[y * screenWidth + x] = perpWallDist;
+    zBuffer[effectiveY * screenWidth + x] = perpWallDist;
     
     // Calculate height of line to draw on screen
     int lineHeight = static_cast<int>(screenHeight / perpWallDist);

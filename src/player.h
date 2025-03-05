@@ -71,6 +71,13 @@ private:
     double m_powerUpTimer;
     double m_powerUpDuration;
     
+    // Jumping properties
+    bool m_isJumping;
+    double m_verticalVelocity;
+    double m_jumpForce;
+    double m_gravity;
+    double m_groundLevel;
+    
 public:
     Player();
     
@@ -151,6 +158,11 @@ public:
     void activatePowerUp(PowerUpType type, double duration);
     void updatePowerUps(double deltaTime);
     bool hasPowerUp(PowerUpType type) const { return m_activePowerUp == type && m_powerUpTimer > 0; }
+    
+    // Jump methods
+    void jump();
+    void updateJump(double deltaTime);
+    bool isOnGround() const;
 };
 
 #endif // PLAYER_H 
