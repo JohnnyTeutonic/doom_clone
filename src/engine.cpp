@@ -2567,6 +2567,45 @@ void Engine::handlePlayingInput() {
     // Get keyboard state
     const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
     
+    // Weapon switching using direct keyboard state checks
+    // Check for number keys - store previous state and compare
+    static bool prev1Down = false;
+    static bool prev2Down = false;
+    static bool prev3Down = false;
+    
+    bool key1Down = keyboardState[SDL_SCANCODE_1] != 0;
+    bool key2Down = keyboardState[SDL_SCANCODE_2] != 0;
+    bool key3Down = keyboardState[SDL_SCANCODE_3] != 0;
+    
+    // Weapon 1 (just pressed this frame)
+    if (key1Down && !prev1Down) {
+        std::cout << "KEY 1 DETECTED - Switching to weapon 1 (Pistol)" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::Pistol);
+        m_currentWeaponTexture = m_weaponTexture;
+        showNotification("Pistol", 1.0);
+    }
+    
+    // Weapon 2 (just pressed this frame)
+    if (key2Down && !prev2Down) {
+        std::cout << "KEY 2 DETECTED - Switching to weapon 2 (Machine Gun)" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::MachineGun);
+        m_currentWeaponTexture = m_machineGunTexture;
+        showNotification("Machine Gun", 1.0);
+    }
+    
+    // Weapon 3 (just pressed this frame)
+    if (key3Down && !prev3Down) {
+        std::cout << "KEY 3 DETECTED - Switching to weapon 3 (Rocket Launcher)" << std::endl;
+        m_player.setCurrentWeapon(WeaponType::RocketLauncher);
+        m_currentWeaponTexture = m_rocketLauncherTexture;
+        showNotification("Rocket Launcher", 1.0);
+    }
+    
+    // Update previous key states
+    prev1Down = key1Down;
+    prev2Down = key2Down;
+    prev3Down = key3Down;
+    
     // Process mouse look for both vertical and horizontal movement
     int mouseX, mouseY;
     m_inputHandler.getMouseMotion(mouseX, mouseY);
