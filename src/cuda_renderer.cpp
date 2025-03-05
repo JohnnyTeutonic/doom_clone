@@ -450,8 +450,7 @@ void CudaRenderer::copyTexturesToDevice() {
         floorTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
         ceilingTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
         
-        // Initialize with default patterns in case texture loading fails
-        // Default wall pattern (checkerboard)
+        // Initialize with default patterns as fallbacks
         for (int i = 0; i < 4; i++) {
             for (int y = 0; y < m_wallTextureHeight; y++) {
                 for (int x = 0; x < m_wallTextureWidth; x++) {
@@ -491,13 +490,10 @@ void CudaRenderer::copyTexturesToDevice() {
             }
         }
         
-        // Try to load actual textures if available
-        
-        // Copy wall textures (up to 4)
+        // Load actual textures first for walls
         for (int i = 0; i < 4; i++) {
             const Texture* texture = m_textureManager->getTexture(i);
             if (texture && texture->getWidth() > 0 && texture->getHeight() > 0) {
-                // Get texture pixel data
                 const uint32_t* pixels = texture->getPixelData();
                 if (pixels) {
                     // Copy to the corresponding section of wall texture data
@@ -510,22 +506,36 @@ void CudaRenderer::copyTexturesToDevice() {
             }
         }
         
-        // Copy floor texture (using texture index 4 if available, otherwise a default)
+        // Load floor texture (using texture index 4)
+        bool floorTextureLoaded = false;
         const Texture* floorTexture = m_textureManager->getTexture(4);
         if (floorTexture && floorTexture->getWidth() > 0 && floorTexture->getHeight() > 0) {
             const uint32_t* floorPixels = floorTexture->getPixelData();
             if (floorPixels) {
                 memcpy(floorTextureData, floorPixels, texSize);
+                floorTextureLoaded = true;
+                std::cout << "Floor texture loaded from texture index 4" << std::endl;
             }
         }
         
-        // Copy ceiling texture (using texture index 5 if available, otherwise a default)
+        if (!floorTextureLoaded) {
+            std::cout << "Using default floor texture pattern" << std::endl;
+        }
+        
+        // Load ceiling texture (using texture index 5)
+        bool ceilingTextureLoaded = false;
         const Texture* ceilingTexture = m_textureManager->getTexture(5);
         if (ceilingTexture && ceilingTexture->getWidth() > 0 && ceilingTexture->getHeight() > 0) {
             const uint32_t* ceilingPixels = ceilingTexture->getPixelData();
             if (ceilingPixels) {
                 memcpy(ceilingTextureData, ceilingPixels, texSize);
+                ceilingTextureLoaded = true;
+                std::cout << "Ceiling texture loaded from texture index 5" << std::endl;
             }
+        }
+        
+        if (!ceilingTextureLoaded) {
+            std::cout << "Using default ceiling texture pattern" << std::endl;
         }
         
         // Copy textures to device with error checking
