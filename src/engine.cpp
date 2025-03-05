@@ -421,6 +421,15 @@ void Engine::processInput() {
             m_prevKeyboardState[SDL_SCANCODE_F3] = false;
         }
         
+        // Add F4 key to toggle ceiling rendering
+        if (keyboardState[SDL_SCANCODE_F4] && !m_prevKeyboardState[SDL_SCANCODE_F4]) {
+            m_renderer->toggleCeilings();
+            showNotification("Ceiling rendering toggled", 2.0);
+            m_prevKeyboardState[SDL_SCANCODE_F4] = true;
+        } else if (!keyboardState[SDL_SCANCODE_F4]) {
+            m_prevKeyboardState[SDL_SCANCODE_F4] = false;
+        }
+        
         // Weapon switching - use direct keyboard state for 1-5
         if (keyboardState[SDL_SCANCODE_1] && !m_prevKeyboardState[SDL_SCANCODE_1]) {
             m_player.setCurrentWeapon(WeaponType::Pistol);
@@ -431,44 +440,59 @@ void Engine::processInput() {
         }
         
         if (keyboardState[SDL_SCANCODE_2] && !m_prevKeyboardState[SDL_SCANCODE_2]) {
-            m_player.setCurrentWeapon(WeaponType::Shotgun);
-            showNotification("Switched to shotgun", 2.0);
+            m_player.setCurrentWeapon(WeaponType::MachineGun);
+            m_currentWeaponTexture = m_machineGunTexture;
+            showNotification("Switched to machine gun", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_2] = true;
         } else if (!keyboardState[SDL_SCANCODE_2]) {
             m_prevKeyboardState[SDL_SCANCODE_2] = false;
         }
         
         if (keyboardState[SDL_SCANCODE_3] && !m_prevKeyboardState[SDL_SCANCODE_3]) {
-            m_player.setCurrentWeapon(WeaponType::RocketLauncher);
-            showNotification("Switched to rocket launcher", 2.0);
+            m_player.setCurrentWeapon(WeaponType::Shotgun);
+            m_currentWeaponTexture = m_weaponTexture;
+            showNotification("Switched to shotgun", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_3] = true;
         } else if (!keyboardState[SDL_SCANCODE_3]) {
             m_prevKeyboardState[SDL_SCANCODE_3] = false;
         }
         
         if (keyboardState[SDL_SCANCODE_4] && !m_prevKeyboardState[SDL_SCANCODE_4]) {
-            m_player.setCurrentWeapon(WeaponType::PlasmaGun);
-            showNotification("Switched to plasma gun", 2.0);
+            m_player.setCurrentWeapon(WeaponType::RocketLauncher);
+            m_currentWeaponTexture = m_weaponTexture;
+            showNotification("Switched to rocket launcher", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_4] = true;
         } else if (!keyboardState[SDL_SCANCODE_4]) {
             m_prevKeyboardState[SDL_SCANCODE_4] = false;
         }
         
         if (keyboardState[SDL_SCANCODE_5] && !m_prevKeyboardState[SDL_SCANCODE_5]) {
-            m_player.setCurrentWeapon(WeaponType::GrenadeLauncher);
-            showNotification("Switched to grenade launcher", 2.0);
+            m_player.setCurrentWeapon(WeaponType::PlasmaGun);
+            m_currentWeaponTexture = m_weaponTexture;
+            showNotification("Switched to plasma gun", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_5] = true;
         } else if (!keyboardState[SDL_SCANCODE_5]) {
             m_prevKeyboardState[SDL_SCANCODE_5] = false;
         }
         
-        // Add chainsaw weapon on key 6
+        // Add grenade launcher weapon on key 6
         if (keyboardState[SDL_SCANCODE_6] && !m_prevKeyboardState[SDL_SCANCODE_6]) {
-            m_player.setCurrentWeapon(WeaponType::Chainsaw);
-            showNotification("Switched to chainsaw", 2.0);
+            m_player.setCurrentWeapon(WeaponType::GrenadeLauncher);
+            m_currentWeaponTexture = m_weaponTexture;
+            showNotification("Switched to grenade launcher", 2.0);
             m_prevKeyboardState[SDL_SCANCODE_6] = true;
         } else if (!keyboardState[SDL_SCANCODE_6]) {
             m_prevKeyboardState[SDL_SCANCODE_6] = false;
+        }
+        
+        // Add chainsaw weapon on key 7
+        if (keyboardState[SDL_SCANCODE_7] && !m_prevKeyboardState[SDL_SCANCODE_7]) {
+            m_player.setCurrentWeapon(WeaponType::Chainsaw);
+            m_currentWeaponTexture = m_weaponTexture;
+            showNotification("Switched to chainsaw", 2.0);
+            m_prevKeyboardState[SDL_SCANCODE_7] = true;
+        } else if (!keyboardState[SDL_SCANCODE_7]) {
+            m_prevKeyboardState[SDL_SCANCODE_7] = false;
         }
         
         // Throw grenade directly with G key
@@ -690,7 +714,7 @@ void Engine::render() {
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
             
             // Render weapon if enabled
-            if (m_renderer->getShowWeapon()) {
+            if (m_renderer->isShowingWeapon()) {
                 m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
             }
             
@@ -710,7 +734,7 @@ void Engine::render() {
         case GameState::GameOver:
             // Render the 3D view (darkened)
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
-            if (m_renderer->getShowWeapon()) {
+            if (m_renderer->isShowingWeapon()) {
                 m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
             }
             // TODO: Render game over overlay
@@ -719,7 +743,7 @@ void Engine::render() {
         case GameState::Victory:
             // Render the 3D view
             m_renderer->render(m_map, m_player, m_deltaTime, m_weaponRecoil, m_flashIntensity);
-            if (m_renderer->getShowWeapon()) {
+            if (m_renderer->isShowingWeapon()) {
                 m_renderer->renderWeapon(m_player, m_weaponRecoil, m_flashIntensity, m_currentWeaponTexture);
             }
             // TODO: Render victory overlay
@@ -879,9 +903,35 @@ bool Engine::loadAssets() {
         Uint32* pixels = (Uint32*)floorSurface->pixels;
         for (int y = 0; y < 64; y++) {
             for (int x = 0; x < 64; x++) {
-                int noise = (rand() % 30) - 15;
-                int baseGray = 80 + noise;  // Darker base for floor
-                pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, baseGray, baseGray, baseGray);
+                int noise = (rand() % 20) - 10;
+                
+                // Create a Doom-like floor pattern with tiles
+                bool isTileEdge = false;
+                
+                // Create tile edges
+                if ((x % 8 == 0 || y % 8 == 0) && 
+                    (x % 16 != 0 && y % 16 != 0)) {
+                    isTileEdge = true;
+                }
+                
+                // Create main grid lines
+                bool isMainGrid = (x % 16 == 0 || y % 16 == 0);
+                
+                // Set colors based on pattern
+                if (isMainGrid) {
+                    // Dark main grid lines
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        50 + noise, 50 + noise, 50 + noise);
+                } else if (isTileEdge) {
+                    // Subtle tile edges
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        70 + noise, 70 + noise, 70 + noise);
+                } else {
+                    // Base floor color with slight variation based on position
+                    int variation = ((x / 8 + y / 8) % 3) * 10;
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        80 + variation + noise, 80 + variation + noise, 80 + variation + noise);
+                }
             }
         }
         SDL_UnlockSurface(floorSurface);
@@ -900,9 +950,38 @@ bool Engine::loadAssets() {
         Uint32* pixels = (Uint32*)ceilingSurface->pixels;
         for (int y = 0; y < 64; y++) {
             for (int x = 0; x < 64; x++) {
-                int noise = (rand() % 30) - 15;
-                int baseGray = 120 + noise;  // Lighter base for ceiling
-                pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, baseGray, baseGray, baseGray);
+                int noise = (rand() % 20) - 10;
+                
+                // Create a Doom-like ceiling pattern with squares and lines
+                bool isLine = false;
+                bool isSquare = false;
+                
+                // Create grid lines
+                if (x % 16 == 0 || y % 16 == 0) {
+                    isLine = true;
+                }
+                
+                // Create square patterns in a checkerboard layout
+                int squareX = (x / 16) % 2;
+                int squareY = (y / 16) % 2;
+                if ((squareX == 0 && squareY == 0) || (squareX == 1 && squareY == 1)) {
+                    isSquare = true;
+                }
+                
+                // Set colors based on pattern
+                if (isLine) {
+                    // Dark lines
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        80 + noise, 80 + noise, 90 + noise);
+                } else if (isSquare) {
+                    // Lighter squares
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        130 + noise, 130 + noise, 140 + noise);
+                } else {
+                    // Base ceiling color
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        110 + noise, 110 + noise, 120 + noise);
+                }
             }
         }
         SDL_UnlockSurface(ceilingSurface);
@@ -2121,6 +2200,7 @@ void Engine::createSpritesFromMap() {
                             imp->setTurnSpeed(2.5); // Radians per second
                             
                             // Set health - Imps are tougher
+                            imp->setMaxHealth(150.0);
                             imp->setHealth(150.0);
                             
                             // Randomly assign a movement type
@@ -2209,6 +2289,7 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_F1, InputAction::ToggleFPS);
     m_inputHandler.bindKey(SDL_SCANCODE_F2, InputAction::ToggleMinimap);
     m_inputHandler.bindKey(SDL_SCANCODE_F3, InputAction::ToggleWeapon);
+    m_inputHandler.bindKey(SDL_SCANCODE_F4, InputAction::ToggleCeilings);
     
     // Audio control keys
     m_inputHandler.bindKey(SDL_SCANCODE_M, InputAction::ToggleMusic);
@@ -2216,6 +2297,15 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_PAGEDOWN, InputAction::DecreaseMusicVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_HOME, InputAction::IncreaseSfxVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_END, InputAction::DecreaseSfxVolume);
+    
+    // Weapon keys
+    m_inputHandler.bindKey(SDL_SCANCODE_1, InputAction::Weapon1);
+    m_inputHandler.bindKey(SDL_SCANCODE_2, InputAction::Weapon2);
+    m_inputHandler.bindKey(SDL_SCANCODE_3, InputAction::Weapon3);
+    m_inputHandler.bindKey(SDL_SCANCODE_4, InputAction::Weapon4);
+    m_inputHandler.bindKey(SDL_SCANCODE_5, InputAction::Weapon5);
+    m_inputHandler.bindKey(SDL_SCANCODE_6, InputAction::Weapon6);
+    m_inputHandler.bindKey(SDL_SCANCODE_7, InputAction::Weapon7);
     
     // Enable mouse capture for looking around
     m_inputHandler.setMouseCapture(true);

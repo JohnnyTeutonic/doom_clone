@@ -53,6 +53,7 @@ private:
     bool m_showFPS;
     bool m_showMinimap;
     bool m_showWeapon;
+    bool m_showCeilings;  // Toggle for ceiling rendering
     
     // Performance settings
     PerformanceLevel m_performanceLevel;
@@ -148,12 +149,22 @@ public:
     // Render text
     void renderText(const std::string& text, int x, int y, const Color& color);
     
-    // Toggle rendering options
+    // Toggle display options
     void toggleFPS() { m_showFPS = !m_showFPS; }
     void toggleMinimap() { m_showMinimap = !m_showMinimap; }
     void toggleWeapon() { m_showWeapon = !m_showWeapon; }
-    void toggleLighting() { m_lightingEnabled = !m_lightingEnabled; m_lightingSystem.setEnabled(m_lightingEnabled); }
-    bool getShowWeapon() const { return m_showWeapon; }
+    void toggleCeilings() { m_showCeilings = !m_showCeilings; }
+    void toggleLighting() { 
+        m_lightingEnabled = !m_lightingEnabled; 
+        m_lightingSystem.setEnabled(m_lightingEnabled);
+    }
+    
+    // Getters for display options
+    bool isShowingFPS() const { return m_showFPS; }
+    bool isShowingMinimap() const { return m_showMinimap; }
+    bool isShowingWeapon() const { return m_showWeapon; }
+    bool isShowingCeilings() const { return m_showCeilings; }
+    bool isLightingEnabled() const { return m_lightingEnabled; }
     
     // Performance settings
     void setPerformanceLevel(PerformanceLevel level) {

@@ -118,7 +118,21 @@ public:
     void setActive(bool active) { m_isActive = active; }
     void setMoveSpeed(double speed) { m_moveSpeed = speed; }
     void setTurnSpeed(double speed) { m_turnSpeed = speed; }
-    void setHealth(double health) { m_health = health; }
+    void setHealth(double health) { 
+        m_health = health; 
+        // Update maxHealth if the new health is higher
+        if (health > m_maxHealth) {
+            m_maxHealth = health;
+        }
+    }
+    
+    void setMaxHealth(double maxHealth) {
+        m_maxHealth = maxHealth;
+        // Cap current health to max health
+        if (m_health > m_maxHealth) {
+            m_health = m_maxHealth;
+        }
+    }
     
     // Animation methods
     void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);

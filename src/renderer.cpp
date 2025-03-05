@@ -15,17 +15,21 @@ Renderer::Renderer()
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
     , m_engine(nullptr)
-    , m_showFPS(false)
+    , m_showFPS(true)
     , m_showMinimap(true)
     , m_showWeapon(true)
+    , m_showCeilings(true)  // Initialize ceiling rendering to on by default
     , m_lightingEnabled(true)
-    , m_performanceLevel(PerformanceLevel::High)
+    , m_performanceLevel(PerformanceLevel::Medium)
     , m_frameCount(0)
-    , m_fps(0.0)
     , m_fpsTimer(0.0)
+    , m_fps(0.0)
 {
     // Initialize lighting system
     m_lightingSystem.setEnabled(m_lightingEnabled);
+    
+    // Initialize z-buffer
+    m_zBuffer.resize(m_screenWidth, std::numeric_limits<double>::max());
 }
 
 Renderer::~Renderer() {
@@ -408,6 +412,109 @@ void Renderer::renderView(const Map& map, const Player& player) {
                     // Draw the pixel
                     SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
                     SDL_RenderDrawPoint(m_renderer, x, y);
+                }
+            }
+        }
+    }
+    
+    // Floor and ceiling casting
+    if (m_textureManager) {
+        const Texture* floorTexture = m_textureManager->getTexture(m_engine->getFloorTexture());
+        const Texture* ceilingTexture = m_textureManager->getTexture(m_engine->getCeilingTexture());
+        
+        if (floorTexture && ceilingTexture) {
+            // Performance optimization: Render floor/ceiling at lower resolution
+            // Skip rows based on distance from horizon
+            int rowSkip = 1; // Start with rendering every row
+            
+            // For each horizontal line on the screen from the middle down to the bottom
+            for (int y = m_screenHeight / 2 + verticalOffset; y < m_screenHeight; y += rowSkip) {
+                // Increase row skipping as we get further from horizon
+                if (y > m_screenHeight / 2 + verticalOffset + 50) rowSkip = 2;
+                if (y > m_screenHeight / 2 + verticalOffset + 100) rowSkip = 4;
+                
+                // Calculate the ray direction for this row
+                // Current y position compared to the center of the screen (horizon)
+                float posZ = 0.5 * m_screenHeight; // Player's view height
+                float rowDistance = posZ / (y - m_screenHeight / 2 - verticalOffset);
+                
+                // Calculate the real world step vector we have to add for each x
+                float floorStepX = rowDistance * (2.0 * plane.x) / m_screenWidth;
+                float floorStepY = rowDistance * (2.0 * plane.y) / m_screenWidth;
+                
+                // Calculate the leftmost ray position
+                float floorX = pos.x + rowDistance * (dir.x - plane.x);
+                float floorY = pos.y + rowDistance * (dir.y - plane.y);
+                
+                // Performance optimization: reduce resolution for distant floors/ceilings
+                int step = 1;
+                if (rowDistance > 3.0) step = 2;  // Medium distance
+                if (rowDistance > 6.0) step = 4;  // Far distance
+                if (rowDistance > 10.0) step = 8; // Very far distance
+                
+                // For each pixel in the horizontal line
+                for (int x = 0; x < m_screenWidth; x += step) {
+                    // Get the map cell coordinates
+                    int cellX = static_cast<int>(floorX);
+                    int cellY = static_cast<int>(floorY);
+                    
+                    // Get the texture coordinates
+                    float tx = (floorX - cellX) * floorTexture->getWidth();
+                    float ty = (floorY - cellY) * floorTexture->getHeight();
+                    
+                    // Use distance-based lighting approximation for better performance
+                    double distFactor = std::min(1.0, 10.0 / rowDistance);
+                    Color floorLighting(
+                        static_cast<Uint8>(128 * distFactor + 127),
+                        static_cast<Uint8>(128 * distFactor + 127),
+                        static_cast<Uint8>(128 * distFactor + 127)
+                    );
+                    
+                    // Only use full lighting calculation for nearby surfaces
+                    if (rowDistance < 5.0) {
+                        Vec2 floorPos(cellX + 0.5, cellY + 0.5);
+                        Vec2 normal = m_normalDown; // Floor normal points up
+                        floorLighting = m_lightingSystem.calculateLighting(floorPos, normal, pos);
+                    }
+                    
+                    // Get floor and ceiling colors
+                    Color floorColor = floorTexture->getPixel(tx, ty);
+                    Color ceilingColor = ceilingTexture->getPixel(tx, ty);
+                    
+                    // Apply lighting
+                    floorColor = floorColor * floorLighting;
+                    ceilingColor = ceilingColor * floorLighting; // Use same lighting for ceiling
+                    
+                    // Draw floor pixels for this step
+                    SDL_SetRenderDrawColor(m_renderer, floorColor.r, floorColor.g, floorColor.b, floorColor.a);
+                    for (int i = 0; i < step && x + i < m_screenWidth; i++) {
+                        SDL_RenderDrawPoint(m_renderer, x + i, y);
+                        
+                        // Fill in skipped rows for smoother appearance
+                        for (int j = 1; j < rowSkip && y + j < m_screenHeight; j++) {
+                            SDL_RenderDrawPoint(m_renderer, x + i, y + j);
+                        }
+                    }
+                    
+                    // Draw ceiling pixels for this step only if ceiling rendering is enabled
+                    if (m_showCeilings) {
+                        int ceilingY = m_screenHeight - y - 1 + 2 * verticalOffset;
+                        if (ceilingY >= 0 && ceilingY < m_screenHeight) {
+                            SDL_SetRenderDrawColor(m_renderer, ceilingColor.r, ceilingColor.g, ceilingColor.b, ceilingColor.a);
+                            for (int i = 0; i < step && x + i < m_screenWidth; i++) {
+                                SDL_RenderDrawPoint(m_renderer, x + i, ceilingY);
+                                
+                                // Fill in skipped rows for smoother appearance
+                                for (int j = 1; j < rowSkip && ceilingY - j >= 0; j++) {
+                                    SDL_RenderDrawPoint(m_renderer, x + i, ceilingY - j);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Move to next position
+                    floorX += floorStepX * step;
+                    floorY += floorStepY * step;
                 }
             }
         }

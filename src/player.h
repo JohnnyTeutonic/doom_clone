@@ -11,6 +11,7 @@ class SpriteManager;
 // Different types of weapons
 enum class WeaponType {
     Pistol,
+    MachineGun,     // Added machine gun
     Shotgun,
     RocketLauncher,
     PlasmaGun,

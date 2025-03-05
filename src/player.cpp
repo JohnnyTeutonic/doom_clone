@@ -516,6 +516,11 @@ void Player::setCurrentWeapon(WeaponType weapon) {
             m_weaponCooldown = 0.4;
             break;
             
+        case WeaponType::MachineGun:
+            m_weaponDamage = 20.0;
+            m_weaponCooldown = 0.1;  // Rapid fire
+            break;
+            
         case WeaponType::Shotgun:
             m_weaponDamage = 45.0;
             m_weaponCooldown = 0.8;
@@ -577,7 +582,24 @@ bool Player::fire() {
     std::cout << "[FIRE] Player firing weapon!" << std::endl;
     std::cout << "  Position: (" << m_position.x << ", " << m_position.y << ")" << std::endl;
     std::cout << "  Direction: (" << m_direction.x << ", " << m_direction.y << ")" << std::endl;
-    std::cout << "  Current weapon: " << static_cast<int>(m_currentWeapon) << std::endl;
+    
+    // Convert weapon enum to string for better debugging
+    std::string weaponName;
+    switch (m_currentWeapon) {
+        case WeaponType::Pistol: weaponName = "Pistol"; break;
+        case WeaponType::MachineGun: weaponName = "Machine Gun"; break;
+        case WeaponType::Shotgun: weaponName = "Shotgun"; break;
+        case WeaponType::RocketLauncher: weaponName = "Rocket Launcher"; break;
+        case WeaponType::PlasmaGun: weaponName = "Plasma Gun"; break;
+        case WeaponType::GrenadeLauncher: weaponName = "Grenade Launcher"; break;
+        case WeaponType::Chainsaw: weaponName = "Chainsaw"; break;
+        case WeaponType::SuperShotgun: weaponName = "Super Shotgun"; break;
+        case WeaponType::BFG9000: weaponName = "BFG9000"; break;
+        default: weaponName = "Unknown"; break;
+    }
+    
+    std::cout << "  Current weapon: " << weaponName << " (ID: " << static_cast<int>(m_currentWeapon) << ")" << std::endl;
+    std::cout << "  Weapon damage: " << m_weaponDamage << std::endl;
     std::cout << "  Ammo remaining: " << m_ammo << std::endl;
     
     m_ammo--;
@@ -682,6 +704,26 @@ bool Player::fire() {
                 m_direction,
                 ProjectileType::Bullet,
                 20.0,
+                m_weaponDamage
+            ) >= 0;
+            break;
+        }
+        
+        case WeaponType::MachineGun:
+        {
+            // Rapid fire with slight spread
+            double spreadAmount = 0.03; // Small spread
+            
+            // Add a small random spread
+            Vec2 spreadDir = m_direction;
+            double randomAngle = (rand() % 100 - 50) / 1000.0; // -0.05 to 0.05
+            spreadDir.rotate(randomAngle);
+            
+            success = m_projectileManager->createProjectile(
+                bulletPos,
+                spreadDir,
+                ProjectileType::Bullet,
+                25.0,
                 m_weaponDamage
             ) >= 0;
             break;
