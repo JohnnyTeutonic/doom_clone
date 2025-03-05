@@ -682,6 +682,9 @@ void Engine::render() {
                 // Render sprites
                 m_renderer->renderSprites(m_map, m_player);
                 
+                // Render projectiles
+                m_renderer->renderProjectiles(m_player);
+                
                 // Render UI elements
                 m_renderer->renderUI(m_player);
                 
@@ -1031,83 +1034,76 @@ bool Engine::loadAssets() {
     std::cout << "Ceiling texture ID: " << m_ceilingTexture << std::endl;
     
     // Create bullet texture
-    std::cout << "Creating realistic bullet texture..." << std::endl;
-    SDL_Surface* bulletSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    std::cout << "Creating bullet texture..." << std::endl;
+    
+    // Create a surface for the bullet texture
+    SDL_Surface* bulletSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 
+                                                    0xFF000000,  // Red mask
+                                                    0x00FF0000,  // Green mask
+                                                    0x0000FF00,  // Blue mask
+                                                    0x000000FF); // Alpha mask
     if (bulletSurface) {
+        // Lock surface for direct pixel access
         SDL_LockSurface(bulletSurface);
-        Uint32* pixels = (Uint32*)bulletSurface->pixels;
         
-        // Colors for the realistic bullet
-        Uint32 bulletBase = SDL_MapRGBA(bulletSurface->format, 180, 180, 180, 255);         // Base brass color
-        Uint32 bulletTip = SDL_MapRGBA(bulletSurface->format, 100, 100, 100, 255);          // Darker bullet tip
-        Uint32 highlight = SDL_MapRGBA(bulletSurface->format, 240, 240, 240, 255);          // Highlight/reflection
-        Uint32 shadow = SDL_MapRGBA(bulletSurface->format, 120, 120, 120, 255);             // Shadow
-        Uint32 transparent = SDL_MapRGBA(bulletSurface->format, 0, 0, 0, 0);                // Transparent background
+        // Define bullet colors - DOOM-style projectiles
+        Uint32 background = SDL_MapRGBA(bulletSurface->format, 0, 0, 0, 0); // Transparent background
         
-        // Fill with transparency first
+        // For pistol/shotgun: tracer-like visual (orange-yellow center with red edge)
+        Uint32 tracerCore = SDL_MapRGBA(bulletSurface->format, 255, 220, 50, 255);  // Bright yellow-orange
+        Uint32 tracerEdge = SDL_MapRGBA(bulletSurface->format, 255, 60, 0, 220);    // Reddish edge
+        
+        // For plasma/BFG: glowing blue plasma ball
+        Uint32 plasmaCore = SDL_MapRGBA(bulletSurface->format, 80, 180, 255, 255);  // Bright blue
+        Uint32 plasmaEdge = SDL_MapRGBA(bulletSurface->format, 30, 80, 200, 200);   // Darker blue edge
+        
+        // Clear the surface with transparent background
+        Uint32* pixels = static_cast<Uint32*>(bulletSurface->pixels);
         for (int i = 0; i < 32 * 32; i++) {
-            pixels[i] = transparent;
+            pixels[i] = background;
         }
         
-        // Draw bullet shape - 3D perspective (bullet flying toward viewer)
+        // Draw bullet shape - DOOM tracer style (elongated with motion blur)
         int centerX = 16;
         int centerY = 16;
-        int bulletRadius = 12;
+        int coreWidth = 24;   // Width of the inner bright core
+        int coreHeight = 10;  // Height of the inner bright core
+        int edgeWidth = 28;   // Width of the outer glow
+        int edgeHeight = 14;  // Height of the outer glow
         
         for (int y = 0; y < 32; y++) {
             for (int x = 0; x < 32; x++) {
-                // Calculate distance from center
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                // Calculate normalized elliptical distances
+                double dx = (x - centerX) / (edgeWidth * 0.5);
+                double dy = (y - centerY) / (edgeHeight * 0.5);
+                double distEdge = dx*dx + dy*dy;  // Elliptical distance for edge
                 
-                // Only draw within circle radius
-                if (distFromCenter <= bulletRadius) {
-                    // Determine which part of the bullet we're drawing
-                    double normalizedDist = distFromCenter / bulletRadius;
+                double dxCore = (x - centerX) / (coreWidth * 0.5);
+                double dyCore = (y - centerY) / (coreHeight * 0.5);
+                double distCore = dxCore*dxCore + dyCore*dyCore;  // Elliptical distance for core
+                
+                // Draw outer edge with fade
+                if (distEdge <= 1.0) {
+                    // Edge intensity based on distance (fade out)
+                    double edgeFade = 1.0 - distEdge;
                     
-                    // The central ~30% is the bullet tip, rest is brass casing
-                    if (normalizedDist < 0.3) {
-                        // Bullet tip (darker material)
-                        pixels[y * 32 + x] = bulletTip;
+                    if (distCore <= 1.0) {
+                        // Draw core with brightness variation
+                        double coreBrightness = 1.0 - distCore*0.7;
                         
-                        // Add slight texture variation to bullet tip
-                        if ((x + y) % 4 == 0) {
-                            pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, 90, 90, 90, 255);
-                        }
+                        // Blend core colors
+                        Uint8 r, g, b, a;
+                        SDL_GetRGBA(tracerCore, bulletSurface->format, &r, &g, &b, &a);
+                        r = static_cast<Uint8>(r * coreBrightness);
+                        g = static_cast<Uint8>(g * coreBrightness);
+                        b = static_cast<Uint8>(b * coreBrightness);
+                        pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, r, g, b, a);
                     } else {
-                        // Brass casing
-                        pixels[y * 32 + x] = bulletBase;
-                        
-                        // Create a ring where the casing and tip meet
-                        if (normalizedDist > 0.28 && normalizedDist < 0.32) {
-                            pixels[y * 32 + x] = shadow;
-                        }
-                        
-                        // Add slight texture variation for realism
-                        if ((x + y) % 5 == 0 && normalizedDist > 0.5) {
-                            pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, 170, 170, 170, 255);
-                        }
-                    }
-                    
-                    // Add highlights based on angle (top-left light source)
-                    double angle = atan2(y - centerY, x - centerX);
-                    if (angle > -2.5 && angle < -1.0) {
-                        // Top-left highlight (reflection)
-                        if (normalizedDist > 0.4 && normalizedDist < 0.8) {
-                            pixels[y * 32 + x] = highlight;
-                        }
-                    }
-                    
-                    // Add bottom-right shadow
-                    if (angle > 0.5 && angle < 2.0) {
-                        // Bottom-right shadow
-                        if (normalizedDist > 0.4) {
-                            pixels[y * 32 + x] = shadow;
-                        }
-                    }
-                    
-                    // Add a small central reflection dot
-                    if (distFromCenter < bulletRadius * 0.15) {
-                        pixels[y * 32 + x] = highlight;
+                        // Draw edge with alpha fade
+                        Uint8 r, g, b, a;
+                        SDL_GetRGBA(tracerEdge, bulletSurface->format, &r, &g, &b, &a);
+                        a = static_cast<Uint8>(a * edgeFade);
+                        pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, r, g, b, a);
                     }
                 }
             }
@@ -1118,14 +1114,75 @@ bool Engine::loadAssets() {
         SDL_FreeSurface(bulletSurface);
     } else {
         // Fallback to simple solid texture if surface creation fails
-        m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
+        m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 100, 20));
     }
     std::cout << "Bullet texture ID: " << m_bulletTexture << std::endl;
     
-    // Set the bullet texture in the projectile manager
+    // Create plasma bullet texture
+    SDL_Surface* plasmaSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 
+                                                    0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (plasmaSurface) {
+        SDL_LockSurface(plasmaSurface);
+        Uint32* pixels = static_cast<Uint32*>(plasmaSurface->pixels);
+        
+        // Clear with transparent background
+        Uint32 background = SDL_MapRGBA(plasmaSurface->format, 0, 0, 0, 0);
+        for (int i = 0; i < 32 * 32; i++) {
+            pixels[i] = background;
+        }
+        
+        // Draw plasma ball (circular with glow)
+        int centerX = 16;
+        int centerY = 16;
+        int plasmaRadius = 12;
+        
+        // Define plasma colors
+        Uint32 plasmaCore = SDL_MapRGBA(plasmaSurface->format, 100, 200, 255, 255); // Bright blue core
+        Uint32 plasmaEdge = SDL_MapRGBA(plasmaSurface->format, 50, 150, 255, 180);  // Softer blue edge
+        
+        for (int y = 0; y < 32; y++) {
+            for (int x = 0; x < 32; x++) {
+                // Calculate distance from center
+                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
+                
+                // Draw plasma with glow effect
+                if (distFromCenter <= plasmaRadius) {
+                    double normalizedDist = distFromCenter / plasmaRadius;
+                    
+                    if (normalizedDist < 0.6) {
+                        // Inner core (brightest)
+                        pixels[y * 32 + x] = plasmaCore;
+                    } else {
+                        // Outer glow (fading)
+                        double alpha = 1.0 - ((normalizedDist - 0.6) / 0.4);
+                        Uint8 r, g, b, a;
+                        SDL_GetRGBA(plasmaEdge, plasmaSurface->format, &r, &g, &b, &a);
+                        a = static_cast<Uint8>(a * alpha);
+                        pixels[y * 32 + x] = SDL_MapRGBA(plasmaSurface->format, r, g, b, a);
+                    }
+                    
+                    // Add slight pulsing effect variation
+                    int variation = (x + y) % 3;
+                    if (variation == 0 && normalizedDist < 0.4) {
+                        pixels[y * 32 + x] = SDL_MapRGBA(plasmaSurface->format, 200, 230, 255, 255);
+                    }
+                }
+            }
+        }
+        
+        SDL_UnlockSurface(plasmaSurface);
+        m_plasmaTexture = m_textureManager->createTextureFromSurface(plasmaSurface);
+        SDL_FreeSurface(plasmaSurface);
+    } else {
+        m_plasmaTexture = m_textureManager->createSolidTexture(32, 32, Color(50, 150, 255));
+    }
+    std::cout << "Plasma texture ID: " << m_plasmaTexture << std::endl;
+    
+    // Set the projectile textures in the projectile manager
     if (m_projectileManager) {
         m_projectileManager->setBulletTexture(m_bulletTexture);
         m_projectileManager->setDefaultBulletTexture(m_bulletTexture);
+        m_projectileManager->setPlasmaTexture(m_plasmaTexture);
     }
     
     // Create enemy texture

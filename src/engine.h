@@ -158,6 +158,7 @@ private:
     int m_rocketLauncherTexture;
     int m_currentWeaponTexture;
     std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
+    int m_plasmaTexture;  // New texture for plasma projectiles
     
     // Notification system
     std::string m_notificationText;

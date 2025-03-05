@@ -288,8 +288,10 @@ int ProjectileManager::createProjectile(const Vec2& position, const Vec2& direct
     switch (type) {
         case ProjectileType::Bullet:
             projectile->m_size = 0.1;
-            projectile->m_lifetime = 2.0;
+            projectile->m_lifetime = 0.5;  // Shorter lifetime for DOOM-style bullets
             projectile->m_usePhysics = false;  // Bullets use simple physics
+            projectile->m_textureId = m_bulletTextureId;  // Use the bullet texture
+            projectile->m_color = Color(255, 220, 50);  // Yellow-orange for tracer effect
             break;
             
         case ProjectileType::Rocket:
@@ -298,13 +300,16 @@ int ProjectileManager::createProjectile(const Vec2& position, const Vec2& direct
             projectile->m_usePhysics = true;   // Rockets use advanced physics
             projectile->m_explosionRadius = 2.0;
             projectile->m_explosionDamage = damage * 0.7;  // Explosion does 70% of direct hit damage
+            projectile->m_textureId = m_rocketTextureId;
+            projectile->m_color = Color(255, 100, 0);  // Orange for rocket
             break;
             
         case ProjectileType::Plasma:
             projectile->m_size = 0.2;
             projectile->m_lifetime = 1.5;
             projectile->m_usePhysics = false;
-            projectile->m_color = Color(0, 255, 255);  // Cyan color
+            projectile->m_textureId = m_plasmaTextureId;  // Use the plasma texture
+            projectile->m_color = Color(80, 180, 255);  // Blue for plasma
             break;
             
         case ProjectileType::Grenade:
@@ -315,16 +320,28 @@ int ProjectileManager::createProjectile(const Vec2& position, const Vec2& direct
             projectile->m_bounceFactor = 0.6;  // Bounces off surfaces
             projectile->m_explosionRadius = 3.0;
             projectile->m_explosionDamage = damage;
+            projectile->m_textureId = m_grenadeTextureId;
+            projectile->m_color = Color(100, 100, 100);  // Gray for grenade
             break;
             
         case ProjectileType::BFG:
             projectile->m_size = 0.5;          // Large projectile
             projectile->m_lifetime = 4.0;
             projectile->m_usePhysics = false;
+            projectile->m_textureId = m_plasmaTextureId;  // Use plasma texture for BFG too
             projectile->m_color = Color(0, 255, 0);  // Green color
             projectile->m_explosionRadius = 5.0;     // Massive explosion radius
             projectile->m_explosionDamage = damage;  // Full damage in explosion
             break;
+    }
+    
+    // If no texture is set, use default
+    if (projectile->m_textureId <= 0) {
+        if (type == ProjectileType::Plasma || type == ProjectileType::BFG) {
+            projectile->m_textureId = m_plasmaTextureId;
+        } else {
+            projectile->m_textureId = m_defaultBulletTexture;
+        }
     }
     
     m_activeProjectiles.push_back(projectile);
