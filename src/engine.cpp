@@ -888,25 +888,23 @@ bool Engine::loadAssets() {
         for (int y = 0; y < 64; y++) {
             for (int x = 0; x < 64; x++) {
                 int noise = (rand() % 30) - 15;
-                int baseGray = 100 + noise;
                 
-                if ((x + y) % 8 == 0 || (x - y) % 8 == 0) {
-                    baseGray = 60;
-                }
+                bool isRust = (rand() % 3 == 0);
+                if ((x + y) % 8 == 0) isRust = true;
                 
-                if (rand() % 10 == 0) {
-                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format, 
-                        120 + rand() % 40, 20 + rand() % 20, 20 + rand() % 20);
+                if (isRust) {
+                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format,
+                        139 + noise, 69 + noise, 19 + noise);
                 } else {
-                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format, 
-                        baseGray, baseGray, baseGray);
+                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format,
+                        160 + noise, 160 + noise, 160 + noise);
                 }
             }
         }
         SDL_UnlockSurface(bloodyWallSurface);
         m_wallTexture = m_textureManager->createTextureFromSurface(bloodyWallSurface);
         SDL_FreeSurface(bloodyWallSurface);
-        std::cout << "Created bloody stone texture (ID " << m_wallTexture << ")" << std::endl;
+        std::cout << "Created metal texture (ID " << m_wallTexture << ")" << std::endl;
     }
     
     // Demonic runes texture
@@ -1703,295 +1701,60 @@ bool Engine::loadAssets() {
     const int impFrameCount = 4;
     m_impTextureFrames.resize(impFrameCount);
     
-    // Create a surface for the Imp sprite sheet
-    SDL_Surface* impSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 
-                                                  0xFF000000,  // Red mask
-                                                  0x00FF0000,  // Green mask
-                                                  0x0000FF00,  // Blue mask
-                                                  0x000000FF); // Alpha mask - important for transparency
+    // Load the Doomimpfront.webp file
+    SDL_Surface* impSurface = IMG_Load((assetsPath + "Doomimpfront.webp").c_str());
     if (impSurface) {
-        SDL_LockSurface(impSurface);
+        // Set black as the transparent color
+        SDL_SetColorKey(impSurface, SDL_TRUE, SDL_MapRGB(impSurface->format, 0, 0, 0));
         
-        // Create the Imp texture (brownish with spikes)
-        Uint32* pixels = static_cast<Uint32*>(impSurface->pixels);
-        for (int y = 0; y < impSurface->h; y++) {
-            for (int x = 0; x < impSurface->w; x++) {
-                // Default color (transparent)
-                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
+        // Get the dimensions of the webp
+        int frameWidth = impSurface->w / 4;  // Assuming 4 frames horizontally
+        int frameHeight = impSurface->h;
+        
+        // Create a temporary surface for each frame
+        SDL_Surface* frameSurface = SDL_CreateRGBSurface(0, frameWidth, frameHeight, 32,
+                                                        0xFF000000,  // Red mask
+                                                        0x00FF0000,  // Green mask
+                                                        0x0000FF00,  // Blue mask
+                                                        0x000000FF); // Alpha mask
+        
+        if (frameSurface) {
+            // Extract each frame from the sprite sheet
+            for (int i = 0; i < impFrameCount; i++) {
+                SDL_Rect srcRect = { i * frameWidth, 0, frameWidth, frameHeight };
+                SDL_Rect destRect = { 0, 0, frameWidth, frameHeight };
                 
-                // Calculate distance from center for smoother edges
-                double centerX = impSurface->w / 2.0;
-                double centerY = impSurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = impSurface->w / 2.0 - 2.0;
+                // Clear the frame surface
+                SDL_FillRect(frameSurface, NULL, SDL_MapRGBA(frameSurface->format, 0, 0, 0, 0));
                 
-                // Create a circular shape with smooth edges
-                if (distFromCenter <= radius) {
-                    // Inside the circle - brown body
-                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
+                // Copy the frame from the sprite sheet
+                SDL_BlitSurface(impSurface, &srcRect, frameSurface, &destRect);
+                
+                // Create a texture from the frame
+                SDL_Texture* frameTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, frameSurface);
+                if (frameTexture) {
+                    // Set blend mode to allow transparency
+                    SDL_SetTextureBlendMode(frameTexture, SDL_BLENDMODE_BLEND);
                     
-                    // Add eyes (yellow)
-                    if ((y >= 15 && y <= 20) && 
-                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
-                        double eyeCenterY = 17.5;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 3) {
-                            color = SDL_MapRGBA(impSurface->format, 255, 255, 0, 255);
-                        }
-                    }
+                    // Add texture to manager
+                    m_impTextureFrames[i] = m_textureManager->addTexture(frameTexture);
                     
-                    // Add mouth (dark red)
-                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 31.5;
-                        double mouthCenterY = 32.5;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(impSurface->format, 139, 0, 0, 255);
-                        }
-                    }
-                    
-                    // Add spikes on head (lighter brown)
-                    if (y < 15 && y > 5) {
-                        // Calculate spike pattern
-                        double spikeX = x % 8;
-                        if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
-                        }
-                    }
-                    
-                    // Add spikes on shoulders
-                    if ((y >= 20 && y <= 25) && 
-                        ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
-                    }
+                    std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
                 }
-                
-                pixels[y * impSurface->w + x] = color;
             }
+            
+            // Free the frame surface
+            SDL_FreeSurface(frameSurface);
         }
         
-        SDL_UnlockSurface(impSurface);
-        
-        // First frame - standing
-        m_impTextureFrames[0] = m_textureManager->createTextureFromSurface(impSurface);
-        
-        // Second frame - walking 1
-        SDL_LockSurface(impSurface);
-        pixels = static_cast<Uint32*>(impSurface->pixels);
-        for (int y = 0; y < impSurface->h; y++) {
-            for (int x = 0; x < impSurface->w; x++) {
-                // Default color (transparent)
-                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
-                
-                // Calculate distance from center for smoother edges
-                double centerX = impSurface->w / 2.0;
-                double centerY = impSurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = impSurface->w / 2.0 - 2.0;
-                
-                // Create a circular shape with smooth edges
-                if (distFromCenter <= radius) {
-                    // Inside the circle - brown body
-                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
-                    
-                    // Add eyes (yellow)
-                    if ((y >= 15 && y <= 20) && 
-                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
-                        double eyeCenterY = 17.5;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 3) {
-                            color = SDL_MapRGBA(impSurface->format, 255, 255, 0, 255);
-                        }
-                    }
-                    
-                    // Add mouth (dark red)
-                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 31.5;
-                        double mouthCenterY = 32.5;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(impSurface->format, 139, 0, 0, 255);
-                        }
-                    }
-                    
-                    // Add spikes on head (lighter brown)
-                    if (y < 15 && y > 5) {
-                        // Calculate spike pattern
-                        double spikeX = x % 8;
-                        if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
-                        }
-                    }
-                    
-                    // Add spikes on shoulders
-                    if ((y >= 20 && y <= 25) && 
-                        ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
-                    }
-                }
-                
-                pixels[y * impSurface->w + x] = color;
-            }
-        }
-        
-        SDL_UnlockSurface(impSurface);
-        m_impTextureFrames[1] = m_textureManager->createTextureFromSurface(impSurface);
-        
-        // Third frame - walking 2
-        SDL_LockSurface(impSurface);
-        pixels = static_cast<Uint32*>(impSurface->pixels);
-        for (int y = 0; y < impSurface->h; y++) {
-            for (int x = 0; x < impSurface->w; x++) {
-                // Default color (transparent)
-                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
-                
-                // Calculate distance from center for smoother edges
-                double centerX = impSurface->w / 2.0;
-                double centerY = impSurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = impSurface->w / 2.0 - 2.0;
-                
-                // Create a circular shape with smooth edges
-                if (distFromCenter <= radius) {
-                    // Inside the circle - brown body
-                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
-                    
-                    // Add eyes (yellow)
-                    if ((y >= 15 && y <= 20) && 
-                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
-                        double eyeCenterY = 17.5;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 3) {
-                            color = SDL_MapRGBA(impSurface->format, 255, 255, 0, 255);
-                        }
-                    }
-                    
-                    // Add mouth (dark red)
-                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 31.5;
-                        double mouthCenterY = 32.5;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(impSurface->format, 139, 0, 0, 255);
-                        }
-                    }
-                    
-                    // Add spikes on head (lighter brown)
-                    if (y < 15 && y > 5) {
-                        // Calculate spike pattern
-                        double spikeX = x % 8;
-                        if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
-                        }
-                    }
-                    
-                    // Add spikes on shoulders
-                    if ((y >= 20 && y <= 25) && 
-                        ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGBA(impSurface->format, 205, 133, 63, 255);
-                    }
-                }
-                
-                pixels[y * impSurface->w + x] = color;
-            }
-        }
-        
-        SDL_UnlockSurface(impSurface);
-        m_impTextureFrames[2] = m_textureManager->createTextureFromSurface(impSurface);
-        
-        // Fourth frame - attack
-        SDL_LockSurface(impSurface);
-        pixels = static_cast<Uint32*>(impSurface->pixels);
-        for (int y = 0; y < impSurface->h; y++) {
-            for (int x = 0; x < impSurface->w; x++) {
-                // Default color (transparent)
-                Uint32 color = SDL_MapRGBA(impSurface->format, 0, 0, 0, 0);
-                
-                // Calculate distance from center for smoother edges
-                double centerX = impSurface->w / 2.0;
-                double centerY = impSurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = impSurface->w / 2.0 - 2.0;
-                
-                // Create a circular shape with smooth edges
-                if (distFromCenter <= radius) {
-                    // Inside the circle - brown body
-                    color = SDL_MapRGBA(impSurface->format, 139, 69, 19, 255);
-                    
-                    // Add eyes (red for attack)
-                    if ((y >= 15 && y <= 20) && 
-                        ((x >= 20 && x <= 25) || (x >= 38 && x <= 43))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 20 && x <= 25) ? 22.5 : 40.5;
-                        double eyeCenterY = 17.5;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 3) {
-                            color = SDL_MapRGBA(impSurface->format, 255, 0, 0, 255);
-                        }
-                    }
-                    
-                    // Add mouth (bright red for attack)
-                    if ((y >= 30 && y <= 35) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 31.5;
-                        double mouthCenterY = 32.5;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(impSurface->format, 255, 0, 0, 255);
-                        }
-                    }
-                    
-                    // Add spikes on head (lighter brown)
-                    if (y < 15 && y > 5) {
-                        // Calculate spike pattern
-                        double spikeX = x % 8;
-                        if (spikeX < 4 && y < 15 - spikeX) {
-                            color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                        }
-                    }
-                    
-                    // Add spikes on shoulders
-                    if ((y >= 20 && y <= 25) && 
-                        ((x <= 15) || (x >= 49))) {
-                        color = SDL_MapRGB(impSurface->format, 205, 133, 63);
-                    }
-                }
-                
-                pixels[y * impSurface->w + x] = color;
-            }
-        }
-        
-        SDL_UnlockSurface(impSurface);
-        m_impTextureFrames[3] = m_textureManager->createTextureFromSurface(impSurface);
-        
-        // Free the surface
+        // Free the original surface
         SDL_FreeSurface(impSurface);
         
         // Set the main Imp texture to the first frame
         m_impTexture = m_impTextureFrames[0];
     } else {
-        // Fallback to a simple solid texture if surface creation fails
+        std::cerr << "Failed to load Doomimpfront.webp: " << IMG_GetError() << std::endl;
+        // Fallback to a simple solid texture if loading fails
         m_impTexture = m_textureManager->createSolidTexture(32, 64, Color(139, 69, 19));
         m_impTextureFrames.push_back(m_impTexture);
     }
@@ -2446,20 +2209,24 @@ void Engine::createSpritesFromMap() {
                     if (spriteId >= 0) {
                         Sprite* imp = m_spriteManager->getSprite(spriteId);
                         if (imp) {
-                            // Set up animation with frames at 2 frames per second
-                            imp->setAnimated(true, m_impTextureFrames.size(), 2.0);
+                            // Set up animation with frames at 4 frames per second (classic Doom animation speed)
+                            imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
                             
-                            // Set movement properties
-                            imp->setMoveSpeed(2.0); // Units per second - faster than regular enemies
-                            imp->setTurnSpeed(2.5); // Radians per second
+                            // Set movement properties based on original Doom
+                            imp->setMoveSpeed(1.8); // Units per second - slightly slower than before
+                            imp->setTurnSpeed(3.0); // Radians per second - faster turning
                             
                             // Set health - Imps are tougher
                             imp->setMaxHealth(150.0);
                             imp->setHealth(150.0);
                             
-                            // Randomly assign a movement type
-                            ImpMovementType movementType = static_cast<ImpMovementType>(rand() % 3);
-                            imp->setImpMovementType(movementType);
+                            // Set up movement behavior
+                            // We don't need to set movement type anymore as we've implemented
+                            // the full state machine in updateImpBehavior
+                            
+                            // Set initial movement duration for wandering
+                            double initialMoveDuration = 2.0 + (rand() % 30) / 10.0; // 2-5 seconds
+                            imp->setMoveDuration(initialMoveDuration);
                         }
                     }
                 } else {

@@ -122,6 +122,7 @@ public:
     void setActive(bool active) { m_isActive = active; }
     void setMoveSpeed(double speed) { m_moveSpeed = speed; }
     void setTurnSpeed(double speed) { m_turnSpeed = speed; }
+    void setMoveDuration(double duration) { m_moveDuration = duration; }
     void setHealth(double health) { 
         m_health = health; 
         // Update maxHealth if the new health is higher
