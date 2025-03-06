@@ -364,49 +364,23 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
         std::cout << "Creating test imp sprite..." << std::endl;
         int mapWidth = m_map.getWidth();
         int mapHeight = m_map.getHeight();
-        double x = mapWidth / 2.0;
-        double y = mapHeight / 2.0;
+        
+        // Use exact integer coordinates to let the function handle centering
+        double x = mapWidth / 2;
+        double y = mapHeight / 2;
         double size = 0.7;
         
-        // Verify the texture exists
-        const Texture* texture = m_textureManager->getTexture(m_impTexture);
-        if (!texture) {
-            std::cerr << "ERROR: Imp texture ID " << m_impTexture << " not found in TextureManager!" << std::endl;
-        } else {
-            std::cout << "Test imp texture verified. Dimensions: " 
-                      << texture->getWidth() << "x" << texture->getHeight() << std::endl;
-            
-            // Verify the SDL texture exists
-            SDL_Texture* sdlTexture = texture->getSDLTexture();
-            if (!sdlTexture) {
-                std::cerr << "ERROR: Test imp SDL texture is null!" << std::endl;
-            } else {
-                std::cout << "Test imp SDL texture is valid." << std::endl;
-            }
-        }
+        // Use our dedicated function to create the test imp
+        int spriteId = createImpEnemy(x, y, size);
         
-        int spriteId = m_spriteManager->addSprite(x, y, size, m_impTexture, SpriteType::ImpEnemy);
         if (spriteId >= 0) {
-            std::cout << "Created test imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+            std::cout << "Successfully created test imp sprite with ID " << spriteId << " at center of map" << std::endl;
             
-            // Set up the test imp
-            Sprite* imp = m_spriteManager->getSprite(spriteId);
-            if (imp) {
-                imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
-                imp->setMoveSpeed(1.8);
-                imp->setTurnSpeed(3.0);
-                imp->setMaxHealth(150.0);
-                imp->setHealth(150.0);
-                
-                // Explicitly set as active and visible
-                imp->setActive(true);
-                imp->setVisible(true);
-                
-                std::cout << "Test imp sprite configured successfully" << std::endl;
-                std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
+            // Verify the sprite manager singleton one more time
+            if (m_spriteManager != SpriteManager::getInstance()) {
+                std::cerr << "WARNING: SpriteManager singleton mismatch in test imp creation!" << std::endl;
+                std::cout << "m_spriteManager = " << m_spriteManager << ", singleton = " << SpriteManager::getInstance() << std::endl;
             }
-        } else {
-            std::cerr << "ERROR: Failed to create test imp sprite!" << std::endl;
         }
     }
     
@@ -719,10 +693,6 @@ void Engine::update() {
                     
                     std::cout << "Test imp sprite configured successfully" << std::endl;
                     std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
-                    
-                    // Verify the sprite manager singleton
-                    std::cout << "Engine update: m_spriteManager = " << m_spriteManager 
-                              << ", singleton = " << SpriteManager::getInstance() << std::endl;
                 }
             }
         }
@@ -2543,90 +2513,32 @@ void Engine::createSpritesFromMap() {
             if (cellType == CellType::Enemy) {
                 enemyCellCount++;
                 
-                // Randomly decide if this should be a regular enemy or an Imp (1/2 chance for Imp - increased from 1/3)
+                // Randomly decide if this should be a regular enemy or an Imp (1/2 chance for Imp)
                 bool createImp = (rand() % 2 == 0);
                 
-                if (createImp && !m_impTextureFrames.empty() && m_impTexture >= 0) {
-                    // Create an Imp enemy sprite
-                    double size = 1.0; // Increase size to make imps more visible
-                    int textureId = m_impTexture; // Use the Imp texture
+                // Check for a special map marker indicating an IMP enemy
+                if (createImp) {
+                    // Create an Imp enemy sprite - ONLY create imp when explicitly chosen
+                    double size = 0.7; // Standard imp size
                     
-                    // Verify the texture exists before creating the sprite
-                    const Texture* texture = m_textureManager->getTexture(textureId);
-                    if (!texture) {
-                        std::cerr << "ERROR: Imp texture ID " << textureId << " not found in TextureManager!" << std::endl;
-                    } else {
-                        std::cout << "Imp texture verified before sprite creation. Dimensions: " 
-                                  << texture->getWidth() << "x" << texture->getHeight() << std::endl;
-                        
-                        // Verify the SDL texture exists
-                        SDL_Texture* sdlTexture = texture->getSDLTexture();
-                        if (!sdlTexture) {
-                            std::cerr << "ERROR: Imp SDL texture is null before sprite creation!" << std::endl;
-                        } else {
-                            // Check the texture format and blend mode
-                            Uint32 format;
-                            SDL_QueryTexture(sdlTexture, &format, NULL, NULL, NULL);
-                            std::cout << "Imp texture format: " << SDL_GetPixelFormatName(format) << std::endl;
-                            
-                            // Ensure blend mode is set
-                            SDL_BlendMode blendMode;
-                            SDL_GetTextureBlendMode(sdlTexture, &blendMode);
-                            if (blendMode != SDL_BLENDMODE_BLEND) {
-                                std::cout << "Setting imp texture blend mode to BLEND" << std::endl;
-                                SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
-                            }
-                        }
-                    }
+                    // IMPORTANT: Don't use x+0.5, y+0.5 for position - this was causing issues
+                    // Use the exact center of the cell for proper positioning
+                    int spriteId = createImpEnemy(x, y, size);
                     
-                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
-                    
-                    // Debug: Check sprite creation
-                    if (spriteId < 0) {
-                        std::cerr << "ERROR: Failed to create Imp sprite at position (" << x << ", " << y << ")" << std::endl;
-                    } else {
+                    if (spriteId >= 0) {
                         impCount++;
                         std::cout << "DEBUG: Created Imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
                     }
-                    
-                    // Set up animation for the Imp
-                    if (spriteId >= 0) {
-                        Sprite* imp = m_spriteManager->getSprite(spriteId);
-                        if (imp) {
-                            // Set up animation with frames at 4 frames per second (classic Doom animation speed)
-                            imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
-                            
-                            // Set movement properties
-                            imp->setMoveSpeed(1.8);
-                            imp->setTurnSpeed(3.0);
-                            
-                            // Set health
-                            imp->setMaxHealth(150.0);
-                            imp->setHealth(150.0);
-                            
-                            // Set initial movement duration
-                            double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
-                            imp->setMoveDuration(initialMoveDuration);
-                        } else {
-                            std::cerr << "ERROR: Failed to get Imp sprite with ID " << spriteId << std::endl;
-                        }
-                    }
                 } else {
-                    // Create a regular enemy sprite
+                    // Create a regular enemy sprite with the original code
                     double size = 0.6; // Reduced from 0.8 to make enemies smaller
                     
                     // Ensure enemy texture ID is valid or create a default one
                     int textureId = -1;
                     
-                    // First check if imp texture is available and use that instead of generic enemy texture
-                    if (m_impTexture >= 0 && m_textureManager->getTexture(m_impTexture)) {
-                        textureId = m_impTexture;
-                        std::cout << "Using Imp texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
-                    }
-                    // Fall back to regular enemy texture if imp texture is not available
-                    else if (m_enemyTexture >= 0 && m_textureManager->getTexture(m_enemyTexture)) {
+                    // First verify if enemy texture exists and is valid
+                    if (m_enemyTexture >= 0 && m_textureManager->getTexture(m_enemyTexture)) {
                         textureId = m_enemyTexture;
-                        std::cout << "Using regular enemy texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
                     } else {
                         // Create a fallback texture if necessary
                         std::cerr << "WARNING: Invalid enemy texture ID: " << m_enemyTexture << ", creating fallback" << std::endl;
@@ -2647,62 +2559,32 @@ void Engine::createSpritesFromMap() {
                         continue; // Skip this enemy
                     }
                     
-                    // Use SpriteType::ImpEnemy for enemies using the imp texture
-                    SpriteType spriteType = (textureId == m_impTexture) ? SpriteType::ImpEnemy : SpriteType::Enemy;
-                    
-                    std::cout << "Using texture ID: " << textureId << " for " 
-                              << (spriteType == SpriteType::ImpEnemy ? "ImpEnemy" : "Enemy") 
-                              << " at position (" << x << ", " << y << ")" << std::endl;
-                    
-                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, spriteType);
+                    // Use exact x,y position instead of x+0.5, y+0.5
+                    int spriteId = m_spriteManager->addSprite(x, y, size, textureId, SpriteType::Enemy);
                     
                     // Debug: Check sprite creation
                     if (spriteId < 0) {
-                        std::cerr << "ERROR: Failed to create sprite at position (" << x << ", " << y << ")" << std::endl;
+                        std::cerr << "ERROR: Failed to create Enemy sprite at position (" << x << ", " << y << ")" << std::endl;
                     } else {
                         regularEnemyCount++;
-                        std::cout << "DEBUG: Created " << (spriteType == SpriteType::ImpEnemy ? "ImpEnemy" : "Enemy") 
-                                  << " sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                        std::cout << "DEBUG: Created Enemy sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
                     }
                     
-                    // Set up animation and properties based on sprite type
-                    if (spriteId >= 0) {
-                        Sprite* sprite = m_spriteManager->getSprite(spriteId);
-                        if (sprite) {
-                            if (spriteType == SpriteType::ImpEnemy) {
-                                // Set up imp-specific properties
-                                if (!m_impTextureFrames.empty()) {
-                                    std::cout << "Setting up imp animation frames" << std::endl;
-                                    sprite->setAnimated(true, m_impTextureFrames.size(), 4.0); // Use faster imp animation speed
-                                }
-                                
-                                // Set imp movement properties (faster and more aggressive)
-                                sprite->setMoveSpeed(1.8); 
-                                sprite->setTurnSpeed(3.0);
-                                
-                                // Imps have more health
-                                sprite->setMaxHealth(150.0);
-                                sprite->setHealth(150.0);
-                                
-                                // Set initial movement duration
-                                double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
-                                sprite->setMoveDuration(initialMoveDuration);
-                            } else {
-                                // Regular enemy setup
-                                if (!m_enemyTextureFrames.empty()) {
-                                    std::cout << "Setting up regular enemy animation frames" << std::endl;
-                                    sprite->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
-                                }
-                                
-                                // Set regular enemy movement properties
-                                sprite->setMoveSpeed(1.5); 
-                                sprite->setTurnSpeed(2.0);
-                                
-                                // Regular enemies have less health
-                                sprite->setHealth(100.0);
-                            }
+                    // Set up animation for the enemy
+                    if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
+                        Sprite* enemy = m_spriteManager->getSprite(spriteId);
+                        if (enemy) {
+                            // Set up animation with regular enemy frames
+                            enemy->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
+                            
+                            // Set movement properties
+                            enemy->setMoveSpeed(1.5); // Units per second
+                            enemy->setTurnSpeed(2.0); // Radians per second
+                            
+                            // Set health
+                            enemy->setHealth(100.0);
                         } else {
-                            std::cerr << "ERROR: Failed to get sprite with ID " << spriteId << std::endl;
+                            std::cerr << "ERROR: Failed to get Enemy sprite with ID " << spriteId << std::endl;
                         }
                     }
                 }
@@ -3528,4 +3410,92 @@ void Engine::handlePausedInput() {
     prevUpDown = upDown;
     prevDownDown = downDown;
     prevEnterDown = enterDown;
+}
+
+void Engine::switchWeapon() {
+    // Implement weapon switching logic here
+}
+
+int Engine::createImpEnemy(double x, double y, double size) {
+    if (m_impTexture < 0 || !m_spriteManager || !m_textureManager) {
+        std::cerr << "ERROR: Cannot create imp - missing prerequisites (texture or managers)" << std::endl;
+        return -1;
+    }
+    
+    // Debug output
+    std::cout << "Creating imp enemy at position (" << x << ", " << y << ")" << std::endl;
+    
+    // Verify the texture exists
+    const Texture* texture = m_textureManager->getTexture(m_impTexture);
+    if (!texture) {
+        std::cerr << "ERROR: Imp texture ID " << m_impTexture << " not found in TextureManager!" << std::endl;
+        return -1;
+    }
+    
+    std::cout << "Imp texture verified. Dimensions: " 
+              << texture->getWidth() << "x" << texture->getHeight() << std::endl;
+    
+    // Verify the SDL texture exists
+    SDL_Texture* sdlTexture = texture->getSDLTexture();
+    if (!sdlTexture) {
+        std::cerr << "ERROR: Imp SDL texture is null!" << std::endl;
+        return -1;
+    }
+    
+    std::cout << "Imp SDL texture is valid." << std::endl;
+    
+    // Adjust position to center of cell if needed
+    double adjustedX = x;
+    double adjustedY = y;
+    
+    // If x and y are integers (cell coordinates), add 0.5 to center in cell
+    if (adjustedX == static_cast<int>(adjustedX) && 
+        adjustedY == static_cast<int>(adjustedY)) {
+        adjustedX += 0.5;
+        adjustedY += 0.5;
+    }
+    
+    std::cout << "Adjusted position for imp: (" << adjustedX << ", " << adjustedY << ")" << std::endl;
+    
+    // Create the imp sprite with adjusted position
+    int spriteId = m_spriteManager->addSprite(adjustedX, adjustedY, size, m_impTexture, SpriteType::ImpEnemy);
+    if (spriteId < 0) {
+        std::cerr << "ERROR: Failed to create imp sprite at position (" << adjustedX << ", " << adjustedY << ")" << std::endl;
+        return -1;
+    }
+    
+    std::cout << "Created imp sprite with ID " << spriteId << " at position (" << adjustedX << ", " << adjustedY << ")" << std::endl;
+    
+    // Set up animation and behavior
+    Sprite* imp = m_spriteManager->getSprite(spriteId);
+    if (!imp) {
+        std::cerr << "ERROR: Failed to get imp sprite with ID " << spriteId << std::endl;
+        return spriteId; // Still return the ID even though setup failed
+    }
+    
+    // Set up animation
+    if (!m_impTextureFrames.empty()) {
+        imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
+    }
+    
+    // Set movement properties
+    imp->setMoveSpeed(1.8);
+    imp->setTurnSpeed(3.0);
+    
+    // Set health
+    imp->setMaxHealth(150.0);
+    imp->setHealth(150.0);
+    
+    // Set initial movement duration
+    double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
+    imp->setMoveDuration(initialMoveDuration);
+    
+    // Explicitly set as active and visible
+    imp->setActive(true);
+    imp->setVisible(true);
+    
+    std::cout << "Set up animation and behavior for imp sprite ID " << spriteId << std::endl;
+    std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
+    
+    return spriteId;
 }

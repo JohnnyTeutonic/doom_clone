@@ -94,6 +94,17 @@ public:
     // Notification system
     void showNotification(const std::string& text, double duration);
     
+    // Player actions
+    void fireWeapon();
+    void switchWeapon();
+    void useItem();
+    
+    // Enemy and sprite creation
+    int createImpEnemy(double x, double y, double size = 0.7);
+    
+    // Audio
+    void playSound(const std::string& soundName);
+    
 private:
     void processInput();
     void update();
@@ -104,6 +115,7 @@ private:
     void handlePlayingInput();
     void handleMainMenuInput();
     void handlePausedInput();
+    void handlePauseMenuInput();
     
     // Window and rendering
     SDL_Window* m_window;
