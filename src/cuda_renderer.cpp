@@ -590,7 +590,6 @@ void CudaRenderer::copyTexturesToDevice() {
             int textureId = m_wallTextureVariations[i];
             const Texture* texture = m_textureManager->getTexture(textureId);
             
-            std::cout << "CUDA: Loading wall texture " << i << " with ID " << textureId << std::endl;
             
             if (texture && texture->getWidth() > 0 && texture->getHeight() > 0) {
                 const uint32_t* pixels = texture->getPixelData();
@@ -601,7 +600,6 @@ void CudaRenderer::copyTexturesToDevice() {
                         pixels,
                         texSize
                     );
-                    std::cout << "CUDA: Loaded texture ID " << textureId << " as wall texture " << i << std::endl;
                 } else {
                     std::cout << "CUDA: Wall texture " << textureId << " has no pixel data" << std::endl;
                 }
@@ -616,20 +614,8 @@ void CudaRenderer::copyTexturesToDevice() {
                       << " out of 4), using fallbacks for remaining slots" << std::endl;
         }
         
-        // Verify if all wall textures were properly copied
-        for (int i = 0; i < 4; i++) {
-            if (i < m_wallTextureVariations.size()) {
-                std::cout << "CUDA: Wall texture " << i << " is using texture ID " 
-                          << m_wallTextureVariations[i] << std::endl;
-            } else {
-                std::cout << "CUDA: Wall texture " << i << " is using fallback pattern" << std::endl;
-            }
-        }
-        
-        // Ensure all wall texture slots have usable textures.
         // Check if the first texture was loaded properly (slot 0)
         if (m_wallTextureVariations.size() > 0) {
-            std::cout << "CUDA: Making all wall textures consistent..." << std::endl;
             
             // Get the pixel data from the first texture slot
             uint32_t* firstTextureData = wallTextureData;
@@ -642,7 +628,6 @@ void CudaRenderer::copyTexturesToDevice() {
                     firstTextureData,
                     texSize
                 );
-                std::cout << "CUDA: Copied texture 0 to slot " << i << " for consistency" << std::endl;
             }
         }
         
@@ -859,7 +844,6 @@ void CudaRenderer::render(const Map& map, const Player& player) {
 void CudaRenderer::renderSprites(const Map& map, const Player& player) {
     // Get visible sectors
     const std::vector<int>& visibleSectors = map.getVisibleSectors();
-    std::cout << "CUDA: Map has " << visibleSectors.size() << " visible sectors" << std::endl;
     
     // Always use the singleton instance for consistency
     SpriteManager* spriteManager = SpriteManager::getInstance();
@@ -876,24 +860,10 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
     
     // Use getActiveSprites() to get only active and visible sprites
     const std::vector<Sprite*> sprites = spriteManager->getActiveSprites();
-    std::cout << "CUDA: Found " << sprites.size() << " active sprites" << std::endl;
     
     // Debug: Also check all sprites
     const std::vector<Sprite*>& allSprites = spriteManager->getSprites();
-    std::cout << "CUDA: Total sprites in manager: " << allSprites.size() << std::endl;
-    
-    // Debug: Check each sprite's active and visible state
-    for (size_t i = 0; i < allSprites.size(); i++) {
-        Sprite* sprite = allSprites[i];
-        if (sprite) {
-            std::cout << "CUDA: Sprite " << i << " - Type: " << static_cast<int>(sprite->getType()) 
-                      << ", Active: " << sprite->isActive() << ", Visible: " << sprite->isVisible() 
-                      << ", Position: (" << sprite->getX() << ", " << sprite->getY() << ")" << std::endl;
-        } else {
-            std::cout << "CUDA: Sprite " << i << " is null" << std::endl;
-        }
-    }
-    
+        
     // Count sprites by type for debugging
     int impCount = 0;
     int enemyCount = 0;

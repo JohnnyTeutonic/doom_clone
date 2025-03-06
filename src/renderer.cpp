@@ -606,39 +606,29 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
         double transformX = invDet * (dir.y * spritePos.x - dir.x * spritePos.y);
         double transformY = invDet * (-plane.y * spritePos.x + plane.x * spritePos.y);
         
-        // Skip sprites behind the camera
-        if (transformY <= 0.1) {
+        // Skip if behind player or too far
+        if (transformY <= 0.1 || transformY > 20.0) {
+            std::cout << "  Skipping sprite at position (" << sprite->getPosition().x << ", " << sprite->getPosition().y << ")" << std::endl;
             continue;
         }
         
         // Calculate screen position
-        int screenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
+        int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1.0 + transformX / transformY));
         
-        // Calculate sprite height and width on screen
-        int spriteHeight = abs(static_cast<int>(m_screenHeight / transformY));
-        int spriteWidth = spriteHeight;  // Assuming square sprites
-        
-        // Apply vertical offset
-        int verticalOffsetPixels = static_cast<int>(totalVerticalOffset * m_screenHeight / 2);
+        // Calculate sprite size on screen
+        int spriteSize = static_cast<int>(m_screenHeight / transformY);
+        spriteSize = std::min(std::max(spriteSize, 4), 20);  // Clamp size between 4 and 20 pixels
         
         // Calculate drawing boundaries
-        int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffsetPixels;
-        if (drawStartY < 0) drawStartY = 0;
-        int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffsetPixels;
-        if (drawEndY >= m_screenHeight) drawEndY = m_screenHeight - 1;
+        int drawStartX = spriteScreenX - spriteSize / 2;
+        int drawEndX = spriteScreenX + spriteSize / 2;
+        int drawStartY = m_screenHeight / 2 - spriteSize / 2;
+        int drawEndY = m_screenHeight / 2 + spriteSize / 2;
         
-        int drawStartX = -spriteWidth / 2 + screenX;
-        if (drawStartX < 0) drawStartX = 0;
-        int drawEndX = spriteWidth / 2 + screenX;
-        if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
-        
-        // Skip if the sprite is completely off-screen
-        if (drawStartX >= m_screenWidth || drawEndX < 0 || drawStartY >= m_screenHeight || drawEndY < 0) {
-            continue;
-        }
-        
-        // Get sprite texture
+        // Get the texture for this sprite
         int textureId = sprite->getTextureId();
+        std::cout << "  Sprite texture ID: " << textureId << std::endl;
+        
         const Texture* texture = m_textureManager->getTexture(textureId);
         if (!texture) {
             std::cerr << "ERROR: Invalid texture ID " << textureId << " for sprite!" << std::endl;
@@ -1142,14 +1132,30 @@ void Renderer::renderProjectiles(const Player& player) {
     
     // Get active projectiles
     std::vector<Projectile*> projectiles = m_projectileManager->getActiveProjectiles();
-        
+    
+    // DEBUG: Output total active projectiles
+    std::cout << "Rendering projectiles: " << projectiles.size() << " active projectiles" << std::endl;
+    
     // Render each projectile
     for (const Projectile* projectile : projectiles) {
         if (!projectile) {
             std::cerr << "Null projectile in active projectiles list!" << std::endl;
             continue;
         }
-                
+        
+        // DEBUG: Output projectile type
+        std::string typeStr = "Unknown";
+        switch (projectile->getType()) {
+            case ProjectileType::Bullet: typeStr = "Bullet"; break;
+            case ProjectileType::Rocket: typeStr = "Rocket"; break;
+            case ProjectileType::Plasma: typeStr = "Plasma"; break;
+            case ProjectileType::Grenade: typeStr = "Grenade"; break;
+            case ProjectileType::BFG: typeStr = "BFG"; break;
+        }
+        std::cout << "Processing " << typeStr << " projectile (ID: " << projectile->getId() 
+                  << ") at position (" << projectile->getPosition().x << ", " 
+                  << projectile->getPosition().y << ")" << std::endl;
+        
         // Calculate projectile position relative to player
         double projX = projectile->getPosition().x - pos.x;
         double projY = projectile->getPosition().y - pos.y;
@@ -1160,12 +1166,35 @@ void Renderer::renderProjectiles(const Player& player) {
         double transformY = invDet * (-plane.y * projX + plane.x * projY);
         
         // Skip if behind player or too far
-        if (transformY <= 0.1) {
+        if (transformY <= 0.1 || transformY > 20.0) {
+            std::cout << "  Skipping " << typeStr << " - behind player or too far (transformY: " << transformY << ")" << std::endl;
             continue;
         }
         
         // Calculate screen position
         int screenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
+        
+        // Check if projectile is occluded by walls using the zBuffer
+        bool isVisible = false;
+        // Check if the projectile's center is visible
+        if (screenX >= 0 && screenX < m_screenWidth) {
+            // If the projectile's distance is less than the wall distance at this x-coordinate, it's visible
+            if (transformY < m_zBuffer[screenX]) {
+                isVisible = true;
+                std::cout << "  " << typeStr << " is visible (distance: " << transformY 
+                          << ", zBuffer: " << m_zBuffer[screenX] << ")" << std::endl;
+            } else {
+                std::cout << "  " << typeStr << " is occluded by wall (distance: " << transformY 
+                          << ", zBuffer: " << m_zBuffer[screenX] << ")" << std::endl;
+            }
+        } else {
+            std::cout << "  " << typeStr << " is off-screen (screenX: " << screenX << ")" << std::endl;
+        }
+        
+        // Skip if not visible
+        if (!isVisible) {
+            continue;
+        }
         
         // Calculate bullet size based on distance
         int size = static_cast<int>(m_screenHeight / transformY * 0.05); // Make bullets smaller but still visible
@@ -1190,6 +1219,7 @@ void Renderer::renderProjectiles(const Player& player) {
                 break;
             case ProjectileType::Rocket:
                 textureId = m_projectileManager->getRocketTextureId();
+                std::cout << "  Using rocket texture from manager: " << textureId << std::endl;
                 break;
             case ProjectileType::Plasma:
                 textureId = m_projectileManager->getPlasmaTextureId();
@@ -1238,8 +1268,8 @@ void Renderer::renderProjectiles(const Player& player) {
                 
                 // Draw the rotated texture
                 SDL_RenderCopyEx(
-                    m_renderer,
-                    sdlTexture,
+                    m_renderer,               // Renderer
+                    sdlTexture,               // Texture
                     NULL,                    // Use the entire source texture
                     &destRect,               // Destination on screen
                     angle,                   // Rotation angle in degrees
@@ -1247,14 +1277,68 @@ void Renderer::renderProjectiles(const Player& player) {
                     SDL_FLIP_NONE            // No flipping
                 );
                 
+                // Add a bright outline for better visibility (debug)
+                SDL_SetRenderDrawColor(m_renderer, 255, 0, 0, 255); // Bright red outline
+                SDL_RenderDrawRect(m_renderer, &destRect);
+                
+                // Special handling for rocket projectiles
+                if (projectile->getType() == ProjectileType::Rocket) {
+                    // Draw a larger, more noticeable outline for rockets
+                    SDL_Rect rocketOutline = { 
+                        destRect.x - 2, 
+                        destRect.y - 2, 
+                        destRect.w + 4, 
+                        destRect.h + 4 
+                    };
+                    SDL_SetRenderDrawColor(m_renderer, 255, 165, 0, 255); // Orange outline
+                    SDL_RenderDrawRect(m_renderer, &rocketOutline);
+                    
+                    // Add a second outline
+                    SDL_Rect rocketOutline2 = { 
+                        destRect.x - 4, 
+                        destRect.y - 4, 
+                        destRect.w + 8, 
+                        destRect.h + 8 
+                    };
+                    SDL_SetRenderDrawColor(m_renderer, 255, 215, 0, 255); // Gold outline
+                    SDL_RenderDrawRect(m_renderer, &rocketOutline2);
+                    
+                    // Draw a trail behind the rocket
+                    int trailLength = 4;
+                    for (int i = 1; i <= trailLength; i++) {
+                        double trailScale = 0.8 - (i * 0.15); // Gradually smaller
+                        SDL_Rect trailRect = {
+                            destRect.x - static_cast<int>(projectile->getDirection().x * i * 10),
+                            destRect.y - static_cast<int>(projectile->getDirection().y * i * 10),
+                            static_cast<int>(destRect.w * trailScale),
+                            static_cast<int>(destRect.h * trailScale)
+                        };
+                        // Gradient from orange to red to fade
+                        int alpha = 255 - (i * 50);
+                        if (alpha < 0) alpha = 0;
+                        SDL_SetRenderDrawColor(m_renderer, 255, 100 - (i * 20), 0, alpha);
+                        SDL_RenderDrawRect(m_renderer, &trailRect);
+                    }
+                }
+                
+                // Draw a second outline for extra visibility
+                SDL_Rect outerRect = { 
+                    destRect.x - 1, 
+                    destRect.y - 1, 
+                    destRect.w + 2, 
+                    destRect.h + 2 
+                };
+                SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 255); // Yellow outer outline
+                SDL_RenderDrawRect(m_renderer, &outerRect);
+                
                 // Add a small glow effect
                 if (m_performanceLevel != PerformanceLevel::Low) {
                     SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 64);
                     SDL_Rect glowRect = { 
-                        centerX - size / 2 - 2, 
-                        centerY - size / 2 - 2, 
-                        size + 4, 
-                        size + 4 
+                        destRect.x - 2, 
+                        destRect.y - 2, 
+                        destRect.w + 4, 
+                        destRect.h + 4 
                     };
                     SDL_RenderDrawRect(m_renderer, &glowRect);
                 }
@@ -1306,6 +1390,9 @@ void Renderer::renderProjectiles(const Player& player) {
                                     255,                         // Blue
                                     255                          // Alpha
                                 );
+                                break;
+                            default:
+                                color = Color(255, 255, 255, 255);
                                 break;
                         }
                         

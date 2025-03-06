@@ -12,10 +12,12 @@ Projectile::Projectile(int id, const Vec2& position, const Vec2& direction, doub
     , m_acceleration(0, 0)                 // Initialize acceleration
     , m_speed(speed)
     , m_damage(damage)
-    , m_lifetime(2.0)
+    , m_lifetime(0.0)
     , m_maxLifetime(2.0)
     , m_active(true)
     , m_hasCollided(false)
+    , m_collisionTime(0.0)
+    , m_collisionDebugOutput(true)
     , m_textureId(0)
     , m_type(ProjectileType::Bullet)
     , m_size(0.1)          // Default size
@@ -47,7 +49,26 @@ void Projectile::update(double deltaTime, const Map& map) {
     }
     
     // Don't move if collision already happened but keep visible
-    if (m_hasCollided) return;
+    if (m_hasCollided) {
+        // For rockets, create explosion after a short visibility period
+        if (m_type == ProjectileType::Rocket) {
+            // Debug output for rocket collision
+            if (m_collisionDebugOutput) {
+                std::cout << "Rocket ID " << m_id << " collided and waiting for explosion" << std::endl;
+                m_collisionDebugOutput = false; // Only output once
+            }
+            
+            // Allow a brief visibility time after collision before explosion
+            if (m_collisionTime > 0.2) { // 200ms visibility after collision
+                std::cout << "Rocket ID " << m_id << " creating explosion effect" << std::endl;
+                // Create explosion effect here if we had a reference to ProjectileManager
+                m_active = false; // Deactivate after brief visibility
+            } else {
+                m_collisionTime += deltaTime;
+            }
+        }
+        return;
+    }
     
     // Store original position
     Vec2 oldPos = m_position;
@@ -67,6 +88,8 @@ void Projectile::update(double deltaTime, const Map& map) {
             m_position = oldPos;
             m_speed = 0;
             m_hasCollided = true;
+            m_collisionDebugOutput = true;
+            std::cout << "Projectile ID " << m_id << " collided with map boundary" << std::endl;
             return;
         }
         
@@ -79,6 +102,9 @@ void Projectile::update(double deltaTime, const Map& map) {
             m_position = oldPos;
             m_speed = 0;
             m_hasCollided = true;
+            m_collisionDebugOutput = true;
+            std::cout << "Projectile ID " << m_id << " collided with wall at (" 
+                      << mapX << ", " << mapY << ")" << std::endl;
             return;
         }
     }
@@ -295,8 +321,9 @@ int ProjectileManager::createProjectile(const Vec2& position, const Vec2& direct
             break;
             
         case ProjectileType::Rocket:
-            projectile->m_size = 0.3;
-            projectile->m_lifetime = 5.0;
+            projectile->m_size = 0.8;  // Significantly increased size for better visibility
+            projectile->m_lifetime = 0.0;  // Start at 0 lifetime
+            projectile->m_maxLifetime = 10.0;  // Longer maximum lifetime
             projectile->m_usePhysics = true;   // Rockets use advanced physics
             projectile->m_explosionRadius = 2.0;
             projectile->m_explosionDamage = damage * 0.7;  // Explosion does 70% of direct hit damage

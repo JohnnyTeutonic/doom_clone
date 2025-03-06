@@ -656,7 +656,6 @@ bool Player::fire() {
         if (distToSprite > CLOSE_RANGE) continue;
         
         // Calculate dot product to check if sprite is in front of player
-        // This gives the cosine of the angle between the direction and toSprite
         double dotProduct = m_direction.x * toSprite.x + m_direction.y * toSprite.y;
         
         // Normalize by the length of toSprite to get the actual cosine
@@ -705,7 +704,6 @@ bool Player::fire() {
     bulletPos.x += m_direction.x * offsetDistance;
     bulletPos.y += m_direction.y * offsetDistance;
     
-    std::cout << "  Bullet start position: (" << bulletPos.x << ", " << bulletPos.y << ")" << std::endl;
     
     bool success = false;
     
@@ -841,17 +839,33 @@ bool Player::fire() {
         
         case WeaponType::RocketLauncher:
         {
-            // Single rocket with physics
-            int rocketId = m_projectileManager->createProjectile(
-                bulletPos,
-                m_direction,
-                ProjectileType::Rocket,
-                10.0,
-                m_weaponDamage
-            );
-            
-            success = (rocketId >= 0);
-            break;
+            if (m_projectileManager) {
+                // Create a rocket projectile
+                int rocketId = m_projectileManager->createProjectile(
+                    m_position + m_direction * 0.5, // Start position slightly in front of player
+                    m_direction,
+                    ProjectileType::Rocket,
+                    8.0,  // Reduced speed for better visibility before collision
+                    m_weaponDamage
+                );
+                
+                // Debug output for rocket creation
+                std::cout << "Created rocket projectile (ID: " << rocketId << ")" << std::endl;
+                std::cout << "  Position: (" << (m_position.x + m_direction.x * 0.5) << ", " 
+                          << (m_position.y + m_direction.y * 0.5) << ")" << std::endl;
+                std::cout << "  Direction: (" << m_direction.x << ", " << m_direction.y << ")" << std::endl;
+                std::cout << "  Speed: 8.0" << std::endl;
+                std::cout << "  Damage: " << m_weaponDamage << std::endl;
+                
+                if (rocketId >= 0) {
+                    std::cout << "Rocket projectile created successfully!" << std::endl;
+                    return true;
+                } else {
+                    std::cerr << "ERROR: Failed to create rocket projectile!" << std::endl;
+                    return false;
+                }
+            }
+            return false;
         }
         
         case WeaponType::PlasmaGun:

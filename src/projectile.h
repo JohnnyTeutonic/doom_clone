@@ -63,6 +63,8 @@ private:
     double m_maxLifetime;
     bool m_active;
     bool m_hasCollided;
+    double m_collisionTime;     // Time since collision
+    bool m_collisionDebugOutput; // Flag to control debug output
     int m_textureId;
     ProjectileType m_type;
     

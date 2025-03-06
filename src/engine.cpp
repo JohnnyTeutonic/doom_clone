@@ -694,8 +694,6 @@ void Engine::update() {
                     imp->setActive(true);
                     imp->setVisible(true);
                     
-                    std::cout << "Test imp sprite configured successfully" << std::endl;
-                    std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
                 }
             }
         }
