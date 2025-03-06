@@ -3355,12 +3355,7 @@ void Engine::handleMainMenuInput() {
     bool upDown = keyboardState[SDL_SCANCODE_UP] != 0;
     bool downDown = keyboardState[SDL_SCANCODE_DOWN] != 0;
     bool enterDown = keyboardState[SDL_SCANCODE_RETURN] != 0;
-    
-    // Debug output
-    std::cout << "Menu input - UP: " << upDown << " (prev: " << prevUpDown << ")"
-              << ", DOWN: " << downDown << " (prev: " << prevDownDown << ")"
-              << ", ENTER: " << enterDown << " (prev: " << prevEnterDown << ")" << std::endl;
-    
+        
     // Check for menu navigation - UP key just pressed
     if (upDown && !prevUpDown) {
         m_menuSelection = (m_menuSelection - 1 + m_menuItems.size()) % m_menuItems.size();
