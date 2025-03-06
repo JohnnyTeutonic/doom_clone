@@ -338,6 +338,10 @@ extern "C" __global__ void raycastKernel(
     
     // Draw the wall
     for (int i = drawStart; i <= drawEnd; i++) {
+        // CRITICAL FIX: Determine if this is the very top row of wall pixels
+        // Special handling to avoid texture artifacts at wall edges
+        bool isTopRow = (i == drawStart);
+        
         // Calculate y coordinate on the texture
         // When the wall is clipped at the top of the screen (drawStart = 0),
         // we need to calculate texY differently to avoid texture distortion
@@ -353,6 +357,18 @@ extern "C" __global__ void raycastKernel(
         wallPercentage = min(1.0f, max(0.0f, wallPercentage));
         texY = static_cast<int>(wallPercentage * textureHeight);
         
+        // CRITICAL FIX: Detect top portion of wall and ensure it uses the proper texture coordinates
+        // This fixes the red banding issue at wall tops
+        bool isWallTop = (wallPercentage < 0.1f) || isTopRow; // Top 10% of wall or top row
+        bool isNearWallTop = (wallPercentage < 0.25f); // Transition zone
+        if (isWallTop) {
+            // Force the use of middle section of the texture for the top portion
+            // This avoids any potential issues with special texturing at wall boundaries
+            texY = max(8, texY);
+            // Use a consistent part of the texture for the very top
+            texY = max(16, min(32, texY));
+        }
+        
         // Ensure texture coordinates are within bounds
         texX = (texX < 0) ? 0 : (texX >= textureWidth) ? textureWidth - 1 : texX;
         texY = (texY < 0) ? 0 : (texY >= textureHeight) ? textureHeight - 1 : texY;
@@ -365,9 +381,13 @@ extern "C" __global__ void raycastKernel(
         uint8_t g = (color >> 8) & 0xFF;
         uint8_t b = color & 0xFF;
         
-        // CRITICAL FIX: Detect yellow banding (or any very bright yellows/golds) and replace with wall texture
-        // This detects cases where r and g are very high but b is low, typical of yellow colors
-        if (r > 200 && g > 200 && b < 100) {
+        // CRITICAL FIX: Detect red banding at wall tops and replace with proper wall texture
+        // This detects cases where r is very high and g,b are low, typical of red discoloration
+        // Or yellow banding where r,g are high but b is low
+        if ((r > 180 && g < 100 && b < 100) ||  // Red banding
+            (r > 200 && g > 180 && b < 100) ||  // Yellow banding
+            isWallTop ||                         // Force correction at wall tops
+            (isNearWallTop && r > g + 50)) {     // Color imbalance in transition zone
             // Create an authentic Doom-like concrete texture with variations
             // Based on STARTAN textures from original Doom
             
@@ -377,20 +397,22 @@ extern "C" __global__ void raycastKernel(
             b = 96;
             
             // Add variation based on position to create a concrete pattern
-            int pattern = (texX % 8) + (texY % 8);
+            bool edgeDetail = (texX % 16 < 2) || (texY % 16 < 2);
+            bool smallDetail = ((texX / 4) + (texY / 4)) % 2 == 0;
+            bool largePattern = ((texX / 16) + (texY / 16)) % 2 == 0;
             
             // Create subtle darker spots and lines
-            if ((texX % 16 < 2) || (texY % 16 < 2)) {
+            if (edgeDetail) {
                 // Darker lines/seams between concrete blocks
                 r = 110;
                 g = 90;
                 b = 77;
-            } else if (pattern % 7 == 0) {
+            } else if (smallDetail) {
                 // Random darker spots
                 r = 130;
                 g = 110;
                 b = 85;
-            } else if (pattern % 11 == 0) {
+            } else if (largePattern) {
                 // Random lighter spots
                 r = 160;
                 g = 140;

@@ -477,12 +477,25 @@ void CudaRenderer::copyTexturesToDevice() {
                                 bool smallDetail = ((x / 4) + (y / 4)) % 2 == 0;
                                 
                                 // Base brown color (authentic Doom STARTAN)
-                                r = 145; g = 102; b = 70;
+                                r = 145; g = 123; b = 96;
                                 
                                 // Apply pattern variations
-                                if (largePattern) { r -= 15; g -= 10; b -= 5; }
-                                if (edgeDetail) { r = 90; g = 70; b = 50; }
-                                if (smallDetail) { r += 10; g += 5; }
+                                if (edgeDetail) {
+                                    // Darker lines/seams between concrete blocks
+                                    r = 110; g = 90; b = 77;
+                                } else if (smallDetail) {
+                                    // Random darker spots
+                                    r = 130; g = 110; b = 85;
+                                } else if (largePattern) {
+                                    // Random lighter spots
+                                    r = 160; g = 140; b = 110;
+                                }
+                                
+                                // Add some noise based on the combination of position
+                                int noise = ((x * 7 + y * 13) % 8) - 4;
+                                r = std::min(255, std::max(0, static_cast<int>(r) + noise));
+                                g = std::min(255, std::max(0, static_cast<int>(g) + noise));
+                                b = std::min(255, std::max(0, static_cast<int>(b) + noise));
                             }
                             break;
                             
@@ -537,11 +550,13 @@ void CudaRenderer::copyTexturesToDevice() {
                             r = 120; g = 100; b = 80;
                     }
                     
-                    // Add subtle noise for texture feel
-                    int noise = ((x * 13 + y * 7) % 10) - 5;
-                    r = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(r) + noise)));
-                    g = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(g) + noise)));
-                    b = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(b) + noise)));
+                    // Only add noise to textures 1-3 (texture 0 already has its own noise pattern)
+                    if (i > 0) {
+                        int noise = ((x * 13 + y * 7) % 10) - 5;
+                        r = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(r) + noise)));
+                        g = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(g) + noise)));
+                        b = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(b) + noise)));
+                    }
                     
                     // Combine into final ARGB color
                     uint32_t color = (0xFF << 24) | (r << 16) | (g << 8) | b;
