@@ -30,28 +30,39 @@ bool readFileToBuffer(const std::string& filename, std::vector<uint8_t>& buffer)
     return true;
 }
 
-// Convert WebP frame to SDL_Surface using a completely manual approach
+// Convert WebP frame to SDL_Surface with simplified approach
 SDL_Surface* webpFrameToSurface(const uint8_t* data, size_t data_size) {
-    // First, decode the WebP to get the raw RGBA data
+    // First, decode the WebP to get the dimensions
     int width, height;
-    uint8_t* rgba = WebPDecodeRGBA(data, data_size, &width, &height);
-    if (!rgba) {
-        std::cerr << "Failed to decode WebP image" << std::endl;
+    if (!WebPGetInfo(data, data_size, &width, &height)) {
+        std::cerr << "Failed to get WebP dimensions" << std::endl;
         return nullptr;
     }
     
-    std::cout << "WebP decoded to dimensions: " << width << "x" << height << std::endl;
+    // Decode WebP directly to RGBA
+    uint8_t* rgba = WebPDecodeRGBA(data, data_size, &width, &height);
+    if (!rgba) {
+        std::cerr << "Failed to decode WebP to RGBA" << std::endl;
+        return nullptr;
+    }
     
-    // Create a new empty surface with the right format
+    std::cout << "WebP successfully decoded: " << width << "x" << height << " pixels" << std::endl;
+    
+    // Create SDL surface with the correct format
+    // Note: On little-endian systems, RGBA when viewed as 32-bit is ABGR
     SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 
-                                               0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+                                             0x000000FF,  // R mask
+                                             0x0000FF00,  // G mask
+                                             0x00FF0000,  // B mask
+                                             0xFF000000); // A mask
+    
     if (!surface) {
-        std::cerr << "Failed to create empty surface: " << SDL_GetError() << std::endl;
+        std::cerr << "Failed to create SDL surface: " << SDL_GetError() << std::endl;
         WebPFree(rgba);
         return nullptr;
     }
     
-    // Lock the surface for direct pixel manipulation
+    // Lock surface for pixel access
     if (SDL_LockSurface(surface) != 0) {
         std::cerr << "Failed to lock surface: " << SDL_GetError() << std::endl;
         SDL_FreeSurface(surface);
@@ -59,42 +70,43 @@ SDL_Surface* webpFrameToSurface(const uint8_t* data, size_t data_size) {
         return nullptr;
     }
     
-    // Copy the pixel data manually
-    Uint32* targetPixels = static_cast<Uint32*>(surface->pixels);
+    // Copy pixels manually, one by one to ensure correct format
+    uint8_t* srcPixels = rgba;
+    uint8_t* dstPixels = static_cast<uint8_t*>(surface->pixels);
+    
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            int index = (y * width + x) * 4; // RGBA uses 4 bytes per pixel
+            // Get source pixel components
+            uint8_t r = srcPixels[0];
+            uint8_t g = srcPixels[1];
+            uint8_t b = srcPixels[2];
+            uint8_t a = srcPixels[3];
             
-            Uint8 r = rgba[index];     // Red
-            Uint8 g = rgba[index + 1]; // Green
-            Uint8 b = rgba[index + 2]; // Blue
-            Uint8 a = rgba[index + 3]; // Alpha
+            // Calculate destination pixel position
+            int dstOffset = y * surface->pitch + x * 4;
             
-            // Create pixel in the format the surface expects
-            Uint32 pixel = SDL_MapRGBA(surface->format, r, g, b, a);
+            // Store in the destination surface's format
+            dstPixels[dstOffset + 0] = r;  // R
+            dstPixels[dstOffset + 1] = g;  // G
+            dstPixels[dstOffset + 2] = b;  // B
+            dstPixels[dstOffset + 3] = a;  // A
             
-            // Set the pixel in the target surface
-            targetPixels[y * (surface->pitch / 4) + x] = pixel;
+            // Move to next source pixel
+            srcPixels += 4;
         }
     }
     
-    // Unlock the surface
+    // Unlock surface
     SDL_UnlockSurface(surface);
     
-    // Free the WebP decoded data
+    // Free the WebP-decoded data
     WebPFree(rgba);
     
-    // Set surface blend mode to ensure transparency is handled correctly
+    // Set blend mode for transparency
     SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_BLEND);
     
-    // Log the final surface details
-    std::cout << "Created surface with dimensions " << surface->w << "x" << surface->h 
-              << " format: " << SDL_GetPixelFormatName(surface->format->format) 
-              << " Rmask: " << std::hex << surface->format->Rmask
-              << " Gmask: " << surface->format->Gmask
-              << " Bmask: " << surface->format->Bmask
-              << " Amask: " << surface->format->Amask << std::dec
-              << std::endl;
+    std::cout << "SDL surface created successfully with blend mode: " << 
+        (SDL_GetSurfaceBlendMode(surface, nullptr) == SDL_BLENDMODE_BLEND ? "BLEND" : "OTHER") << std::endl;
     
     return surface;
 }
@@ -200,18 +212,12 @@ std::vector<SDL_Surface*> loadAnimatedWebp(const std::string& filename) {
     WebPIterator iter;
     if (WebPDemuxGetFrame(demux, 1, &iter)) {
         do {
-            // Extract the frame
-            WebPData frame_data = iter.fragment;
-            
-            // Get the full frame with transparency
-            // The frame dimensions may be different from canvas dimensions
-            // and the position might be offset
+            // Get frame details
             std::cout << "Frame dimensions: " << iter.width << "x" << iter.height 
                       << " at position (" << iter.x_offset << ", " << iter.y_offset << ")" 
                       << ", duration: " << iter.duration << "ms" << std::endl;
             
-            // For animated WebP, we need special handling to handle frame dispose and blending methods
-            // See: https://developers.google.com/speed/webp/docs/api
+            // WebP animated frames can have different characteristics
             bool hasAlpha = iter.has_alpha != 0;
             bool shouldBlend = iter.blend_method == WEBP_MUX_BLEND;
             
@@ -220,12 +226,42 @@ std::vector<SDL_Surface*> loadAnimatedWebp(const std::string& filename) {
                       << ", dispose method: " << (iter.dispose_method == WEBP_MUX_DISPOSE_BACKGROUND ? "background" : "none") 
                       << std::endl;
             
-            // Convert the frame to an SDL surface
-            SDL_Surface* surface = webpFrameToSurface(frame_data.bytes, frame_data.size);
+            // Use larger dimensions for the imp (the original WebP has extra transparency around it)
+            int frameWidth = std::max(200, static_cast<int>(iter.width));
+            int frameHeight = std::max(300, static_cast<int>(iter.height));
+            
+            // Create a blank surface that's a bit larger than the frame
+            SDL_Surface* surface = SDL_CreateRGBSurface(0, frameWidth, frameHeight, 32, 
+                                                      0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
+            
             if (surface) {
-                frames.push_back(surface);
-                std::cout << "Added frame " << frames.size() << " with dimensions " 
-                          << surface->w << "x" << surface->h << std::endl;
+                // Fill with transparent black
+                SDL_FillRect(surface, NULL, SDL_MapRGBA(surface->format, 0, 0, 0, 0));
+                
+                // Get a temporary surface with the actual frame data
+                SDL_Surface* frameSurface = webpFrameToSurface(iter.fragment.bytes, iter.fragment.size);
+                if (frameSurface) {
+                    // Blit the frame onto our blank surface, centered
+                    SDL_Rect dstRect = {
+                        (frameWidth - frameSurface->w) / 2,   // Center horizontally
+                        (frameHeight - frameSurface->h) / 2,  // Center vertically
+                        frameSurface->w,
+                        frameSurface->h
+                    };
+                    
+                    SDL_BlitSurface(frameSurface, NULL, surface, &dstRect);
+                    SDL_FreeSurface(frameSurface);
+                    
+                    // Make sure the blend mode is set
+                    SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_BLEND);
+                    
+                    frames.push_back(surface);
+                    std::cout << "Added frame " << frames.size() << " with dimensions " 
+                              << surface->w << "x" << surface->h << std::endl;
+                } else {
+                    // Failed to create frame surface, free the main surface
+                    SDL_FreeSurface(surface);
+                }
             }
         } while (WebPDemuxNextFrame(&iter));
         

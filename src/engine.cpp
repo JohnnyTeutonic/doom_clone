@@ -202,18 +202,22 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     // Create sprite manager
     if (m_spriteManager) {
         delete m_spriteManager;
+        m_spriteManager = nullptr;
     }
-    m_spriteManager = new SpriteManager(m_textureManager);
-    std::cout << "Sprite manager created: " << m_spriteManager << std::endl;
     
-    // Verify the singleton instance
+    // Properly initialize the sprite manager as a singleton
+    m_spriteManager = SpriteManager::initInstance(m_textureManager);
+    if (!m_spriteManager) {
+        std::cerr << "Failed to initialize sprite manager singleton" << std::endl;
+        return false;
+    }
+    std::cout << "Sprite manager initialized: " << m_spriteManager << std::endl;
+    std::cout << "Sprite manager singleton: " << SpriteManager::getInstance() << std::endl;
+    
+    // Verify the singleton instance is the same
     if (SpriteManager::getInstance() != m_spriteManager) {
         std::cerr << "ERROR: SpriteManager singleton != m_spriteManager!" << std::endl;
-        std::cout << "Engine: m_spriteManager = " << m_spriteManager << ", singleton = " << SpriteManager::getInstance() << std::endl;
-        
-        // Force the singleton to match our instance
-        SpriteManager::setInstance(m_spriteManager);
-        std::cout << "Engine: Forced SpriteManager singleton to match m_spriteManager" << std::endl;
+        return false;
     }
     
     // Connect sprite manager to renderer
@@ -344,8 +348,12 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     };
     m_menuSelection = 0;
     
-    // Initialize the sprite manager
-    m_spriteManager = new SpriteManager(m_textureManager);
+    // Initialize the sprite manager using the singleton pattern
+    if (m_spriteManager) {
+        delete m_spriteManager;
+        m_spriteManager = nullptr;
+    }
+    m_spriteManager = SpriteManager::initInstance(m_textureManager);
     if (!m_spriteManager) {
         std::cerr << "Failed to create sprite manager" << std::endl;
         return false;
@@ -1772,13 +1780,24 @@ bool Engine::loadAssets() {
             for (size_t i = 0; i < frameSurfaces.size() && i < m_impTextureFrames.size(); i++) {
                 SDL_Surface* surface = frameSurfaces[i];
                 if (surface) {
-                    // Don't convert the surface - our webpFrameToSurface function already creates 
-                    // the optimal format. Just create the texture directly.
+                    // Apply quality-preserving settings
+                    // Ensure surface blend mode is set to BLEND
+                    SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_BLEND);
+                    
+                    // Create texture with high quality
                     SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, surface);
                     
                     if (texture) {
-                        // Set blend mode to allow transparency
+                        // Ensure texture blend mode is set to BLEND
                         SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+                        
+                        // Check texture details for debugging
+                        Uint32 format;
+                        int access, w, h;
+                        SDL_QueryTexture(texture, &format, &access, &w, &h);
+                        std::cout << "Created texture from WebP frame " << i << ": " 
+                                  << w << "x" << h << " format: " 
+                                  << SDL_GetPixelFormatName(format) << std::endl;
                         
                         // Add texture to manager
                         m_impTextureFrames[i] = m_textureManager->addTexture(texture);
@@ -2596,11 +2615,30 @@ void Engine::createSpritesFromMap() {
                     // Create a regular enemy sprite
                     double size = 0.6; // Reduced from 0.8 to make enemies smaller
                     
-                    // Use the enemy texture if available, otherwise use a fallback
-                    int textureId = m_enemyTexture;
-                    if (textureId < 0) {
-                        std::cerr << "WARNING: Enemy texture not loaded, using fallback" << std::endl;
+                    // Ensure enemy texture ID is valid or create a default one
+                    int textureId = -1;
+                    
+                    // First verify if enemy texture exists and is valid
+                    if (m_enemyTexture >= 0 && m_textureManager->getTexture(m_enemyTexture)) {
+                        textureId = m_enemyTexture;
+                    } else {
+                        // Create a fallback texture if necessary
+                        std::cerr << "WARNING: Invalid enemy texture ID: " << m_enemyTexture << ", creating fallback" << std::endl;
                         textureId = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
+                        
+                        // Store the new valid texture ID
+                        m_enemyTexture = textureId;
+                        
+                        // Add it to the animation frames if necessary
+                        if (m_enemyTextureFrames.empty()) {
+                            m_enemyTextureFrames.push_back(textureId);
+                        }
+                    }
+                    
+                    // Double-check texture ID
+                    if (textureId < 0 || !m_textureManager->getTexture(textureId)) {
+                        std::cerr << "ERROR: Failed to create valid enemy texture" << std::endl;
+                        continue; // Skip this enemy
                     }
                     
                     std::cout << "Using enemy texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
@@ -2639,11 +2677,25 @@ void Engine::createSpritesFromMap() {
                 // Create an item sprite
                 double size = 0.5; // Items are smaller
                 
-                // Use the item texture if available, otherwise use a fallback
-                int textureId = m_itemTexture;
-                if (textureId < 0) {
-                    std::cerr << "WARNING: Item texture not loaded, using fallback" << std::endl;
-                    textureId = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
+                // Ensure item texture ID is valid
+                int textureId = -1;
+                
+                // First verify if item texture exists and is valid
+                if (m_itemTexture >= 0 && m_textureManager->getTexture(m_itemTexture)) {
+                    textureId = m_itemTexture;
+                } else {
+                    // Create a fallback texture if necessary
+                    std::cerr << "WARNING: Invalid item texture ID: " << m_itemTexture << ", creating fallback" << std::endl;
+                    textureId = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0)); // Yellow
+                    
+                    // Store the new valid texture ID
+                    m_itemTexture = textureId;
+                }
+                
+                // Double-check texture ID
+                if (textureId < 0 || !m_textureManager->getTexture(textureId)) {
+                    std::cerr << "ERROR: Failed to create valid item texture" << std::endl;
+                    continue; // Skip this item
                 }
                 
                 int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Item);

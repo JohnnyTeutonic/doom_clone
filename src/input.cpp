@@ -36,10 +36,6 @@ void InputHandler::update() {
     bool downKeyDown = keyboardState[SDL_SCANCODE_DOWN] != 0;
     bool enterKeyDown = keyboardState[SDL_SCANCODE_RETURN] != 0;
     
-    std::cout << "Menu keys state - UP: " << upKeyDown 
-              << ", DOWN: " << downKeyDown 
-              << ", ENTER: " << enterKeyDown << std::endl;
-    
     // Track if we've updated key states for important keys like 1-3
     bool updated1 = false;
     bool updated2 = false;

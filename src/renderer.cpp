@@ -1171,9 +1171,6 @@ void Renderer::renderProjectiles(const Player& player) {
         int size = static_cast<int>(m_screenHeight / transformY * 0.05); // Make bullets smaller but still visible
         size = std::max(4, std::min(size, 20)); // Clamp size between 4 and 20 pixels
         
-        std::cout << "Bullet screen position: x=" << screenX << ", size=" << size 
-                 << ", distance=" << transformY << std::endl;
-        
         // Calculate drawing boundaries
         int drawStartY = -size / 2 + m_screenHeight / 2;
         if (drawStartY < 0) drawStartY = 0;

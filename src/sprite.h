@@ -176,13 +176,36 @@ private:
     // Singleton instance
     static SpriteManager* s_instance;
     
+    // Make constructor private for singleton pattern
+    explicit SpriteManager(const TextureManager* textureManager);
+    
 public:
-    SpriteManager(const TextureManager* textureManager);
+    // Delete copy constructor and assignment operator
+    SpriteManager(const SpriteManager&) = delete;
+    SpriteManager& operator=(const SpriteManager&) = delete;
+    
     ~SpriteManager();
     
-    // Singleton access
-    static SpriteManager* getInstance() { return s_instance; }
-    static void setInstance(SpriteManager* instance) { s_instance = instance; }
+    // Singleton access - returns the instance or creates it if needed
+    static SpriteManager* getInstance() { 
+        return s_instance; 
+    }
+    
+    // Properly initialize the singleton - should be called once at startup
+    static SpriteManager* initInstance(const TextureManager* textureManager) {
+        if (!s_instance) {
+            s_instance = new SpriteManager(textureManager);
+        }
+        return s_instance;
+    }
+    
+    // Set instance method - use with caution, only for special circumstances
+    static void setInstance(SpriteManager* instance) { 
+        if (s_instance && s_instance != instance) {
+            delete s_instance; // Clean up old instance to prevent memory leaks
+        }
+        s_instance = instance; 
+    }
     
     // Add a new sprite and return its ID
     int addSprite(double x, double y, double size, int textureId, SpriteType type);

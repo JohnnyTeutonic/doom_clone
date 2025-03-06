@@ -515,7 +515,6 @@ void CudaRenderer::copyTexturesToDevice() {
             if (floorPixels) {
                 memcpy(floorTextureData, floorPixels, texSize);
                 floorTextureLoaded = true;
-                std::cout << "Floor texture loaded from texture index 4" << std::endl;
             }
         }
         
@@ -531,7 +530,6 @@ void CudaRenderer::copyTexturesToDevice() {
             if (ceilingPixels) {
                 memcpy(ceilingTextureData, ceilingPixels, texSize);
                 ceilingTextureLoaded = true;
-                std::cout << "Ceiling texture loaded from texture index 5" << std::endl;
             }
         }
         
@@ -721,17 +719,13 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         return;
     }
     
-    // Debug: Compare with member pointer
+    // Make sure our member pointer is in sync with the singleton
     if (m_spriteManager != spriteManager) {
-        std::cerr << "WARNING: m_spriteManager != SpriteManager::getInstance() in CudaRenderer::renderSprites!" << std::endl;
-        std::cout << "CUDA: m_spriteManager = " << m_spriteManager << ", singleton = " << spriteManager << std::endl;
-        
-        // Update our member pointer to match the singleton
+        std::cout << "CUDA: Updating sprite manager pointer to match singleton" << std::endl;
         m_spriteManager = spriteManager;
-        std::cout << "CUDA: Updated m_spriteManager to match singleton" << std::endl;
     }
     
-    // Use getActiveSprites() instead of getSprites() to be consistent with the regular renderer
+    // Use getActiveSprites() to get only active and visible sprites
     const std::vector<Sprite*> sprites = spriteManager->getActiveSprites();
     std::cout << "CUDA: Found " << sprites.size() << " active sprites" << std::endl;
     
@@ -861,6 +855,17 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
             }
             
             continue;
+        }
+        
+        // Check texture properties
+        Uint32 format;
+        int access, w, h;
+        SDL_QueryTexture(texture, &format, &access, &w, &h);
+        
+        // For imp sprites, print detailed information
+        if (sprite->getType() == SpriteType::ImpEnemy) {
+            std::cout << "CUDA: Rendering imp texture: " << w << "x" << h 
+                      << " format: " << SDL_GetPixelFormatName(format) << std::endl;
         }
         
         // Ensure texture blend mode is set to BLEND for proper transparency
