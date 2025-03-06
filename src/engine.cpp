@@ -2437,10 +2437,10 @@ void Engine::createSpritesFromMap() {
     
     // Positions for forced imps
     std::vector<std::pair<int, int>> forcedImpPositions = {
-        {5, 5},                          // Near top-left
-        {mapWidth - 5, 5},               // Near top-right
-        {5, mapHeight - 5},              // Near bottom-left
-        {mapWidth - 5, mapHeight - 5}    // Near bottom-right
+        {2, 2},                          // Far top-left corner (northwest)
+        {mapWidth - 3, 2},               // Far top-right corner (northeast)
+        {2, mapHeight - 3},              // Far bottom-left corner (southwest)
+        {mapWidth - 3, mapHeight - 3}    // Far bottom-right corner (southeast)
     };
     
     // Create forced imps
@@ -2451,9 +2451,9 @@ void Engine::createSpritesFromMap() {
         // Make sure the position is valid and empty
         if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
             if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
-                // Create an Imp enemy sprite
+                    // Create an Imp enemy sprite
                 double size = 1.0; // Increase size to make imps more visible
-                int textureId = m_impTexture; // Use the Imp texture
+                    int textureId = m_impTexture; // Use the Imp texture
                 
                 // Verify the texture exists before creating the sprite
                 const Texture* texture = m_textureManager->getTexture(textureId);
@@ -2483,7 +2483,7 @@ void Engine::createSpritesFromMap() {
                     }
                 }
                 
-                int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
+                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
                 
                 // Debug: Check sprite creation
                 if (spriteId < 0) {
@@ -2492,22 +2492,22 @@ void Engine::createSpritesFromMap() {
                     impCount++;
                     std::cout << "DEBUG: Created Imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
                 }
-                
-                // Set up animation for the Imp
-                if (spriteId >= 0) {
-                    Sprite* imp = m_spriteManager->getSprite(spriteId);
-                    if (imp) {
+                    
+                    // Set up animation for the Imp
+                    if (spriteId >= 0) {
+                        Sprite* imp = m_spriteManager->getSprite(spriteId);
+                        if (imp) {
                         // Set up animation with frames at 4 frames per second (classic Doom animation speed)
                         imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
-                        
-                        // Set movement properties
+                            
+                            // Set movement properties
                         imp->setMoveSpeed(1.8);
                         imp->setTurnSpeed(3.0);
-                        
+                            
                         // Set health
-                        imp->setMaxHealth(150.0);
-                        imp->setHealth(150.0);
-                        
+                            imp->setMaxHealth(150.0);
+                            imp->setHealth(150.0);
+                            
                         // Set initial movement duration
                         double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
                         imp->setMoveDuration(initialMoveDuration);
@@ -3285,7 +3285,7 @@ void Engine::handleMainMenuInput() {
     bool upDown = keyboardState[SDL_SCANCODE_UP] != 0;
     bool downDown = keyboardState[SDL_SCANCODE_DOWN] != 0;
     bool enterDown = keyboardState[SDL_SCANCODE_RETURN] != 0;
-        
+    
     // Check for menu navigation - UP key just pressed
     if (upDown && !prevUpDown) {
         m_menuSelection = (m_menuSelection - 1 + m_menuItems.size()) % m_menuItems.size();
@@ -3533,7 +3533,7 @@ void Engine::addAdditionalImps() {
     };
     
     ImpPosition positions[] = {
-        {mapWidth / 4.0, mapHeight / 4.0, 0.7},               // Top-left quadrant
+        {mapWidth / 8.0, mapHeight / 8.0, 0.7},               // Far top-left corner (away from player at 20,20)
         {mapWidth * 3.0 / 4.0, mapHeight / 4.0, 0.7},         // Top-right quadrant
         {mapWidth / 2.0, mapHeight * 3.0 / 4.0, 0.8}          // Bottom-middle (slightly larger)
     };
