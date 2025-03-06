@@ -90,8 +90,14 @@ public:
     void setSfxVolume(int volume);
     bool isMusicPlaying() const;
     
+    // Enhanced MIDI quality in WSL
+    void enhanceMidiQuality();
+    
     // Debug function to test sound playback
     void testSoundEffects();
+    
+    // Test weapon firing
+    void testWeapons();
     
     // Notification system
     void showNotification(const std::string& text, double duration);
@@ -111,6 +117,7 @@ private:
     SDL_Window* m_window;
     SDL_Renderer* m_sdlRenderer;
     Renderer* m_renderer;
+    CudaRenderer* m_cudaRenderer;
     
     // Game objects
     Map m_map;
@@ -119,10 +126,16 @@ private:
     SpriteManager* m_spriteManager;
     ProjectileManager* m_projectileManager;
     InputHandler m_inputHandler;
+    AudioSystem* m_audioSystem;
     
     // Game state
     GameState m_gameState;
     bool m_running;
+    bool m_musicEnabled;  // Added flag for music enabled state
+    
+    // Menu state
+    std::vector<std::string> m_menuItems;
+    int m_menuSelection;
     
     // Timing
     int m_screenWidth;
@@ -140,6 +153,7 @@ private:
     bool m_fullscreen;
     int m_targetFPS;
     double m_frameTime;
+    bool m_useCuda;  // Added CUDA usage flag
     
     // Timing
     Timer m_frameTimer;
@@ -148,41 +162,33 @@ private:
     int m_wallTexture;
     int m_floorTexture;
     int m_ceilingTexture;
-    int m_enemyTexture;
-    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
-    int m_impTexture;                       // Texture for Imp enemy
-    std::vector<int> m_impTextureFrames;    // Animation frames for Imp
-    int m_weaponTexture;
     int m_bulletTexture;
+    int m_enemyTexture;
+    int m_impTexture;
+    int m_weaponTexture;
     int m_machineGunTexture;
     int m_rocketLauncherTexture;
     int m_currentWeaponTexture;
+    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
+    std::vector<int> m_impTextureFrames;    // Animation frames for Imp
     std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
     int m_plasmaTexture;  // New texture for plasma projectiles
     
     // Notification system
     std::string m_notificationText;
-    double m_notificationTimer;
     double m_notificationDuration;
-    
-    // Font handling
-    TTF_Font* m_font;
+    double m_notificationTimer;
     SDL_Texture* m_notificationTexture;
     SDL_Rect m_notificationRect;
     
-    // Audio system
-    AudioSystem* m_audioSystem;
-    bool m_musicEnabled;
-    
-    // Keyboard state tracking for WSL2 compatibility
-    std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
+    // Font handling
+    TTF_Font* m_font;
     
     // Mouse state tracking
     bool m_prevMouseLeftDown;
     
-    // CUDA renderer
-    CudaRenderer* m_cudaRenderer;
-    bool m_useCuda;
+    // Keyboard state tracking for WSL2 compatibility
+    std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
     
     // Private methods
     void setupMap();

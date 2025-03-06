@@ -21,6 +21,9 @@ enum class InputAction {
     Jump,
     Crouch,
     Menu,
+    MenuUp,       // Added for menu navigation
+    MenuDown,     // Added for menu navigation
+    MenuSelect,   // Added for menu selection
     Quit,
     ToggleFPS,
     ToggleMinimap,
@@ -38,7 +41,9 @@ enum class InputAction {
     Weapon5,
     Weapon6,
     Weapon7,
-    TestSound  // New action for testing sounds
+    EnhanceMidiQuality,  // New action to enhance MIDI quality
+    TestSound,  // New action for testing sounds
+    TestWeapons  // New action for testing weapons
 };
 
 // Input handler class to manage keyboard and mouse input

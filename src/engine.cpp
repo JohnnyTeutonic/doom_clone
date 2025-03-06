@@ -6,36 +6,31 @@
 Engine::Engine(int screenWidth, int screenHeight)
     : m_window(nullptr)
     , m_sdlRenderer(nullptr)
-    , m_running(false)
-    , m_screenWidth(screenWidth)
-    , m_screenHeight(screenHeight)
-    , m_targetFPS(60)
-    , m_deltaTime(0.0)
-    , m_fullscreen(false)
-    , m_gameState(GameState::MainMenu)
     , m_renderer(nullptr)
+    , m_cudaRenderer(nullptr)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_audioSystem(nullptr)  // Initialize to nullptr
-    , m_wallTexture(-1)
-    , m_floorTexture(-1)
-    , m_ceilingTexture(-1)
-    , m_bulletTexture(-1)
-    , m_enemyTexture(-1)
-    , m_weaponTexture(-1)
-    , m_machineGunTexture(-1)
-    , m_impTexture(-1)
-    , m_currentWeaponTexture(-1)
+    , m_audioSystem(nullptr)
+    , m_gameState(GameState::MainMenu)
+    , m_running(false)
+    , m_musicEnabled(true)
+    , m_screenWidth(screenWidth)
+    , m_screenHeight(screenHeight)
+    , m_lastFrameTime(0)
+    , m_deltaTime(0.0)
     , m_weaponRecoil(0.0)
     , m_flashIntensity(0.0)
-    , m_weaponRecoilRecovery(2.0)  // Initialize weapon recoil recovery rate
-    , m_flashDecay(5.0)  // Initialize flash decay rate
-    , m_notificationTimer(0.0)
+    , m_weaponRecoilRecovery(10.0)
+    , m_flashDecay(4.0)
+    , m_fullscreen(false)
+    , m_targetFPS(60)
+    , m_frameTime(1.0 / 60.0)
+    , m_notificationText("")
     , m_notificationDuration(0.0)
+    , m_notificationTimer(0.0)
     , m_notificationTexture(nullptr)
     , m_prevMouseLeftDown(false)
-    , m_cudaRenderer(nullptr)
     , m_useCuda(false)
     , m_rocketLauncherTexture(-1)
 {
@@ -253,6 +248,38 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
             // Continue anyway, audio is not critical
         } else {
             std::cout << "Audio system initialized: " << m_audioSystem << std::endl;
+            
+            // Check if we're running in WSL
+            bool isWSL = false;
+            #ifdef __linux__
+            FILE* fp = fopen("/proc/version", "r");
+            if (fp) {
+                char buffer[256];
+                if (fgets(buffer, sizeof(buffer), fp)) {
+                    if (strstr(buffer, "microsoft") || strstr(buffer, "Microsoft")) {
+                        isWSL = true;
+                    }
+                }
+                fclose(fp);
+            }
+            #endif
+            
+            if (isWSL) {
+                // For WSL, use PulseAudio for best MIDI quality
+                if (!m_audioSystem->isPulseAudioEnabled()) {
+                    std::cout << "Configuring PulseAudio for WSL..." << std::endl;
+                    if (m_audioSystem->configurePulseAudio(true)) {
+                        std::cout << "PulseAudio configured successfully!" << std::endl;
+                    } else {
+                        std::cout << "PulseAudio configuration failed, will use default WSL audio" << std::endl;
+                        // Apply WSL-specific configuration as fallback
+                        m_audioSystem->configureTimidityForWSL();
+                    }
+                }
+            } else {
+                // On native Windows, use native MIDI
+                m_audioSystem->forceNativeMidi(true);
+            }
         }
     }
     
@@ -267,6 +294,16 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     if (m_audioSystem) {
         std::string musicPath = "assets/music/M_E1M1.mid";
         if (m_audioSystem->loadMusic(musicPath)) {
+            // Configure MIDI quality with higher frequency for better sound
+            m_audioSystem->configureMidiQuality(48000);  // Higher frequency for better MIDI synthesis
+            
+            // Display MIDI backend information
+            std::string midiInfo = m_audioSystem->getMidiBackendInfo();
+            std::cout << "[ENGINE] " << midiInfo << std::endl;
+            
+            // Show a notification about which MIDI backend is being used
+            showNotification(midiInfo, 5.0);  // Show for 5 seconds
+            
             if (m_musicEnabled) {
                 m_audioSystem->playMusic(true); // Loop the music
             }
@@ -277,6 +314,15 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     
     std::cout << "Engine initialization complete!" << std::endl;
     std::cout << "=============================================================" << std::endl;
+    
+    // Set up menu
+    m_menuItems = {
+        "Start Game",
+        "Toggle Music",
+        "Enhance MIDI Quality",  // Add new option
+        "Quit"
+    };
+    m_menuSelection = 0;
     
     return true;
 }
@@ -527,9 +573,18 @@ void Engine::processInput() {
         setSfxVolume(m_audioSystem->getSfxVolume() - 8);
     }
     
+    if (m_inputHandler.isActionTriggered(InputAction::EnhanceMidiQuality)) {
+        enhanceMidiQuality();
+    }
+    
     // Debug actions
     if (m_inputHandler.isActionTriggered(InputAction::TestSound)) {
         testSoundEffects();
+    }
+    
+    // Use the proper input handler approach to check for TestWeapons action
+    if (m_inputHandler.isActionTriggered(InputAction::TestWeapons)) {
+        testWeapons();
     }
 }
 
@@ -1047,74 +1102,29 @@ bool Engine::loadAssets() {
     std::cout << "Creating bullet texture..." << std::endl;
     
     // Create a surface for the bullet texture
-    SDL_Surface* bulletSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 
-                                                    0xFF000000,  // Red mask
-                                                    0x00FF0000,  // Green mask
-                                                    0x0000FF00,  // Blue mask
-                                                    0x000000FF); // Alpha mask
+    SDL_Surface* bulletSurface = SDL_CreateRGBSurface(0, 16, 16, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
     if (bulletSurface) {
-        // Lock surface for direct pixel access
         SDL_LockSurface(bulletSurface);
+        Uint32* pixels = (Uint32*)bulletSurface->pixels;
+        Uint32 bulletColor = SDL_MapRGBA(bulletSurface->format, 255, 220, 50, 255);
         
-        // Define bullet colors - DOOM-style projectiles
-        Uint32 background = SDL_MapRGBA(bulletSurface->format, 0, 0, 0, 0); // Transparent background
-        
-        // For pistol/shotgun: tracer-like visual (orange-yellow center with red edge)
-        Uint32 tracerCore = SDL_MapRGBA(bulletSurface->format, 255, 220, 50, 255);  // Bright yellow-orange
-        Uint32 tracerEdge = SDL_MapRGBA(bulletSurface->format, 255, 60, 0, 220);    // Reddish edge
-        
-        // For plasma/BFG: glowing blue plasma ball
-        Uint32 plasmaCore = SDL_MapRGBA(bulletSurface->format, 80, 180, 255, 255);  // Bright blue
-        Uint32 plasmaEdge = SDL_MapRGBA(bulletSurface->format, 30, 80, 200, 200);   // Darker blue edge
-        
-        // Clear the surface with transparent background
-        Uint32* pixels = static_cast<Uint32*>(bulletSurface->pixels);
-        for (int i = 0; i < 32 * 32; i++) {
-            pixels[i] = background;
-        }
-        
-        // Draw bullet shape - DOOM tracer style (elongated with motion blur)
-        int centerX = 16;
-        int centerY = 16;
-        int coreWidth = 24;   // Width of the inner bright core
-        int coreHeight = 10;  // Height of the inner bright core
-        int edgeWidth = 28;   // Width of the outer glow
-        int edgeHeight = 14;  // Height of the outer glow
-        
-        for (int y = 0; y < 32; y++) {
-            for (int x = 0; x < 32; x++) {
-                // Calculate normalized elliptical distances
-                double dx = (x - centerX) / (edgeWidth * 0.5);
-                double dy = (y - centerY) / (edgeHeight * 0.5);
-                double distEdge = dx*dx + dy*dy;  // Elliptical distance for edge
+        // Create bullet gradient
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                double distFromCenter = sqrt(pow(x - 8, 2) + pow(y - 8, 2));
                 
-                double dxCore = (x - centerX) / (coreWidth * 0.5);
-                double dyCore = (y - centerY) / (coreHeight * 0.5);
-                double distCore = dxCore*dxCore + dyCore*dyCore;  // Elliptical distance for core
-                
-                // Draw outer edge with fade
-                if (distEdge <= 1.0) {
-                    // Edge intensity based on distance (fade out)
-                    double edgeFade = 1.0 - distEdge;
-                    
-                    if (distCore <= 1.0) {
-                        // Draw core with brightness variation
-                        double coreBrightness = 1.0 - distCore*0.7;
-                        
-                        // Blend core colors
-                        Uint8 r, g, b, a;
-                        SDL_GetRGBA(tracerCore, bulletSurface->format, &r, &g, &b, &a);
-                        r = static_cast<Uint8>(r * coreBrightness);
-                        g = static_cast<Uint8>(g * coreBrightness);
-                        b = static_cast<Uint8>(b * coreBrightness);
-                        pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, r, g, b, a);
-                    } else {
-                        // Draw edge with alpha fade
-                        Uint8 r, g, b, a;
-                        SDL_GetRGBA(tracerEdge, bulletSurface->format, &r, &g, &b, &a);
-                        a = static_cast<Uint8>(a * edgeFade);
-                        pixels[y * 32 + x] = SDL_MapRGBA(bulletSurface->format, r, g, b, a);
-                    }
+                if (distFromCenter <= 6) {
+                    // Create a gradient effect
+                    double alpha = 1.0 - (distFromCenter / 6.0);
+                    pixels[y * 16 + x] = SDL_MapRGBA(bulletSurface->format, 
+                                                     255, 
+                                                     static_cast<Uint8>(120 + 100 * alpha), 
+                                                     static_cast<Uint8>(50 * alpha),
+                                                     255);
+                }
+                else {
+                    // Outside radius - transparent
+                    pixels[y * 16 + x] = SDL_MapRGBA(bulletSurface->format, 0, 0, 0, 0);
                 }
             }
         }
@@ -1123,35 +1133,109 @@ bool Engine::loadAssets() {
         m_bulletTexture = m_textureManager->createTextureFromSurface(bulletSurface);
         SDL_FreeSurface(bulletSurface);
     } else {
-        // Fallback to simple solid texture if surface creation fails
-        m_bulletTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 100, 20));
+        m_bulletTexture = m_textureManager->createSolidTexture(16, 16, Color(255, 220, 50));
     }
     std::cout << "Bullet texture ID: " << m_bulletTexture << std::endl;
     
-    // Create plasma bullet texture
-    SDL_Surface* plasmaSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 
-                                                    0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
-    if (plasmaSurface) {
-        SDL_LockSurface(plasmaSurface);
-        Uint32* pixels = static_cast<Uint32*>(plasmaSurface->pixels);
+    // Create a rocket texture
+    SDL_Surface* rocketSurface = SDL_CreateRGBSurface(0, 32, 16, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    int rocketTextureId = -1;
+    if (rocketSurface) {
+        SDL_LockSurface(rocketSurface);
+        Uint32* pixels = (Uint32*)rocketSurface->pixels;
         
-        // Clear with transparent background
-        Uint32 background = SDL_MapRGBA(plasmaSurface->format, 0, 0, 0, 0);
-        for (int i = 0; i < 32 * 32; i++) {
-            pixels[i] = background;
+        // Create a rocket shape with red/orange gradient and smoke trail
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 32; x++) {
+                // Rocket body (right half)
+                if (x >= 16) {
+                    // Rocket head (tip)
+                    if (x > 26) {
+                        double dist = sqrt(pow(x - 26, 2) + pow(y - 8, 2));
+                        if (dist < 6) {
+                            pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 
+                                                           255, 
+                                                           static_cast<Uint8>(50 + (16 - x)*10), 
+                                                           0, 
+                                                           255);
+                        } else {
+                            pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 0, 0, 0, 0);
+                        }
+                    }
+                    // Rocket body
+                    else {
+                        double dist = abs(y - 8);
+                        if (dist < 4) {
+                            pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 
+                                                           200, 
+                                                           static_cast<Uint8>(50 + (x - 16)*5), 
+                                                           0, 
+                                                           255);
+                        } else {
+                            pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 0, 0, 0, 0);
+                        }
+                    }
+                }
+                // Smoke/fire trail (left half)
+                else {
+                    double distFromCenter = sqrt(pow(x - 16, 2) + pow(y - 8, 2));
+                    double alpha = 1.0 - (x / 16.0) - (distFromCenter / 16.0);
+                    
+                    if (alpha > 0) {
+                        // Fire
+                        if (distFromCenter < 3 && x > 8) {
+                            pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 
+                                                           255, 
+                                                           static_cast<Uint8>(128 * alpha), 
+                                                           0, 
+                                                           static_cast<Uint8>(255 * alpha));
+                        }
+                        // Smoke
+                        else {
+                            pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 
+                                                           static_cast<Uint8>(100 * alpha), 
+                                                           static_cast<Uint8>(100 * alpha), 
+                                                           static_cast<Uint8>(100 * alpha), 
+                                                           static_cast<Uint8>(200 * alpha));
+                        }
+                    } else {
+                        pixels[y * 32 + x] = SDL_MapRGBA(rocketSurface->format, 0, 0, 0, 0);
+                    }
+                }
+            }
         }
         
-        // Draw plasma ball (circular with glow)
+        SDL_UnlockSurface(rocketSurface);
+        rocketTextureId = m_textureManager->createTextureFromSurface(rocketSurface);
+        SDL_FreeSurface(rocketSurface);
+        std::cout << "Created rocket texture (ID " << rocketTextureId << ")" << std::endl;
+    } else {
+        rocketTextureId = m_textureManager->createSolidTexture(32, 16, Color(255, 100, 0));
+        std::cout << "Created fallback rocket texture (ID " << rocketTextureId << ")" << std::endl;
+    }
+    
+    // Create a plasma projectile texture
+    SDL_Surface* plasmaSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    m_plasmaTexture = -1;
+    if (plasmaSurface) {
+        SDL_LockSurface(plasmaSurface);
+        Uint32* pixels = (Uint32*)plasmaSurface->pixels;
+        
+        // Parameters for the plasma ball
         int centerX = 16;
         int centerY = 16;
-        int plasmaRadius = 12;
+        double plasmaRadius = 12.0;
         
-        // Define plasma colors
-        Uint32 plasmaCore = SDL_MapRGBA(plasmaSurface->format, 100, 200, 255, 255); // Bright blue core
-        Uint32 plasmaEdge = SDL_MapRGBA(plasmaSurface->format, 50, 150, 255, 180);  // Softer blue edge
+        // Define colors for the plasma effect
+        Uint32 plasmaCore = SDL_MapRGBA(plasmaSurface->format, 200, 220, 255, 255);  // Bright blue-white core
+        Uint32 plasmaEdge = SDL_MapRGBA(plasmaSurface->format, 50, 130, 255, 200);   // Blue edge
         
+        // Create a circular plasma effect with glow
         for (int y = 0; y < 32; y++) {
             for (int x = 0; x < 32; x++) {
+                // Set all pixels transparent by default
+                pixels[y * 32 + x] = SDL_MapRGBA(plasmaSurface->format, 0, 0, 0, 0);
+                
                 // Calculate distance from center
                 double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
                 
@@ -1193,6 +1277,10 @@ bool Engine::loadAssets() {
         m_projectileManager->setBulletTexture(m_bulletTexture);
         m_projectileManager->setDefaultBulletTexture(m_bulletTexture);
         m_projectileManager->setPlasmaTexture(m_plasmaTexture);
+        
+        // Set the rocket texture properly
+        m_projectileManager->setRocketTexture(rocketTextureId);
+        std::cout << "Set rocket projectile texture ID: " << rocketTextureId << std::endl;
     }
     
     // Create enemy texture
@@ -2433,12 +2521,18 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_F3, InputAction::ToggleWeapon);
     m_inputHandler.bindKey(SDL_SCANCODE_F4, InputAction::ToggleCeilings);
     
+    // Menu navigation keys
+    m_inputHandler.bindKey(SDL_SCANCODE_UP, InputAction::MenuUp);
+    m_inputHandler.bindKey(SDL_SCANCODE_DOWN, InputAction::MenuDown);
+    m_inputHandler.bindKey(SDL_SCANCODE_RETURN, InputAction::MenuSelect);
+    
     // Audio control keys
     m_inputHandler.bindKey(SDL_SCANCODE_M, InputAction::ToggleMusic);
     m_inputHandler.bindKey(SDL_SCANCODE_PAGEUP, InputAction::IncreaseMusicVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_PAGEDOWN, InputAction::DecreaseMusicVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_HOME, InputAction::IncreaseSfxVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_END, InputAction::DecreaseSfxVolume);
+    m_inputHandler.bindKey(SDL_SCANCODE_F10, InputAction::EnhanceMidiQuality);  // F10 for enhancing MIDI quality
     
     // Weapon keys
     m_inputHandler.bindKey(SDL_SCANCODE_1, InputAction::Weapon1);
@@ -2451,6 +2545,7 @@ void Engine::setupInput() {
     
     // Debug keys
     m_inputHandler.bindKey(SDL_SCANCODE_F9, InputAction::TestSound);
+    m_inputHandler.bindKey(SDL_SCANCODE_F8, InputAction::TestWeapons);
     
     // Enable mouse capture for looking around
     m_inputHandler.setMouseCapture(true);
@@ -2497,27 +2592,122 @@ bool Engine::isMusicPlaying() const {
     return m_audioSystem->isMusicPlaying();
 }
 
+void Engine::enhanceMidiQuality() {
+    if (!m_audioSystem) return;
+    
+    std::cout << "Attempting to enhance MIDI quality..." << std::endl;
+    
+    // Detect if we're running in WSL
+    bool isWSL = false;
+    #ifdef __linux__
+    FILE* fp = fopen("/proc/version", "r");
+    if (fp) {
+        char buffer[256];
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            if (strstr(buffer, "microsoft") || strstr(buffer, "Microsoft")) {
+                isWSL = true;
+            }
+        }
+        fclose(fp);
+    }
+    #endif
+    
+    if (isWSL) {
+        // In WSL, prioritize PulseAudio for best quality
+        showNotification("Configuring PulseAudio for optimal MIDI playback...", 3.0);
+        
+        if (m_audioSystem->configurePulseAudio(true)) {
+            showNotification("PulseAudio configured successfully!", 2.0);
+            
+            // After PulseAudio is configured, try to set up a soundfont for even better quality
+            showNotification("Installing high-quality MIDI soundfont...", 5.0);
+            if (m_audioSystem->installSoundFontForWSL()) {
+                showNotification("MIDI quality enhanced with high-quality soundfont!", 5.0);
+            }
+        } else {
+            // If PulseAudio fails, try the Timidity approach as fallback
+            showNotification("PulseAudio config failed, trying Timidity...", 2.0);
+            if (m_audioSystem->configureTimidityForWSL()) {
+                showNotification("MIDI quality enhanced with Timidity configuration!", 3.0);
+            } else {
+                showNotification("Failed to enhance MIDI quality. See console for details.", 5.0);
+            }
+        }
+    } else {
+        // On Windows, configure for best native MIDI quality
+        showNotification("Configuring MIDI quality settings...", 2.0);
+        if (m_audioSystem->configureMidiQuality(48000)) {
+            showNotification("MIDI quality settings applied!", 2.0);
+        } else {
+            showNotification("Failed to enhance MIDI quality. See console for details.", 5.0);
+        }
+    }
+    
+    // Display current MIDI backend information
+    std::string backendInfo = m_audioSystem->getMidiBackendInfo();
+    std::cout << "Current MIDI backend: " << backendInfo << std::endl;
+    showNotification(backendInfo, 5.0);
+}
+
 void Engine::testSoundEffects() {
     if (!m_audioSystem) return;
     
     std::cout << "Testing sound effects..." << std::endl;
-    
-    // Play each weapon sound with a small delay
     m_audioSystem->playSoundEffect("pistol_fire");
-    SDL_Delay(500); // 500ms delay
-    
+    SDL_Delay(500);
     m_audioSystem->playSoundEffect("machinegun_fire");
     SDL_Delay(500);
-    
     m_audioSystem->playSoundEffect("rocket_fire");
+    showNotification("Sound effects tested", 2.0);
+}
+
+void Engine::testWeapons() {
+    std::cout << "Testing all weapons..." << std::endl;
+    
+    // Store the original weapon
+    WeaponType originalWeapon = m_player.getCurrentWeapon();
+    
+    // Test pistol
+    m_player.setCurrentWeapon(WeaponType::Pistol);
+    m_currentWeaponTexture = m_weaponTexture;
+    showNotification("Testing Pistol", 1.0);
+    m_player.fire();
     SDL_Delay(500);
     
-    m_audioSystem->playSoundEffect("weapon_switch");
+    // Test machine gun
+    m_player.setCurrentWeapon(WeaponType::MachineGun);
+    m_currentWeaponTexture = m_machineGunTexture;
+    showNotification("Testing Machine Gun", 1.0);
+    m_player.fire();
+    SDL_Delay(500);
     
-    std::cout << "Sound effect test complete" << std::endl;
+    // Test rocket launcher
+    m_player.setCurrentWeapon(WeaponType::RocketLauncher);
+    m_currentWeaponTexture = m_rocketLauncherTexture;
+    showNotification("Testing Rocket Launcher", 1.0);
+    m_player.fire();
+    SDL_Delay(500);
     
-    // Show notification
-    showNotification("Sound test complete", 2.0);
+    // Restore original weapon
+    m_player.setCurrentWeapon(originalWeapon);
+    
+    // Update current weapon texture based on the weapon type
+    switch (originalWeapon) {
+        case WeaponType::Pistol:
+            m_currentWeaponTexture = m_weaponTexture;
+            break;
+        case WeaponType::MachineGun:
+            m_currentWeaponTexture = m_machineGunTexture;
+            break;
+        case WeaponType::RocketLauncher:
+            m_currentWeaponTexture = m_rocketLauncherTexture;
+            break;
+        default:
+            m_currentWeaponTexture = m_weaponTexture;
+            break;
+    }
+    
+    showNotification("Weapons test complete", 2.0);
 }
 
 void Engine::showNotification(const std::string& text, double duration) {
@@ -2689,8 +2879,8 @@ void Engine::handlePlayingInput() {
     // Horizontal mouse movement (turn left/right)
     if (mouseX != 0) {
         // Rotate based on X mouse movement
-        // Negative mouseX = turn left, positive mouseX = turn right
-        double rotationAmount = static_cast<double>(mouseX) * 0.003;  // Scale factor for sensitivity
+        // INVERTED: Positive mouseX = turn left, negative mouseX = turn right
+        double rotationAmount = static_cast<double>(-mouseX) * 0.003;  // Inverted by negating mouseX
         double oldDirX = m_player.getDirX();
         double oldDirY = m_player.getDirY();
         double oldPlaneX = m_player.getPlaneX();
@@ -2833,15 +3023,49 @@ void Engine::handlePlayingInput() {
 }
 
 void Engine::handleMainMenuInput() {
-    // Handle main menu input
-    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
-    
-    if (keyboardState[SDL_SCANCODE_RETURN]) {
-        setState(GameState::Playing);
+    // Check for menu navigation
+    if (m_inputHandler.isActionTriggered(InputAction::MenuUp)) {
+        m_menuSelection = (m_menuSelection - 1 + m_menuItems.size()) % m_menuItems.size();
+        // Play menu sound if available
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("menu_move");
+        }
     }
     
-    if (keyboardState[SDL_SCANCODE_ESCAPE]) {
-        m_running = false;
+    if (m_inputHandler.isActionTriggered(InputAction::MenuDown)) {
+        m_menuSelection = (m_menuSelection + 1) % m_menuItems.size();
+        // Play menu sound if available
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("menu_move");
+        }
+    }
+    
+    // Check for menu selection
+    if (m_inputHandler.isActionTriggered(InputAction::MenuSelect)) {
+        // Play menu select sound if available
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("menu_select");
+        }
+        
+        // Handle the selected menu item
+        switch (m_menuSelection) {
+            case 0: // Start Game
+                setState(GameState::Playing);
+                break;
+                
+            case 1: // Options
+                // Toggle music
+                toggleMusic();
+                break;
+                
+            case 2: // Enhance MIDI Quality
+                enhanceMidiQuality();
+                break;
+                
+            case 3: // Quit
+                m_running = false;
+                break;
+        }
     }
 }
 
