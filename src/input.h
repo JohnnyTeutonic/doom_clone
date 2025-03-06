@@ -6,6 +6,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include "game_state.h" // Include game_state.h for GameState enum
 
 // Action types for different inputs
 enum class InputAction {
@@ -104,12 +105,12 @@ public:
     void resetMouseRel() { m_mouseRelX = 0; m_mouseRelY = 0; }
     
     // Action state methods
-    bool isActionActive(InputAction action) const;
-    bool isActionJustPressed(InputAction action) const;
+    bool isActionActive(InputAction action, GameState currentState = GameState::Playing) const;
+    bool isActionJustPressed(InputAction action, GameState currentState = GameState::Playing) const;
     bool isActionJustReleased(InputAction action) const;
     
     // Action methods
-    bool isActionTriggered(InputAction action) const;
+    bool isActionTriggered(InputAction action, GameState currentState = GameState::Playing) const;
     bool isAnyKeyPressed() const;
     
     // Key binding methods

@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include "game_state.h"
 
 // Forward declarations
 class Renderer;
@@ -30,15 +31,6 @@ class CudaRenderer;
 #include "utils.h"
 #include "audio.h"
 #include "cuda_renderer.h"
-
-// Game states
-enum class GameState {
-    MainMenu,
-    Playing,
-    Paused,
-    GameOver,
-    Victory
-};
 
 class Engine {
 public:

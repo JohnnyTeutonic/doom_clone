@@ -80,6 +80,7 @@ set(SOURCES
 # Header files
 set(HEADERS
     src/engine.h
+    src/game_state.h
     src/renderer.h
     src/player.h
     src/map.h

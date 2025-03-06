@@ -236,8 +236,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     // Initialize timers
     m_lastFrameTime = SDL_GetTicks();
     
-    // Set initial game state
-    m_gameState = GameState::Playing;
+    // Set running flag
     m_running = true;
     
     // Initialize audio system
@@ -317,10 +316,10 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     
     // Set up menu
     m_menuItems = {
-        "Start Game",
-        "Toggle Music",
-        "Enhance MIDI Quality",  // Add new option
-        "Quit"
+        "Play Game",
+        "Save Game",
+        "Load Game",
+        "Exit"
     };
     m_menuSelection = 0;
     
@@ -433,6 +432,8 @@ void Engine::setState(GameState state) {
     switch (m_gameState) {
         case GameState::MainMenu:
             std::cout << "Entering main menu" << std::endl;
+            // Reset menu selection when entering main menu
+            m_menuSelection = 0;
             break;
             
         case GameState::Playing:
@@ -441,6 +442,8 @@ void Engine::setState(GameState state) {
             
         case GameState::Paused:
             std::cout << "Game paused" << std::endl;
+            // Reset menu selection when entering pause menu
+            m_menuSelection = 0;
             break;
             
         case GameState::GameOver:
@@ -486,24 +489,17 @@ void Engine::processInput() {
             m_running = false;
         }
         
-        // Handle key events for game state changes
+        // Handle key events for special functions
         if (event.type == SDL_KEYDOWN) {
             switch (event.key.keysym.sym) {
                 case SDLK_ESCAPE:
+                    // Toggle menu
                     if (m_gameState == GameState::Playing) {
                         setState(GameState::Paused);
                     } else if (m_gameState == GameState::Paused) {
                         setState(GameState::Playing);
                     } else if (m_gameState == GameState::MainMenu) {
                         m_running = false;
-                    }
-                    break;
-                    
-                case SDLK_RETURN:
-                    if (m_gameState == GameState::MainMenu) {
-                        setState(GameState::Playing);
-                    } else if (m_gameState == GameState::GameOver || m_gameState == GameState::Victory) {
-                        setState(GameState::MainMenu);
                     }
                     break;
                     
@@ -518,11 +514,6 @@ void Engine::processInput() {
                     break;
             }
         }
-    }
-    
-    // Only process gameplay input if in playing state
-    if (m_gameState != GameState::Playing) {
-        return;
     }
     
     // Handle input based on game state
@@ -541,49 +532,58 @@ void Engine::processInput() {
             
         case GameState::GameOver:
         case GameState::Victory:
-            // Any key returns to main menu
-            if (m_inputHandler.isAnyKeyPressed()) {
-                setState(GameState::MainMenu);
+            // Get keyboard state
+            {
+                int numKeys;
+                const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
+                
+                // Check for Enter key to return to main menu
+                if (keyboardState[SDL_SCANCODE_RETURN]) {
+                    setState(GameState::MainMenu);
+                }
             }
             break;
     }
     
     // Handle global input actions
-    if (m_inputHandler.isActionTriggered(InputAction::Quit)) {
+    if (m_inputHandler.isActionTriggered(InputAction::Quit, m_gameState)) {
         m_running = false;
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::ToggleMusic)) {
+    if (m_inputHandler.isActionTriggered(InputAction::ToggleMusic, m_gameState)) {
         toggleMusic();
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::IncreaseMusicVolume)) {
-        setMusicVolume(m_audioSystem->getMusicVolume() + 8);
+    if (m_inputHandler.isActionTriggered(InputAction::IncreaseMusicVolume, m_gameState)) {
+        int volume = m_audioSystem->getMusicVolume() + 10;
+        setMusicVolume(volume);
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::DecreaseMusicVolume)) {
-        setMusicVolume(m_audioSystem->getMusicVolume() - 8);
+    if (m_inputHandler.isActionTriggered(InputAction::DecreaseMusicVolume, m_gameState)) {
+        int volume = m_audioSystem->getMusicVolume() - 10;
+        setMusicVolume(volume);
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::IncreaseSfxVolume)) {
-        setSfxVolume(m_audioSystem->getSfxVolume() + 8);
+    if (m_inputHandler.isActionTriggered(InputAction::IncreaseSfxVolume, m_gameState)) {
+        int volume = m_audioSystem->getSfxVolume() + 10;
+        setSfxVolume(volume);
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::DecreaseSfxVolume)) {
-        setSfxVolume(m_audioSystem->getSfxVolume() - 8);
+    if (m_inputHandler.isActionTriggered(InputAction::DecreaseSfxVolume, m_gameState)) {
+        int volume = m_audioSystem->getSfxVolume() - 10;
+        setSfxVolume(volume);
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::EnhanceMidiQuality)) {
+    if (m_inputHandler.isActionTriggered(InputAction::EnhanceMidiQuality, m_gameState)) {
         enhanceMidiQuality();
     }
     
     // Debug actions
-    if (m_inputHandler.isActionTriggered(InputAction::TestSound)) {
+    if (m_inputHandler.isActionTriggered(InputAction::TestSound, m_gameState)) {
         testSoundEffects();
     }
     
-    // Use the proper input handler approach to check for TestWeapons action
-    if (m_inputHandler.isActionTriggered(InputAction::TestWeapons)) {
+    if (m_inputHandler.isActionTriggered(InputAction::TestWeapons, m_gameState)) {
         testWeapons();
     }
 }
@@ -2722,7 +2722,7 @@ void Engine::showNotification(const std::string& text, double duration) {
 }
 
 void Engine::renderMainMenu() {
-    // Set background color
+    // Set background color to black
     SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 255);
     SDL_RenderClear(m_sdlRenderer);
     
@@ -2744,22 +2744,28 @@ void Engine::renderMainMenu() {
         SDL_FreeSurface(titleSurface);
     }
     
-    // Render menu options
-    SDL_Color menuColor = {200, 200, 200, 255}; // Light gray for menu options
-    const char* menuOptions[] = {
-        "Start Game",
-        "Options",
-        "Quit"
-    };
+    // Render menu options with DOOM-style appearance
+    const int menuStartY = m_screenHeight / 2;
+    const int menuItemSpacing = 60;
     
-    for (int i = 0; i < 3; i++) {
-        SDL_Surface* menuSurface = TTF_RenderText_Blended(m_font, menuOptions[i], menuColor);
+    for (size_t i = 0; i < m_menuItems.size(); i++) {
+        // Selected item is red, others are gray
+        SDL_Color menuColor = (i == m_menuSelection) 
+            ? SDL_Color{255, 0, 0, 255}  // Red for selected item
+            : SDL_Color{180, 180, 180, 255};  // Light gray for unselected items
+        
+        // Add a ">" marker for the selected item
+        std::string menuText = (i == m_menuSelection) 
+            ? "> " + m_menuItems[i]
+            : "  " + m_menuItems[i];
+            
+        SDL_Surface* menuSurface = TTF_RenderText_Blended(m_font, menuText.c_str(), menuColor);
         if (menuSurface) {
             SDL_Texture* menuTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, menuSurface);
             if (menuTexture) {
                 SDL_Rect menuRect = {
                     m_screenWidth / 2 - menuSurface->w / 2,
-                    m_screenHeight / 2 + i * 60 - menuSurface->h / 2,
+                    menuStartY + i * menuItemSpacing,
                     menuSurface->w,
                     menuSurface->h
                 };
@@ -2774,44 +2780,50 @@ void Engine::renderMainMenu() {
 void Engine::renderPauseOverlay() {
     // Render semi-transparent overlay
     SDL_SetRenderDrawBlendMode(m_sdlRenderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 128); // Semi-transparent black
+    SDL_SetRenderDrawColor(m_sdlRenderer, 0, 0, 0, 180); // Semi-transparent black
     SDL_Rect overlayRect = {0, 0, m_screenWidth, m_screenHeight};
     SDL_RenderFillRect(m_sdlRenderer, &overlayRect);
     
     // Render "PAUSED" text
-    SDL_Color pauseColor = {255, 255, 255, 255}; // White color for pause text
-    SDL_Surface* pauseSurface = TTF_RenderText_Blended(m_font, "PAUSED", pauseColor);
-    if (pauseSurface) {
-        SDL_Texture* pauseTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, pauseSurface);
-        if (pauseTexture) {
-            SDL_Rect pauseRect = {
-                m_screenWidth / 2 - pauseSurface->w / 2,
-                m_screenHeight / 2 - pauseSurface->h / 2,
-                pauseSurface->w,
-                pauseSurface->h
+    SDL_Color titleColor = {255, 0, 0, 255}; // Red color for DOOM-style title
+    SDL_Surface* titleSurface = TTF_RenderText_Blended(m_font, "PAUSED", titleColor);
+    if (titleSurface) {
+        SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, titleSurface);
+        if (titleTexture) {
+            SDL_Rect titleRect = {
+                m_screenWidth / 2 - titleSurface->w / 2,
+                m_screenHeight / 4 - titleSurface->h / 2,
+                titleSurface->w,
+                titleSurface->h
             };
-            SDL_RenderCopy(m_sdlRenderer, pauseTexture, NULL, &pauseRect);
-            SDL_DestroyTexture(pauseTexture);
+            SDL_RenderCopy(m_sdlRenderer, titleTexture, NULL, &titleRect);
+            SDL_DestroyTexture(titleTexture);
         }
-        SDL_FreeSurface(pauseSurface);
+        SDL_FreeSurface(titleSurface);
     }
     
-    // Render pause menu options
-    SDL_Color menuColor = {200, 200, 200, 255}; // Light gray for menu options
-    const char* menuOptions[] = {
-        "Resume",
-        "Options",
-        "Quit to Main Menu"
-    };
+    // Render menu options with DOOM-style appearance
+    const int menuStartY = m_screenHeight / 2;
+    const int menuItemSpacing = 60;
     
-    for (int i = 0; i < 3; i++) {
-        SDL_Surface* menuSurface = TTF_RenderText_Blended(m_font, menuOptions[i], menuColor);
+    for (size_t i = 0; i < m_menuItems.size(); i++) {
+        // Selected item is red, others are gray
+        SDL_Color menuColor = (i == m_menuSelection) 
+            ? SDL_Color{255, 0, 0, 255}  // Red for selected item
+            : SDL_Color{180, 180, 180, 255};  // Light gray for unselected items
+        
+        // Add a ">" marker for the selected item
+        std::string menuText = (i == m_menuSelection) 
+            ? "> " + m_menuItems[i]
+            : "  " + m_menuItems[i];
+            
+        SDL_Surface* menuSurface = TTF_RenderText_Blended(m_font, menuText.c_str(), menuColor);
         if (menuSurface) {
             SDL_Texture* menuTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, menuSurface);
             if (menuTexture) {
                 SDL_Rect menuRect = {
                     m_screenWidth / 2 - menuSurface->w / 2,
-                    m_screenHeight / 2 + 60 + i * 40 - menuSurface->h / 2,
+                    menuStartY + i * menuItemSpacing,
                     menuSurface->w,
                     menuSurface->h
                 };
@@ -2824,8 +2836,51 @@ void Engine::renderPauseOverlay() {
 }
 
 void Engine::handlePlayingInput() {
-    // Get keyboard state
-    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
+    // Handle mouse movement for camera rotation
+    int mouseX, mouseY;
+    m_inputHandler.getMouseMotion(mouseX, mouseY);
+    
+    // Vertical mouse movement (look up/down)
+    if (mouseY != 0) {
+        // Pass Y movement to player's vertical angle setter
+        m_player.setVerticalAngle(static_cast<double>(mouseY));
+    }
+    
+    // Only rotate if there's actual mouse movement
+    if (mouseX != 0) {
+        // Calculate rotation amount based on mouse movement
+        double rotationAmount = static_cast<double>(-mouseX) * 0.003;  // Inverted by negating mouseX
+        
+        // Get current direction and plane
+        double oldDirX = m_player.getDirX();
+        double oldDirY = m_player.getDirY();
+        double oldPlaneX = m_player.getPlaneX();
+        double oldPlaneY = m_player.getPlaneY();
+        
+        // Rotation matrix
+        double cosRot = cos(-rotationAmount);  // Negative because mouseX right should rotate right
+        double sinRot = sin(-rotationAmount);
+        
+        // Update player direction vector
+        Vec2 newDir(
+            oldDirX * cosRot - oldDirY * sinRot,
+            oldDirX * sinRot + oldDirY * cosRot
+        );
+        
+        // Update player camera plane
+        Vec2 newPlane(
+            oldPlaneX * cosRot - oldPlaneY * sinRot,
+            oldPlaneX * sinRot + oldPlaneY * cosRot
+        );
+        
+        // Set the new direction and plane
+        m_player.setDirection(newDir);
+        m_player.setPlane(newPlane);
+    }
+    
+    // Get keyboard state once for all key checks
+    int numKeys;
+    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
     
     // Weapon switching using direct keyboard state checks
     // Check for number keys - store previous state and compare
@@ -2866,78 +2921,98 @@ void Engine::handlePlayingInput() {
     prev2Down = key2Down;
     prev3Down = key3Down;
     
-    // Process mouse look for both vertical and horizontal movement
-    int mouseX, mouseY;
-    m_inputHandler.getMouseMotion(mouseX, mouseY);
-    
-    // Vertical mouse movement (look up/down)
-    if (mouseY != 0) {
-        // Pass Y movement to player's vertical angle setter
-        m_player.setVerticalAngle(static_cast<double>(mouseY));
-    }
-    
-    // Horizontal mouse movement (turn left/right)
-    if (mouseX != 0) {
-        // Rotate based on X mouse movement
-        // INVERTED: Positive mouseX = turn left, negative mouseX = turn right
-        double rotationAmount = static_cast<double>(-mouseX) * 0.003;  // Inverted by negating mouseX
-        double oldDirX = m_player.getDirX();
-        double oldDirY = m_player.getDirY();
-        double oldPlaneX = m_player.getPlaneX();
-        double oldPlaneY = m_player.getPlaneY();
-        
-        // Rotation matrix
-        double cosRot = cos(-rotationAmount);  // Negative because mouseX right should rotate right
-        double sinRot = sin(-rotationAmount);
-        
-        // Update player direction vector
-        Vec2 newDir(
-            oldDirX * cosRot - oldDirY * sinRot,
-            oldDirX * sinRot + oldDirY * cosRot
-        );
-        
-        // Update player camera plane
-        Vec2 newPlane(
-            oldPlaneX * cosRot - oldPlaneY * sinRot,
-            oldPlaneX * sinRot + oldPlaneY * cosRot
-        );
-        
-        // Set the new direction and plane
-        m_player.setDirection(newDir);
-        m_player.setPlane(newPlane);
-    }
-    
-    // Movement
+    // Forward/backward movement with W/S or UP/DOWN
     if (keyboardState[SDL_SCANCODE_W] || keyboardState[SDL_SCANCODE_UP]) {
         m_player.moveForward(m_deltaTime, m_map);
     }
     if (keyboardState[SDL_SCANCODE_S] || keyboardState[SDL_SCANCODE_DOWN]) {
         m_player.moveBackward(m_deltaTime, m_map);
     }
-    if (keyboardState[SDL_SCANCODE_A] || keyboardState[SDL_SCANCODE_LEFT]) {
+    
+    // Strafe left/right with A/D
+    if (keyboardState[SDL_SCANCODE_A]) {
         m_player.strafeLeft(m_deltaTime, m_map);
     }
-    if (keyboardState[SDL_SCANCODE_D] || keyboardState[SDL_SCANCODE_RIGHT]) {
+    if (keyboardState[SDL_SCANCODE_D]) {
         m_player.strafeRight(m_deltaTime, m_map);
     }
     
-    // Jumping - DOOM-style: Jump only on key press, not while held down
-    if (keyboardState[SDL_SCANCODE_SPACE] && !m_prevKeyboardState[SDL_SCANCODE_SPACE]) {
-        m_player.jump();
-        m_prevKeyboardState[SDL_SCANCODE_SPACE] = true;
-    } else if (!keyboardState[SDL_SCANCODE_SPACE]) {
-        m_prevKeyboardState[SDL_SCANCODE_SPACE] = false;
+    // Rotation with LEFT/RIGHT arrow keys
+    if (keyboardState[SDL_SCANCODE_LEFT]) {
+        // Rotate left
+        double rotationAmount = 2.0 * m_deltaTime;  // Adjust rotation speed as needed
+        double oldDirX = m_player.getDirX();
+        double oldDirY = m_player.getDirY();
+        double oldPlaneX = m_player.getPlaneX();
+        double oldPlaneY = m_player.getPlaneY();
+        
+        // Rotation matrix
+        double cosRot = cos(rotationAmount);
+        double sinRot = sin(rotationAmount);
+        
+        // Update player direction vector and camera plane
+        Vec2 newDir(
+            oldDirX * cosRot - oldDirY * sinRot,
+            oldDirX * sinRot + oldDirY * cosRot
+        );
+        Vec2 newPlane(
+            oldPlaneX * cosRot - oldPlaneY * sinRot,
+            oldPlaneX * sinRot + oldPlaneY * cosRot
+        );
+        
+        m_player.setDirection(newDir);
+        m_player.setPlane(newPlane);
     }
+    if (keyboardState[SDL_SCANCODE_RIGHT]) {
+        // Rotate right
+        double rotationAmount = -2.0 * m_deltaTime;  // Negative for right rotation
+        double oldDirX = m_player.getDirX();
+        double oldDirY = m_player.getDirY();
+        double oldPlaneX = m_player.getPlaneX();
+        double oldPlaneY = m_player.getPlaneY();
+        
+        // Rotation matrix
+        double cosRot = cos(rotationAmount);
+        double sinRot = sin(rotationAmount);
+        
+        // Update player direction vector and camera plane
+        Vec2 newDir(
+            oldDirX * cosRot - oldDirY * sinRot,
+            oldDirX * sinRot + oldDirY * cosRot
+        );
+        Vec2 newPlane(
+            oldPlaneX * cosRot - oldPlaneY * sinRot,
+            oldPlaneX * sinRot + oldPlaneY * cosRot
+        );
+        
+        m_player.setDirection(newDir);
+        m_player.setPlane(newPlane);
+    }
+    
+    // Jumping - DOOM-style: Jump only on key press, not while held down
+    static bool prevSpaceDown = false;
+    bool spaceDown = keyboardState[SDL_SCANCODE_SPACE] != 0;
+    
+    if (spaceDown && !prevSpaceDown) {
+        m_player.jump();
+    }
+    prevSpaceDown = spaceDown;
     
     // Weapon firing
     bool shouldFire = false;
     
-    // Check for left control firing
-    if (keyboardState[SDL_SCANCODE_LCTRL] && !m_prevKeyboardState[SDL_SCANCODE_LCTRL]) {
+    // Check for firing with left control
+    static bool prevLCtrlDown = false;
+    bool lCtrlDown = keyboardState[SDL_SCANCODE_LCTRL] != 0;
+    
+    if (lCtrlDown && !prevLCtrlDown) {
         shouldFire = true;
-        m_prevKeyboardState[SDL_SCANCODE_LCTRL] = true;
-    } else if (!keyboardState[SDL_SCANCODE_LCTRL]) {
-        m_prevKeyboardState[SDL_SCANCODE_LCTRL] = false;
+    }
+    prevLCtrlDown = lCtrlDown;
+    
+    // Check for firing action
+    if (m_inputHandler.isActionJustPressed(InputAction::Fire, m_gameState)) {
+        shouldFire = true;
     }
     
     // Check for left mouse button firing
@@ -3023,25 +3098,51 @@ void Engine::handlePlayingInput() {
 }
 
 void Engine::handleMainMenuInput() {
-    // Check for menu navigation
-    if (m_inputHandler.isActionTriggered(InputAction::MenuUp)) {
+    // Get direct keyboard state
+    int numKeys;
+    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
+    
+    // Track previous key states for menu navigation
+    static bool prevUpDown = false;
+    static bool prevDownDown = false;
+    static bool prevEnterDown = false;
+    
+    // Get current key states
+    bool upDown = keyboardState[SDL_SCANCODE_UP] != 0;
+    bool downDown = keyboardState[SDL_SCANCODE_DOWN] != 0;
+    bool enterDown = keyboardState[SDL_SCANCODE_RETURN] != 0;
+    
+    // Debug output
+    std::cout << "Menu input - UP: " << upDown << " (prev: " << prevUpDown << ")"
+              << ", DOWN: " << downDown << " (prev: " << prevDownDown << ")"
+              << ", ENTER: " << enterDown << " (prev: " << prevEnterDown << ")" << std::endl;
+    
+    // Check for menu navigation - UP key just pressed
+    if (upDown && !prevUpDown) {
         m_menuSelection = (m_menuSelection - 1 + m_menuItems.size()) % m_menuItems.size();
+        std::cout << "UP pressed - menu selection: " << m_menuSelection << std::endl;
+        
         // Play menu sound if available
         if (m_audioSystem) {
             m_audioSystem->playSoundEffect("menu_move");
         }
     }
     
-    if (m_inputHandler.isActionTriggered(InputAction::MenuDown)) {
+    // Check for menu navigation - DOWN key just pressed
+    if (downDown && !prevDownDown) {
         m_menuSelection = (m_menuSelection + 1) % m_menuItems.size();
+        std::cout << "DOWN pressed - menu selection: " << m_menuSelection << std::endl;
+        
         // Play menu sound if available
         if (m_audioSystem) {
             m_audioSystem->playSoundEffect("menu_move");
         }
     }
     
-    // Check for menu selection
-    if (m_inputHandler.isActionTriggered(InputAction::MenuSelect)) {
+    // Check for menu selection - ENTER key just pressed
+    if (enterDown && !prevEnterDown) {
+        std::cout << "ENTER pressed - selecting menu item: " << m_menuSelection << std::endl;
+        
         // Play menu select sound if available
         if (m_audioSystem) {
             m_audioSystem->playSoundEffect("menu_select");
@@ -3049,35 +3150,107 @@ void Engine::handleMainMenuInput() {
         
         // Handle the selected menu item
         switch (m_menuSelection) {
-            case 0: // Start Game
+            case 0: // Play Game
                 setState(GameState::Playing);
                 break;
                 
-            case 1: // Options
-                // Toggle music
-                toggleMusic();
+            case 1: // Save Game
+                // TODO: Implement save game functionality
+                showNotification("Save Game not implemented yet", 2.0);
                 break;
                 
-            case 2: // Enhance MIDI Quality
-                enhanceMidiQuality();
+            case 2: // Load Game
+                // TODO: Implement load game functionality
+                showNotification("Load Game not implemented yet", 2.0);
                 break;
                 
-            case 3: // Quit
+            case 3: // Exit
                 m_running = false;
                 break;
         }
     }
+    
+    // Update previous key states
+    prevUpDown = upDown;
+    prevDownDown = downDown;
+    prevEnterDown = enterDown;
 }
 
 void Engine::handlePausedInput() {
-    // Handle paused state input
-    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
+    // Get direct keyboard state
+    int numKeys;
+    const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
     
-    if (keyboardState[SDL_SCANCODE_ESCAPE]) {
-        setState(GameState::Playing);
+    // Track previous key states for menu navigation
+    static bool prevUpDown = false;
+    static bool prevDownDown = false;
+    static bool prevEnterDown = false;
+    
+    // Get current key states
+    bool upDown = keyboardState[SDL_SCANCODE_UP] != 0;
+    bool downDown = keyboardState[SDL_SCANCODE_DOWN] != 0;
+    bool enterDown = keyboardState[SDL_SCANCODE_RETURN] != 0;
+    
+    // Debug output
+    std::cout << "Pause menu input - UP: " << upDown << " (prev: " << prevUpDown << ")"
+              << ", DOWN: " << downDown << " (prev: " << prevDownDown << ")"
+              << ", ENTER: " << enterDown << " (prev: " << prevEnterDown << ")" << std::endl;
+    
+    // Check for menu navigation - UP key just pressed
+    if (upDown && !prevUpDown) {
+        m_menuSelection = (m_menuSelection - 1 + m_menuItems.size()) % m_menuItems.size();
+        std::cout << "UP pressed - menu selection: " << m_menuSelection << std::endl;
+        
+        // Play menu sound if available
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("menu_move");
+        }
     }
     
-    if (keyboardState[SDL_SCANCODE_Q]) {
-        setState(GameState::MainMenu);
+    // Check for menu navigation - DOWN key just pressed
+    if (downDown && !prevDownDown) {
+        m_menuSelection = (m_menuSelection + 1) % m_menuItems.size();
+        std::cout << "DOWN pressed - menu selection: " << m_menuSelection << std::endl;
+        
+        // Play menu sound if available
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("menu_move");
+        }
     }
+    
+    // Check for menu selection - ENTER key just pressed
+    if (enterDown && !prevEnterDown) {
+        std::cout << "ENTER pressed - selecting menu item: " << m_menuSelection << std::endl;
+        
+        // Play menu select sound if available
+        if (m_audioSystem) {
+            m_audioSystem->playSoundEffect("menu_select");
+        }
+        
+        // Handle the selected menu item
+        switch (m_menuSelection) {
+            case 0: // Play Game
+                setState(GameState::Playing);
+                break;
+                
+            case 1: // Save Game
+                // TODO: Implement save game functionality
+                showNotification("Save Game not implemented yet", 2.0);
+                break;
+                
+            case 2: // Load Game
+                // TODO: Implement load game functionality
+                showNotification("Load Game not implemented yet", 2.0);
+                break;
+                
+            case 3: // Exit
+                m_running = false;
+                break;
+        }
+    }
+    
+    // Update previous key states
+    prevUpDown = upDown;
+    prevDownDown = downDown;
+    prevEnterDown = enterDown;
 }
