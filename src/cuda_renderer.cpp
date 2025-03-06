@@ -782,6 +782,16 @@ void CudaRenderer::generateFrame(const Map& map, const Player& player) {
             return;
         }
     
+    // CRITICAL FIX: Copy z-buffer back to host for sprite depth testing
+    cudaStatus = cudaMemcpy(m_hostZBuffer, m_deviceZBuffer, 
+                m_screenWidth * m_screenHeight * sizeof(float), 
+                cudaMemcpyDeviceToHost);
+    if (cudaStatus != cudaSuccess) {
+        std::cerr << "Failed to copy z-buffer back to host: " << cudaGetErrorString(cudaStatus) << std::endl;
+        m_frameReady = false;
+        return;
+    }
+    
     // Update SDL texture with frame buffer
     SDL_UpdateTexture(m_frameTexture, NULL, m_hostFrameBuffer, m_screenWidth * sizeof(uint32_t));
     
@@ -992,9 +1002,6 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
                       << " format: " << SDL_GetPixelFormatName(format) << std::endl;
         }
         
-        // Ensure texture blend mode is set to BLEND for proper transparency
-        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-        
         // Set up source and destination rectangles
         SDL_Rect srcRect = { 0, 0, sprite->getWidth(), sprite->getHeight() };
         
@@ -1005,16 +1012,44 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         
         SDL_Rect dstRect = { drawStartX, drawStartY, drawEndX - drawStartX, drawEndY - drawStartY };
         
-        // Render sprite
-        if (SDL_RenderCopy(m_sdlRenderer, texture, &srcRect, &dstRect) != 0) {
-            std::cerr << "CUDA: Failed to render sprite: " << SDL_GetError() << std::endl;
-        } else {
-            renderedCount++;
+        // SIMPLER APPROACH: Only render sprites that are in front of walls
+        // Calculate the average depth of the center of the sprite
+        int spriteCenterX = (drawStartX + drawEndX) / 2;
+        int spriteCenterY = (drawStartY + drawEndY) / 2;
+        
+        // Check if the center point is valid
+        if (spriteCenterX >= 0 && spriteCenterX < m_screenWidth && 
+            spriteCenterY >= 0 && spriteCenterY < m_screenHeight) {
             
-            // Debug info for imp sprites
-            if (sprite->getType() == SpriteType::ImpEnemy) {
-                std::cout << "CUDA: Rendered imp at (" << sprite->getX() << ", " << sprite->getY() 
-                          << ") with texture ID " << textureId << std::endl;
+            // Get wall distance at this point
+            float wallDist = m_hostZBuffer[spriteCenterY * m_screenWidth + spriteCenterX];
+            
+            // Only render if the sprite is in front of the wall
+            // Add a small bias to prevent z-fighting
+            if (transformY <= wallDist + 0.1f) {
+                // Ensure texture blend mode is set to BLEND for proper transparency
+                SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+                
+                // Render sprite
+                if (SDL_RenderCopy(m_sdlRenderer, texture, &srcRect, &dstRect) != 0) {
+                    std::cerr << "CUDA: Failed to render sprite: " << SDL_GetError() << std::endl;
+                } else {
+                    renderedCount++;
+                    
+                    // Debug info for imp sprites
+                    if (sprite->getType() == SpriteType::ImpEnemy) {
+                        std::cout << "CUDA: Rendered imp at (" << sprite->getX() << ", " << sprite->getY() 
+                                  << ") with texture ID " << textureId << " - Wall dist: " << wallDist 
+                                  << ", Sprite dist: " << transformY << std::endl;
+                    }
+                }
+            } else {
+                // Debug info when sprite is occluded
+                if (sprite->getType() == SpriteType::ImpEnemy) {
+                    std::cout << "CUDA: Imp at (" << sprite->getX() << ", " << sprite->getY() 
+                              << ") occluded - Wall dist: " << wallDist 
+                              << ", Sprite dist: " << transformY << std::endl;
+                }
             }
         }
     }
