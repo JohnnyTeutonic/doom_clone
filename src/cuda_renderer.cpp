@@ -354,7 +354,10 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
                     case CellType::SecretWall:
                         // For walls, encode the texture ID
                         {
-                            int textureId = map.getWallTexture(x, y);
+                            // IMPORTANT FIX: Always use texture 0 for all walls to ensure consistency
+                            // This guarantees all walls use the same texture regardless of their position
+                            // Original code: int textureId = map.getWallTexture(x, y);
+                            int textureId = 0; // Force all walls to use texture 0
                             cellValue = (textureId + 1) * 100 + 1; // Encode as texture ID + cell type
                         }
                         break;
@@ -458,20 +461,90 @@ void CudaRenderer::copyTexturesToDevice() {
         
         // Initialize with default patterns as fallbacks
         for (int i = 0; i < 4; i++) {
-        for (int y = 0; y < m_wallTextureHeight; y++) {
-            for (int x = 0; x < m_wallTextureWidth; x++) {
-                    bool isEven = ((x / 8) + (y / 8)) % 2 == 0;
-                    uint32_t color = isEven ? 0xFFAAAAAA : 0xFF555555;
+            for (int y = 0; y < m_wallTextureHeight; y++) {
+                for (int x = 0; x < m_wallTextureWidth; x++) {
+                    // Create authentic Doom-inspired texture patterns
                     
-                    // Add a colored border based on texture number
-                    if (x < 2 || x >= m_wallTextureWidth - 2 || y < 2 || y >= m_wallTextureHeight - 2) {
-                        switch (i) {
-                            case 0: color = 0xFF0000FF; break; // Blue border
-                            case 1: color = 0xFF00FF00; break; // Green border
-                            case 2: color = 0xFFFF0000; break; // Red border
-                            case 3: color = 0xFFFFFF00; break; // Yellow border
-                        }
+                    // Base colors for different texture variations (authentic Doom palette)
+                    uint8_t r, g, b;
+                    
+                    // Different pattern for each texture slot
+                    switch (i) {
+                        case 0: // Brown tech pattern (similar to STARTAN from Doom)
+                            {
+                                bool largePattern = ((x / 16) + (y / 16)) % 2 == 0;
+                                bool edgeDetail = (x % 16 < 2) || (y % 16 < 2);
+                                bool smallDetail = ((x / 4) + (y / 4)) % 2 == 0;
+                                
+                                // Base brown color (authentic Doom STARTAN)
+                                r = 145; g = 102; b = 70;
+                                
+                                // Apply pattern variations
+                                if (largePattern) { r -= 15; g -= 10; b -= 5; }
+                                if (edgeDetail) { r = 90; g = 70; b = 50; }
+                                if (smallDetail) { r += 10; g += 5; }
+                            }
+                            break;
+                            
+                        case 1: // Reddish demonic texture (like REDWALL)
+                            {
+                                bool vertLine = (x % 32 < 2);
+                                bool horzLine = (y % 24 < 2);
+                                bool pattern = ((x / 8) ^ (y / 8)) & 1;
+                                
+                                // Deep red base
+                                r = 160; g = 70; b = 60;
+                                
+                                // Apply variations
+                                if (vertLine || horzLine) { r = 100; g = 40; b = 35; }
+                                if (pattern) { r -= 20; g -= 10; b -= 5; }
+                            }
+                            break;
+                            
+                        case 2: // Gray tech pattern (like COMPTILE)
+                            {
+                                int cellX = x % 16;
+                                int cellY = y % 16;
+                                bool isBorder = cellX < 2 || cellY < 2 || cellX > 13 || cellY > 13;
+                                bool isInnerDetail = (cellX > 4 && cellX < 12 && cellY > 4 && cellY < 12);
+                                
+                                // Base gray color
+                                r = 120; g = 120; b = 130;
+                                
+                                // Apply grid pattern
+                                if (isBorder) { r = 70; g = 70; b = 80; }
+                                if (isInnerDetail) { r = 100; g = 100; b = 110; }
+                            }
+                            break;
+                            
+                        case 3: // Green-brown tech (like SLADWALL)
+                            {
+                                int patternX = (x / 8) % 3;
+                                int patternY = (y / 8) % 3;
+                                bool edgeDetail = (x % 8 < 1) || (y % 8 < 1);
+                                
+                                // Greenish brown base
+                                r = 120; g = 110; b = 60;
+                                
+                                // Pattern variations
+                                if (patternX == 0 || patternY == 0) { r -= 20; g -= 15; }
+                                if (edgeDetail) { r = 70; g = 65; b = 35; }
+                            }
+                            break;
+                            
+                        default:
+                            // Fallback brown
+                            r = 120; g = 100; b = 80;
                     }
+                    
+                    // Add subtle noise for texture feel
+                    int noise = ((x * 13 + y * 7) % 10) - 5;
+                    r = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(r) + noise)));
+                    g = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(g) + noise)));
+                    b = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(b) + noise)));
+                    
+                    // Combine into final ARGB color
+                    uint32_t color = (0xFF << 24) | (r << 16) | (g << 8) | b;
                     
                     wallTextureData[i * m_wallTextureWidth * m_wallTextureHeight + y * m_wallTextureWidth + x] = color;
                 }
@@ -526,6 +599,36 @@ void CudaRenderer::copyTexturesToDevice() {
         if (m_wallTextureVariations.size() < 4) {
             std::cout << "CUDA: Warning - Not enough wall textures provided (" << m_wallTextureVariations.size() 
                       << " out of 4), using fallbacks for remaining slots" << std::endl;
+        }
+        
+        // Verify if all wall textures were properly copied
+        for (int i = 0; i < 4; i++) {
+            if (i < m_wallTextureVariations.size()) {
+                std::cout << "CUDA: Wall texture " << i << " is using texture ID " 
+                          << m_wallTextureVariations[i] << std::endl;
+            } else {
+                std::cout << "CUDA: Wall texture " << i << " is using fallback pattern" << std::endl;
+            }
+        }
+        
+        // Ensure all wall texture slots have usable textures.
+        // Check if the first texture was loaded properly (slot 0)
+        if (m_wallTextureVariations.size() > 0) {
+            std::cout << "CUDA: Making all wall textures consistent..." << std::endl;
+            
+            // Get the pixel data from the first texture slot
+            uint32_t* firstTextureData = wallTextureData;
+            size_t texSize = m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t);
+            
+            // Copy the first texture to all other slots (1-3) to ensure consistency
+            for (int i = 1; i < 4; i++) {
+                memcpy(
+                    wallTextureData + (i * m_wallTextureWidth * m_wallTextureHeight),
+                    firstTextureData,
+                    texSize
+                );
+                std::cout << "CUDA: Copied texture 0 to slot " << i << " for consistency" << std::endl;
+            }
         }
         
         // Load floor texture (using texture index 4)

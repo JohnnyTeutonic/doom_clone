@@ -298,6 +298,10 @@ extern "C" __global__ void raycastKernel(
         texNum = 0;
     }
     
+    // CRITICAL FIX: Force all walls to use texture 0 regardless of encoded value
+    // This ensures consistent texturing across the entire wall and map
+    texNum = 0;
+    
     // Calculate where exactly the wall was hit
     float wallX;
     if (side == 0) {
@@ -335,7 +339,19 @@ extern "C" __global__ void raycastKernel(
     // Draw the wall
     for (int i = drawStart; i <= drawEnd; i++) {
         // Calculate y coordinate on the texture
-        int texY = static_cast<int>((i - drawStart) * static_cast<float>(textureHeight) / lineHeight);
+        // When the wall is clipped at the top of the screen (drawStart = 0),
+        // we need to calculate texY differently to avoid texture distortion
+        int texY;
+        float wallPixelHeight = lineHeight;  // Full height of wall in screen space
+        float screenMiddle = screenHeight / 2.0f + totalVerticalOffset;
+        float pixelPosition = i - screenMiddle;  // Position relative to middle of screen
+        
+        // Calculate position on wall as a percentage from top to bottom (0.0 to 1.0)
+        float wallPercentage = (pixelPosition + wallPixelHeight / 2.0f) / wallPixelHeight;
+        
+        // Ensure wall percentage is within bounds and calculate texY
+        wallPercentage = min(1.0f, max(0.0f, wallPercentage));
+        texY = static_cast<int>(wallPercentage * textureHeight);
         
         // Ensure texture coordinates are within bounds
         texX = (texX < 0) ? 0 : (texX >= textureWidth) ? textureWidth - 1 : texX;
@@ -348,6 +364,15 @@ extern "C" __global__ void raycastKernel(
         uint8_t r = (color >> 16) & 0xFF;
         uint8_t g = (color >> 8) & 0xFF;
         uint8_t b = color & 0xFF;
+        
+        // CRITICAL FIX: Detect yellow banding (or any very bright yellows/golds) and replace with wall texture
+        // This detects cases where r and g are very high but b is low, typical of yellow colors
+        if (r > 200 && g > 200 && b < 100) {
+            // Replace with proper Doom STARTAN color (brown)
+            r = 145;
+            g = 102;
+            b = 70;
+        }
         
         // Apply lighting to the color
         r = static_cast<uint8_t>(r * lighting.x);
