@@ -30,30 +30,31 @@ extern "C" __global__ void raycastKernel(
 extern "C" void checkCudaError(cudaError_t error, const char* message);
 
 CudaRenderer::CudaRenderer()
-    : m_screenWidth(0)
+    : m_isInitialized(false)
+    , m_screenWidth(0)
     , m_screenHeight(0)
     , m_sdlRenderer(nullptr)
     , m_frameTexture(nullptr)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
-    , m_hostFrameBuffer(nullptr)
-    , m_hostZBuffer(nullptr)
-    , m_deviceFrameBuffer(nullptr)
-    , m_deviceZBuffer(nullptr)
     , m_deviceMapData(nullptr)
     , m_devicePlayerData(nullptr)
+    , m_deviceFrameBuffer(nullptr)
+    , m_deviceZBuffer(nullptr)
     , m_deviceWallTextures(nullptr)
     , m_deviceFloorTextures(nullptr)
     , m_deviceCeilingTextures(nullptr)
-    , m_deviceLights(nullptr)        // Initialize light pointer
-    , m_deviceAmbient(nullptr)       // Initialize ambient light pointer
+    , m_deviceLights(nullptr)
+    , m_hostFrameBuffer(nullptr)
+    , m_hostZBuffer(nullptr)
     , m_wallTextureWidth(64)         // Default texture dimensions (must be non-zero)
     , m_wallTextureHeight(64)        // Default texture dimensions (must be non-zero)
-    , m_numActiveLights(0)          // Initialize active lights count
-    , m_cudaStream(0)
+    , m_ambientLightLevel(0.2f)      // Default ambient light level
     , m_frameReady(false)
 {
-    // Nothing to do here
+    // Initialize wall texture variations with defaults (will be replaced by engine)
+    m_wallTextureVariations = {0, 1, 2, 3};
+    
 }
 
 CudaRenderer::~CudaRenderer() {
@@ -187,6 +188,9 @@ void CudaRenderer::cleanup() {
     // Reset device to clean state
     cudaDeviceReset();
     
+    // Mark as uninitialized
+    m_isInitialized = false;
+    
     std::cout << "CudaRenderer: Cleanup complete" << std::endl;
 }
 
@@ -313,6 +317,7 @@ bool CudaRenderer::initCuda() {
     cudaDeviceSynchronize();
     
     std::cout << "CudaRenderer: CUDA initialization successful" << std::endl;
+    m_isInitialized = true;
     return true;
 }
 
@@ -492,8 +497,13 @@ void CudaRenderer::copyTexturesToDevice() {
         }
         
         // Load actual textures first for walls
-        for (int i = 0; i < 4; i++) {
-            const Texture* texture = m_textureManager->getTexture(i);
+        for (int i = 0; i < 4 && i < m_wallTextureVariations.size(); i++) {
+            // Get the correct texture ID from wall variations instead of using i directly
+            int textureId = m_wallTextureVariations[i];
+            const Texture* texture = m_textureManager->getTexture(textureId);
+            
+            std::cout << "CUDA: Loading wall texture " << i << " with ID " << textureId << std::endl;
+            
             if (texture && texture->getWidth() > 0 && texture->getHeight() > 0) {
                 const uint32_t* pixels = texture->getPixelData();
                 if (pixels) {
@@ -503,8 +513,19 @@ void CudaRenderer::copyTexturesToDevice() {
                         pixels,
                         texSize
                     );
+                    std::cout << "CUDA: Loaded texture ID " << textureId << " as wall texture " << i << std::endl;
+                } else {
+                    std::cout << "CUDA: Wall texture " << textureId << " has no pixel data" << std::endl;
                 }
+            } else {
+                std::cout << "CUDA: Wall texture ID " << textureId << " is invalid or has zero dimensions" << std::endl;
             }
+        }
+
+        // If we don't have enough wall textures, fill in with fallbacks
+        if (m_wallTextureVariations.size() < 4) {
+            std::cout << "CUDA: Warning - Not enough wall textures provided (" << m_wallTextureVariations.size() 
+                      << " out of 4), using fallbacks for remaining slots" << std::endl;
         }
         
         // Load floor texture (using texture index 4)

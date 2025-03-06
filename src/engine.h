@@ -101,6 +101,7 @@ public:
     
     // Enemy and sprite creation
     int createImpEnemy(double x, double y, double size = 0.7);
+    void addAdditionalImps();
     
     // Audio
     void playSound(const std::string& soundName);

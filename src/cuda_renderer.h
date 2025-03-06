@@ -85,6 +85,10 @@ extern "C" void launchRaycastKernel(
 // CUDA Renderer class for hardware-accelerated rendering
 class CudaRenderer {
 private:
+    // Initialization state
+    bool m_isInitialized;
+    
+    // Screen dimensions
     int m_screenWidth;
     int m_screenHeight;
     
@@ -119,6 +123,12 @@ private:
     
     // Frame generation state
     bool m_frameReady;
+    
+    // Wall texture variations (IDs in TextureManager)
+    std::vector<int> m_wallTextureVariations;
+    
+    // Lighting properties
+    float m_ambientLightLevel;  // Overall ambient light level
     
     // Initialize CUDA resources
     bool initCuda();
@@ -159,4 +169,11 @@ public:
     
     // Set sprite manager
     void setSpriteManager(SpriteManager* spriteManager) { m_spriteManager = spriteManager; }
+
+    bool isInitialized() const { return m_isInitialized; }
+    
+    // Wall texture variations (like the regular renderer)
+    void addWallTextureVariation(int textureId) { m_wallTextureVariations.push_back(textureId); }
+    void clearWallTextureVariations() { m_wallTextureVariations.clear(); }
+    const std::vector<int>& getWallTextureVariations() const { return m_wallTextureVariations; }
 }; 

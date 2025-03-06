@@ -382,6 +382,9 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
                 std::cout << "m_spriteManager = " << m_spriteManager << ", singleton = " << SpriteManager::getInstance() << std::endl;
             }
         }
+        
+        // Add 3 more imps at different positions
+        addAdditionalImps();
     }
     
     return true;
@@ -1696,6 +1699,15 @@ bool Engine::loadAssets() {
     if (m_renderer) {
         for (int textureId : m_wallTextureVariations) {
             m_renderer->addWallTextureVariation(textureId);
+        }
+    }
+    
+    // Also share with CUDA renderer if available
+    if (m_cudaRenderer) {
+        std::cout << "Sharing wall texture variations with CUDA renderer" << std::endl;
+        for (int textureId : m_wallTextureVariations) {
+            m_cudaRenderer->addWallTextureVariation(textureId);
+            std::cout << "  Added texture ID " << textureId << " to CUDA renderer" << std::endl;
         }
     }
     
@@ -3498,4 +3510,83 @@ int Engine::createImpEnemy(double x, double y, double size) {
     std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
     
     return spriteId;
+}
+
+// Add the implementation after the createImpEnemy function
+
+void Engine::addAdditionalImps() {
+    if (!m_spriteManager || m_impTexture < 0) {
+        std::cerr << "Cannot add additional imps - sprite manager or imp texture not available" << std::endl;
+        return;
+    }
+    
+    std::cout << "Adding 3 additional imps to the map..." << std::endl;
+    
+    // Get map dimensions for reference
+    int mapWidth = m_map.getWidth();
+    int mapHeight = m_map.getHeight();
+    
+    // Define positions for the 3 new imps - using different areas of the map
+    struct ImpPosition {
+        double x, y;
+        double size;
+    };
+    
+    ImpPosition positions[] = {
+        {mapWidth / 4.0, mapHeight / 4.0, 0.7},               // Top-left quadrant
+        {mapWidth * 3.0 / 4.0, mapHeight / 4.0, 0.7},         // Top-right quadrant
+        {mapWidth / 2.0, mapHeight * 3.0 / 4.0, 0.8}          // Bottom-middle (slightly larger)
+    };
+    
+    // Create each imp, making sure not to place them inside walls
+    int successCount = 0;
+    for (const auto& pos : positions) {
+        // Check if position is in a wall
+        int cellX = static_cast<int>(pos.x);
+        int cellY = static_cast<int>(pos.y);
+        
+        // Skip if position is in a wall
+        if (m_map.getCell(cellX, cellY) == CellType::Wall) {
+            std::cout << "Skipping imp at (" << pos.x << ", " << pos.y << ") - position is in a wall" << std::endl;
+            
+            // Try to find an adjacent empty cell
+            const int dx[] = {0, 1, 0, -1, 1, 1, -1, -1};
+            const int dy[] = {1, 0, -1, 0, 1, -1, 1, -1};
+            
+            bool found = false;
+            for (int i = 0; i < 8; i++) {
+                int newX = cellX + dx[i];
+                int newY = cellY + dy[i];
+                
+                if (newX >= 0 && newX < mapWidth && newY >= 0 && newY < mapHeight && 
+                    m_map.getCell(newX, newY) != CellType::Wall) {
+                    // Found an empty cell, create imp there
+                    int spriteId = createImpEnemy(newX + 0.5, newY + 0.5, pos.size);
+                    if (spriteId >= 0) {
+                        std::cout << "Created additional imp #" << (successCount + 1) 
+                                  << " at adjusted position (" << (newX + 0.5) << ", " << (newY + 0.5) 
+                                  << ") with ID " << spriteId << std::endl;
+                        successCount++;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!found) {
+                std::cout << "Could not find suitable position near (" << pos.x << ", " << pos.y << ")" << std::endl;
+            }
+        } else {
+            // Position is clear, create imp
+            int spriteId = createImpEnemy(pos.x, pos.y, pos.size);
+            if (spriteId >= 0) {
+                std::cout << "Created additional imp #" << (successCount + 1) 
+                          << " at (" << pos.x << ", " << pos.y 
+                          << ") with ID " << spriteId << std::endl;
+                successCount++;
+            }
+        }
+    }
+    
+    std::cout << "Successfully added " << successCount << " additional imps to the map" << std::endl;
 }
