@@ -37,10 +37,6 @@ public:
     Engine(int screenWidth = 800, int screenHeight = 600);
     ~Engine();
     
-    // Singleton access
-    static Engine* getInstance() { return s_instance; }
-    
-    // Core engine methods
     bool init(int screenWidth, int screenHeight, bool fullscreen, int targetFPS);
     void run();
     void shutdown();
@@ -198,9 +194,6 @@ private:
     void renderNotification();
     void renderMainMenu();
     void renderPauseOverlay();
-    
-    // Singleton instance
-    static Engine* s_instance;
 };
 
 #endif // ENGINE_H 

@@ -841,36 +841,6 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         
         // Get sprite texture
         int textureId = sprite->getTextureId();
-        
-        // For animated sprites, adjust the texture ID based on the current frame
-        if (sprite->isAnimated() && sprite->getFrameCount() > 1) {
-            // For imp enemies, use the frame-specific textures
-            if (sprite->getType() == SpriteType::ImpEnemy) {
-                // Get the engine instance to access the imp texture frames
-                Engine* engine = Engine::getInstance();
-                if (engine) {
-                    const std::vector<int>& impFrames = engine->getImpTextureFrames();
-                    int currentFrame = sprite->getCurrentFrame();
-                    
-                    // Make sure the frame index is valid
-                    if (currentFrame >= 0 && currentFrame < impFrames.size()) {
-                        textureId = impFrames[currentFrame];
-                        std::cout << "CUDA: Using imp frame " << currentFrame << " with texture ID " << textureId << std::endl;
-                    }
-                } else {
-                    std::cerr << "CUDA: Engine::getInstance() returned nullptr" << std::endl;
-                    
-                    // Fallback: Use the base texture ID and add the current frame
-                    // This assumes that imp texture frames are stored sequentially
-                    int baseTextureId = sprite->getTextureId();
-                    int currentFrame = sprite->getCurrentFrame();
-                    textureId = baseTextureId + currentFrame;
-                    std::cout << "CUDA: Using fallback imp frame calculation: base=" << baseTextureId 
-                              << ", frame=" << currentFrame << ", result=" << textureId << std::endl;
-                }
-            }
-        }
-        
         SDL_Texture* texture = m_textureManager->getSDLTexture(textureId);
         if (!texture) {
             std::cerr << "CUDA: Invalid texture ID " << textureId << " for sprite type " 
@@ -879,7 +849,6 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
             // Additional debugging for imp textures
             if (sprite->getType() == SpriteType::ImpEnemy) {
                 std::cerr << "CUDA: Failed to get SDL texture for imp with texture ID " << textureId << std::endl;
-                std::cerr << "CUDA: Imp animation frame: " << sprite->getCurrentFrame() << std::endl;
                 
                 // Try to get the texture directly to see if it exists
                 const Texture* tex = m_textureManager->getTexture(textureId);
@@ -894,11 +863,14 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
             continue;
         }
         
+        // Ensure texture blend mode is set to BLEND for proper transparency
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        
         // Set up source and destination rectangles
         SDL_Rect srcRect = { 0, 0, sprite->getWidth(), sprite->getHeight() };
         
-        // For animated sprites using sprite sheets (not our imp implementation)
-        if (sprite->isAnimated() && sprite->getType() != SpriteType::ImpEnemy && sprite->getCurrentFrame() > 0) {
+        // For animated sprites, use the current frame
+        if (sprite->getCurrentFrame() > 0) {
             srcRect.x = sprite->getCurrentFrame() * sprite->getWidth();
         }
         

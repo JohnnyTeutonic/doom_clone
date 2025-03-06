@@ -2,39 +2,38 @@
 #include <iostream>
 #include <random>
 #include <cmath>
-#include <algorithm>
-#include <chrono>
-
-// Initialize static instance
-Engine* Engine::s_instance = nullptr;
 
 Engine::Engine(int screenWidth, int screenHeight)
-    : m_screenWidth(screenWidth)
-    , m_screenHeight(screenHeight)
-    , m_running(false)
-    , m_gameState(GameState::MainMenu)
-    , m_window(nullptr)
+    : m_window(nullptr)
     , m_sdlRenderer(nullptr)
     , m_renderer(nullptr)
     , m_cudaRenderer(nullptr)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_map(40, 40)
+    , m_audioSystem(nullptr)
+    , m_gameState(GameState::MainMenu)
+    , m_running(false)
+    , m_musicEnabled(true)
+    , m_screenWidth(screenWidth)
+    , m_screenHeight(screenHeight)
+    , m_lastFrameTime(0)
     , m_deltaTime(0.0)
-    , m_targetFPS(60)
-    , m_useCuda(false)
     , m_weaponRecoil(0.0)
-    , m_weaponRecoilRecovery(5.0)
     , m_flashIntensity(0.0)
-    , m_flashDecay(5.0)
+    , m_weaponRecoilRecovery(10.0)
+    , m_flashDecay(4.0)
+    , m_fullscreen(false)
+    , m_targetFPS(60)
+    , m_frameTime(1.0 / 60.0)
+    , m_notificationText("")
+    , m_notificationDuration(0.0)
     , m_notificationTimer(0.0)
-    , m_font(nullptr)
     , m_notificationTexture(nullptr)
+    , m_prevMouseLeftDown(false)
+    , m_useCuda(false)
+    , m_rocketLauncherTexture(-1)
 {
-    // Set the singleton instance
-    s_instance = this;
-    
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
@@ -385,25 +384,7 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
             // Set up the test imp
             Sprite* imp = m_spriteManager->getSprite(spriteId);
             if (imp) {
-                // Set up animation with frames at 4 frames per second (classic Doom animation speed)
-                // Make sure we're using the correct number of frames
-                int frameCount = m_impTextureFrames.size();
-                std::cout << "Setting up imp animation with " << frameCount << " frames" << std::endl;
-                
-                // Print all frame IDs for debugging
-                std::cout << "Imp animation frames: ";
-                for (int i = 0; i < frameCount; i++) {
-                    std::cout << m_impTextureFrames[i] << " ";
-                }
-                std::cout << std::endl;
-                
-                imp->setAnimated(true, frameCount, 4.0);
-                
-                // Verify the animation was set up correctly
-                std::cout << "Imp animation: animated=" << imp->isAnimated() 
-                          << ", frameCount=" << imp->getFrameCount()
-                          << ", speed=" << imp->getAnimationSpeed() << std::endl;
-                
+                imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
                 imp->setMoveSpeed(1.8);
                 imp->setTurnSpeed(3.0);
                 imp->setMaxHealth(150.0);
@@ -718,25 +699,7 @@ void Engine::update() {
                 // Set up the test imp
                 Sprite* imp = m_spriteManager->getSprite(spriteId);
                 if (imp) {
-                    // Set up animation with frames at 4 frames per second (classic Doom animation speed)
-                    // Make sure we're using the correct number of frames
-                    int frameCount = m_impTextureFrames.size();
-                    std::cout << "Setting up imp animation with " << frameCount << " frames" << std::endl;
-                    
-                    // Print all frame IDs for debugging
-                    std::cout << "Imp animation frames: ";
-                    for (int i = 0; i < frameCount; i++) {
-                        std::cout << m_impTextureFrames[i] << " ";
-                    }
-                    std::cout << std::endl;
-                    
-                    imp->setAnimated(true, frameCount, 4.0);
-                    
-                    // Verify the animation was set up correctly
-                    std::cout << "Imp animation: animated=" << imp->isAnimated() 
-                              << ", frameCount=" << imp->getFrameCount()
-                              << ", speed=" << imp->getAnimationSpeed() << std::endl;
-                    
+                    imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
                     imp->setMoveSpeed(1.8);
                     imp->setTurnSpeed(3.0);
                     imp->setMaxHealth(150.0);
@@ -748,6 +711,10 @@ void Engine::update() {
                     
                     std::cout << "Test imp sprite configured successfully" << std::endl;
                     std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
+                    
+                    // Verify the sprite manager singleton
+                    std::cout << "Engine update: m_spriteManager = " << m_spriteManager 
+                              << ", singleton = " << SpriteManager::getInstance() << std::endl;
                 }
             }
         }
@@ -1805,23 +1772,32 @@ bool Engine::loadAssets() {
             for (size_t i = 0; i < frameSurfaces.size() && i < m_impTextureFrames.size(); i++) {
                 SDL_Surface* surface = frameSurfaces[i];
                 if (surface) {
-                    // Set black as the transparent color
-                    SDL_SetColorKey(surface, SDL_TRUE, SDL_MapRGB(surface->format, 0, 0, 0));
-                    
-                    // Create texture from surface
-                    SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, surface);
-                    if (texture) {
-                        // Set blend mode to allow transparency
-                        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+                    // Make sure we have the right format with RGBA transparency
+                    SDL_Surface* rgbaSurface = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+                    if (rgbaSurface) {
+                        // Set black as the transparent color
+                        SDL_SetColorKey(rgbaSurface, SDL_TRUE, SDL_MapRGB(rgbaSurface->format, 0, 0, 0));
                         
-                        // Add texture to manager
-                        m_impTextureFrames[i] = m_textureManager->addTexture(texture);
-                        std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
+                        // Create texture from surface with transparency
+                        SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, rgbaSurface);
+                        if (texture) {
+                            // Set blend mode to allow transparency
+                            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+                            
+                            // Add texture to manager
+                            m_impTextureFrames[i] = m_textureManager->addTexture(texture);
+                            std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
+                        } else {
+                            std::cerr << "Failed to create texture for Imp frame " << i << ": " << SDL_GetError() << std::endl;
+                        }
+                        
+                        // Free the RGBA surface
+                        SDL_FreeSurface(rgbaSurface);
                     } else {
-                        std::cerr << "Failed to create texture for Imp frame " << i << ": " << SDL_GetError() << std::endl;
+                        std::cerr << "Failed to convert Imp surface to RGBA: " << SDL_GetError() << std::endl;
                     }
                     
-                    // Free the surface
+                    // Free the original surface
                     SDL_FreeSurface(surface);
                 }
             }

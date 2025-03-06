@@ -652,6 +652,9 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
             continue;
         }
         
+        // Ensure texture blend mode is set to BLEND for proper transparency
+        SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+        
         // Set up source and destination rectangles
         SDL_Rect srcRect = {0, 0, texture->getWidth(), texture->getHeight()};
         
