@@ -2618,9 +2618,15 @@ void Engine::createSpritesFromMap() {
                     // Ensure enemy texture ID is valid or create a default one
                     int textureId = -1;
                     
-                    // First verify if enemy texture exists and is valid
-                    if (m_enemyTexture >= 0 && m_textureManager->getTexture(m_enemyTexture)) {
+                    // First check if imp texture is available and use that instead of generic enemy texture
+                    if (m_impTexture >= 0 && m_textureManager->getTexture(m_impTexture)) {
+                        textureId = m_impTexture;
+                        std::cout << "Using Imp texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
+                    }
+                    // Fall back to regular enemy texture if imp texture is not available
+                    else if (m_enemyTexture >= 0 && m_textureManager->getTexture(m_enemyTexture)) {
                         textureId = m_enemyTexture;
+                        std::cout << "Using regular enemy texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
                     } else {
                         // Create a fallback texture if necessary
                         std::cerr << "WARNING: Invalid enemy texture ID: " << m_enemyTexture << ", creating fallback" << std::endl;
@@ -2641,32 +2647,62 @@ void Engine::createSpritesFromMap() {
                         continue; // Skip this enemy
                     }
                     
-                    std::cout << "Using enemy texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
-                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                    // Use SpriteType::ImpEnemy for enemies using the imp texture
+                    SpriteType spriteType = (textureId == m_impTexture) ? SpriteType::ImpEnemy : SpriteType::Enemy;
+                    
+                    std::cout << "Using texture ID: " << textureId << " for " 
+                              << (spriteType == SpriteType::ImpEnemy ? "ImpEnemy" : "Enemy") 
+                              << " at position (" << x << ", " << y << ")" << std::endl;
+                    
+                    int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, spriteType);
                     
                     // Debug: Check sprite creation
                     if (spriteId < 0) {
-                        std::cerr << "ERROR: Failed to create Enemy sprite at position (" << x << ", " << y << ")" << std::endl;
+                        std::cerr << "ERROR: Failed to create sprite at position (" << x << ", " << y << ")" << std::endl;
                     } else {
                         regularEnemyCount++;
-                        std::cout << "DEBUG: Created Enemy sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                        std::cout << "DEBUG: Created " << (spriteType == SpriteType::ImpEnemy ? "ImpEnemy" : "Enemy") 
+                                  << " sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
                     }
                     
-                    // Set up animation for the enemy
-                    if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
-                        Sprite* enemy = m_spriteManager->getSprite(spriteId);
-                        if (enemy) {
-                            // Set up animation with 4 frames at 2 frames per second
-                            enemy->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
-                            
-                            // Set movement properties
-                            enemy->setMoveSpeed(1.5); // Units per second
-                            enemy->setTurnSpeed(2.0); // Radians per second
-                            
-                            // Set health
-                            enemy->setHealth(100.0);
+                    // Set up animation and properties based on sprite type
+                    if (spriteId >= 0) {
+                        Sprite* sprite = m_spriteManager->getSprite(spriteId);
+                        if (sprite) {
+                            if (spriteType == SpriteType::ImpEnemy) {
+                                // Set up imp-specific properties
+                                if (!m_impTextureFrames.empty()) {
+                                    std::cout << "Setting up imp animation frames" << std::endl;
+                                    sprite->setAnimated(true, m_impTextureFrames.size(), 4.0); // Use faster imp animation speed
+                                }
+                                
+                                // Set imp movement properties (faster and more aggressive)
+                                sprite->setMoveSpeed(1.8); 
+                                sprite->setTurnSpeed(3.0);
+                                
+                                // Imps have more health
+                                sprite->setMaxHealth(150.0);
+                                sprite->setHealth(150.0);
+                                
+                                // Set initial movement duration
+                                double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
+                                sprite->setMoveDuration(initialMoveDuration);
+                            } else {
+                                // Regular enemy setup
+                                if (!m_enemyTextureFrames.empty()) {
+                                    std::cout << "Setting up regular enemy animation frames" << std::endl;
+                                    sprite->setAnimated(true, m_enemyTextureFrames.size(), 2.0);
+                                }
+                                
+                                // Set regular enemy movement properties
+                                sprite->setMoveSpeed(1.5); 
+                                sprite->setTurnSpeed(2.0);
+                                
+                                // Regular enemies have less health
+                                sprite->setHealth(100.0);
+                            }
                         } else {
-                            std::cerr << "ERROR: Failed to get Enemy sprite with ID " << spriteId << std::endl;
+                            std::cerr << "ERROR: Failed to get sprite with ID " << spriteId << std::endl;
                         }
                     }
                 }
