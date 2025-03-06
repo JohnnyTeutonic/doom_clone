@@ -1772,32 +1772,22 @@ bool Engine::loadAssets() {
             for (size_t i = 0; i < frameSurfaces.size() && i < m_impTextureFrames.size(); i++) {
                 SDL_Surface* surface = frameSurfaces[i];
                 if (surface) {
-                    // Make sure we have the right format with RGBA transparency
-                    SDL_Surface* rgbaSurface = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
-                    if (rgbaSurface) {
-                        // Set black as the transparent color
-                        SDL_SetColorKey(rgbaSurface, SDL_TRUE, SDL_MapRGB(rgbaSurface->format, 0, 0, 0));
+                    // Don't convert the surface - our webpFrameToSurface function already creates 
+                    // the optimal format. Just create the texture directly.
+                    SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, surface);
+                    
+                    if (texture) {
+                        // Set blend mode to allow transparency
+                        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
                         
-                        // Create texture from surface with transparency
-                        SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, rgbaSurface);
-                        if (texture) {
-                            // Set blend mode to allow transparency
-                            SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-                            
-                            // Add texture to manager
-                            m_impTextureFrames[i] = m_textureManager->addTexture(texture);
-                            std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
-                        } else {
-                            std::cerr << "Failed to create texture for Imp frame " << i << ": " << SDL_GetError() << std::endl;
-                        }
-                        
-                        // Free the RGBA surface
-                        SDL_FreeSurface(rgbaSurface);
+                        // Add texture to manager
+                        m_impTextureFrames[i] = m_textureManager->addTexture(texture);
+                        std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
                     } else {
-                        std::cerr << "Failed to convert Imp surface to RGBA: " << SDL_GetError() << std::endl;
+                        std::cerr << "Failed to create texture for Imp frame " << i << ": " << SDL_GetError() << std::endl;
                     }
                     
-                    // Free the original surface
+                    // Free the surface
                     SDL_FreeSurface(surface);
                 }
             }
@@ -2461,18 +2451,52 @@ void Engine::createSpritesFromMap() {
         if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
             if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
                 // Create an Imp enemy sprite
-                double size = 0.7;
-                int textureId = m_impTexture;
+                double size = 1.0; // Increase size to make imps more visible
+                int textureId = m_impTexture; // Use the Imp texture
+                
+                // Verify the texture exists before creating the sprite
+                const Texture* texture = m_textureManager->getTexture(textureId);
+                if (!texture) {
+                    std::cerr << "ERROR: Imp texture ID " << textureId << " not found in TextureManager!" << std::endl;
+                } else {
+                    std::cout << "Imp texture verified before sprite creation. Dimensions: " 
+                              << texture->getWidth() << "x" << texture->getHeight() << std::endl;
+                    
+                    // Verify the SDL texture exists
+                    SDL_Texture* sdlTexture = texture->getSDLTexture();
+                    if (!sdlTexture) {
+                        std::cerr << "ERROR: Imp SDL texture is null before sprite creation!" << std::endl;
+                    } else {
+                        // Check the texture format and blend mode
+                        Uint32 format;
+                        SDL_QueryTexture(sdlTexture, &format, NULL, NULL, NULL);
+                        std::cout << "Imp texture format: " << SDL_GetPixelFormatName(format) << std::endl;
+                        
+                        // Ensure blend mode is set
+                        SDL_BlendMode blendMode;
+                        SDL_GetTextureBlendMode(sdlTexture, &blendMode);
+                        if (blendMode != SDL_BLENDMODE_BLEND) {
+                            std::cout << "Setting imp texture blend mode to BLEND" << std::endl;
+                            SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+                        }
+                    }
+                }
+                
                 int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
                 
-                if (spriteId >= 0) {
+                // Debug: Check sprite creation
+                if (spriteId < 0) {
+                    std::cerr << "ERROR: Failed to create Imp sprite at position (" << x << ", " << y << ")" << std::endl;
+                } else {
                     impCount++;
-                    std::cout << "Created forced Imp at position (" << x << ", " << y << ")" << std::endl;
-                    
-                    // Set up the imp
+                    std::cout << "DEBUG: Created Imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                }
+                
+                // Set up animation for the Imp
+                if (spriteId >= 0) {
                     Sprite* imp = m_spriteManager->getSprite(spriteId);
                     if (imp) {
-                        // Set up animation
+                        // Set up animation with frames at 4 frames per second (classic Doom animation speed)
                         imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
                         
                         // Set movement properties
@@ -2505,7 +2529,7 @@ void Engine::createSpritesFromMap() {
                 
                 if (createImp && !m_impTextureFrames.empty() && m_impTexture >= 0) {
                     // Create an Imp enemy sprite
-                    double size = 0.7; // Reduced from 0.9 to make Imps smaller
+                    double size = 1.0; // Increase size to make imps more visible
                     int textureId = m_impTexture; // Use the Imp texture
                     
                     // Verify the texture exists before creating the sprite
@@ -2520,6 +2544,19 @@ void Engine::createSpritesFromMap() {
                         SDL_Texture* sdlTexture = texture->getSDLTexture();
                         if (!sdlTexture) {
                             std::cerr << "ERROR: Imp SDL texture is null before sprite creation!" << std::endl;
+                        } else {
+                            // Check the texture format and blend mode
+                            Uint32 format;
+                            SDL_QueryTexture(sdlTexture, &format, NULL, NULL, NULL);
+                            std::cout << "Imp texture format: " << SDL_GetPixelFormatName(format) << std::endl;
+                            
+                            // Ensure blend mode is set
+                            SDL_BlendMode blendMode;
+                            SDL_GetTextureBlendMode(sdlTexture, &blendMode);
+                            if (blendMode != SDL_BLENDMODE_BLEND) {
+                                std::cout << "Setting imp texture blend mode to BLEND" << std::endl;
+                                SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+                            }
                         }
                     }
                     
@@ -2540,20 +2577,16 @@ void Engine::createSpritesFromMap() {
                             // Set up animation with frames at 4 frames per second (classic Doom animation speed)
                             imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
                             
-                            // Set movement properties based on original Doom
-                            imp->setMoveSpeed(1.8); // Units per second - slightly slower than before
-                            imp->setTurnSpeed(3.0); // Radians per second - faster turning
+                            // Set movement properties
+                            imp->setMoveSpeed(1.8);
+                            imp->setTurnSpeed(3.0);
                             
-                            // Set health - Imps are tougher
+                            // Set health
                             imp->setMaxHealth(150.0);
                             imp->setHealth(150.0);
                             
-                            // Set up movement behavior
-                            // We don't need to set movement type anymore as we've implemented
-                            // the full state machine in updateImpBehavior
-                            
-                            // Set initial movement duration for wandering
-                            double initialMoveDuration = 2.0 + (rand() % 30) / 10.0; // 2-5 seconds
+                            // Set initial movement duration
+                            double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
                             imp->setMoveDuration(initialMoveDuration);
                         } else {
                             std::cerr << "ERROR: Failed to get Imp sprite with ID " << spriteId << std::endl;
