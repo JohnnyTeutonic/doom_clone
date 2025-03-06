@@ -441,6 +441,30 @@ src/utils.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/utils.cpp.s
 .PHONY : src/utils.cpp.s
 
+src/webp_loader.o: src/webp_loader.cpp.o
+.PHONY : src/webp_loader.o
+
+# target to build an object file
+src/webp_loader.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.o
+.PHONY : src/webp_loader.cpp.o
+
+src/webp_loader.i: src/webp_loader.cpp.i
+.PHONY : src/webp_loader.i
+
+# target to preprocess a source file
+src/webp_loader.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.i
+.PHONY : src/webp_loader.cpp.i
+
+src/webp_loader.s: src/webp_loader.cpp.s
+.PHONY : src/webp_loader.s
+
+# target to generate assembly for a file
+src/webp_loader.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.s
+.PHONY : src/webp_loader.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -489,6 +513,9 @@ help:
 	@echo "... src/utils.o"
 	@echo "... src/utils.i"
 	@echo "... src/utils.s"
+	@echo "... src/webp_loader.o"
+	@echo "... src/webp_loader.i"
+	@echo "... src/webp_loader.s"
 .PHONY : help
 
 

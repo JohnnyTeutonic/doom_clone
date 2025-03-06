@@ -92,6 +92,7 @@ private:
     SDL_Renderer* m_sdlRenderer;
     SDL_Texture* m_frameTexture;
     TextureManager* m_textureManager;
+    SpriteManager* m_spriteManager;  // Add sprite manager pointer
     
     // Host resources
     uint32_t* m_hostFrameBuffer;
@@ -127,7 +128,6 @@ private:
     void copyTexturesToDevice();
     void copyLightsToDevice(const LightingSystem& lightingSystem); // Add method to copy lights
     
-    void renderSprites(const Map& map, const Player& player);
     void renderUI(const Player& player);
     
 public:
@@ -149,9 +149,14 @@ public:
     // Original render method (now split into generateFrame and blitFrameBuffer)
     void render(const Map& map, const Player& player);
     
+    void renderSprites(const Map& map, const Player& player);
+
     // Check if CUDA is available
     static bool isCudaAvailable();
     
     // Debug methods
     void printDeviceInfo() const;
+    
+    // Set sprite manager
+    void setSpriteManager(SpriteManager* spriteManager) { m_spriteManager = spriteManager; }
 }; 

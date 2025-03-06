@@ -142,6 +142,9 @@ public:
     // Animation methods
     void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);
     int getCurrentFrame() const { return m_currentFrame; }
+    bool isAnimated() const { return m_isAnimated; }
+    int getFrameCount() const { return m_frameCount; }
+    double getAnimationSpeed() const { return m_animationSpeed; }
     
     // Imp-specific methods
     void setImpMovementType(ImpMovementType type) { m_impMovementType = type; }

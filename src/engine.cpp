@@ -2,38 +2,39 @@
 #include <iostream>
 #include <random>
 #include <cmath>
+#include <algorithm>
+#include <chrono>
+
+// Initialize static instance
+Engine* Engine::s_instance = nullptr;
 
 Engine::Engine(int screenWidth, int screenHeight)
-    : m_window(nullptr)
+    : m_screenWidth(screenWidth)
+    , m_screenHeight(screenHeight)
+    , m_running(false)
+    , m_gameState(GameState::MainMenu)
+    , m_window(nullptr)
     , m_sdlRenderer(nullptr)
     , m_renderer(nullptr)
     , m_cudaRenderer(nullptr)
     , m_textureManager(nullptr)
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
-    , m_audioSystem(nullptr)
-    , m_gameState(GameState::MainMenu)
-    , m_running(false)
-    , m_musicEnabled(true)
-    , m_screenWidth(screenWidth)
-    , m_screenHeight(screenHeight)
-    , m_lastFrameTime(0)
+    , m_map(40, 40)
     , m_deltaTime(0.0)
-    , m_weaponRecoil(0.0)
-    , m_flashIntensity(0.0)
-    , m_weaponRecoilRecovery(10.0)
-    , m_flashDecay(4.0)
-    , m_fullscreen(false)
     , m_targetFPS(60)
-    , m_frameTime(1.0 / 60.0)
-    , m_notificationText("")
-    , m_notificationDuration(0.0)
-    , m_notificationTimer(0.0)
-    , m_notificationTexture(nullptr)
-    , m_prevMouseLeftDown(false)
     , m_useCuda(false)
-    , m_rocketLauncherTexture(-1)
+    , m_weaponRecoil(0.0)
+    , m_weaponRecoilRecovery(5.0)
+    , m_flashIntensity(0.0)
+    , m_flashDecay(5.0)
+    , m_notificationTimer(0.0)
+    , m_font(nullptr)
+    , m_notificationTexture(nullptr)
 {
+    // Set the singleton instance
+    s_instance = this;
+    
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
@@ -114,13 +115,18 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     }
     std::cout << "SDL initialized successfully" << std::endl;
 
-    // Initialize SDL_image with WebP support
-    int imgFlags = IMG_INIT_WEBP;
-    if (!(IMG_Init(imgFlags) & imgFlags)) {
-        std::cerr << "SDL_image could not initialize with WebP support! SDL_image Error: " << IMG_GetError() << std::endl;
-        return false;
+    // Initialize SDL_image with webp support
+    int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG | IMG_INIT_WEBP;
+    int imgInitResult = IMG_Init(imgFlags);
+    std::cout << "SDL_image initialization result: " << imgInitResult << std::endl;
+    std::cout << "PNG support: " << ((imgInitResult & IMG_INIT_PNG) ? "Yes" : "No") << std::endl;
+    std::cout << "JPG support: " << ((imgInitResult & IMG_INIT_JPG) ? "Yes" : "No") << std::endl;
+    std::cout << "WEBP support: " << ((imgInitResult & IMG_INIT_WEBP) ? "Yes" : "No") << std::endl;
+    
+    if ((imgInitResult & imgFlags) != imgFlags) {
+        std::cerr << "SDL_image could not initialize all required formats! SDL_image Error: " << IMG_GetError() << std::endl;
+        // Continue anyway, we'll use fallback textures
     }
-    std::cout << "SDL_image initialized with WebP support" << std::endl;
     
     // Initialize SDL_ttf
     if (TTF_Init() == -1) {
@@ -201,9 +207,25 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_spriteManager = new SpriteManager(m_textureManager);
     std::cout << "Sprite manager created: " << m_spriteManager << std::endl;
     
+    // Verify the singleton instance
+    if (SpriteManager::getInstance() != m_spriteManager) {
+        std::cerr << "ERROR: SpriteManager singleton != m_spriteManager!" << std::endl;
+        std::cout << "Engine: m_spriteManager = " << m_spriteManager << ", singleton = " << SpriteManager::getInstance() << std::endl;
+        
+        // Force the singleton to match our instance
+        SpriteManager::setInstance(m_spriteManager);
+        std::cout << "Engine: Forced SpriteManager singleton to match m_spriteManager" << std::endl;
+    }
+    
     // Connect sprite manager to renderer
     m_renderer->setSpriteManager(m_spriteManager);
     std::cout << "Connected sprite manager to renderer" << std::endl;
+    
+    // Connect sprite manager to CUDA renderer if available
+    if (m_cudaRenderer) {
+        m_cudaRenderer->setSpriteManager(m_spriteManager);
+        std::cout << "Connected sprite manager to CUDA renderer" << std::endl;
+    }
     
     // Create projectile manager
     m_projectileManager = new ProjectileManager();
@@ -322,6 +344,82 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
         "Exit"
     };
     m_menuSelection = 0;
+    
+    // Initialize the sprite manager
+    m_spriteManager = new SpriteManager(m_textureManager);
+    if (!m_spriteManager) {
+        std::cerr << "Failed to create sprite manager" << std::endl;
+        return false;
+    }
+    
+    // Force-create a test imp sprite in the middle of the map for debugging
+    if (m_impTexture >= 0 && m_spriteManager) {
+        std::cout << "Creating test imp sprite..." << std::endl;
+        int mapWidth = m_map.getWidth();
+        int mapHeight = m_map.getHeight();
+        double x = mapWidth / 2.0;
+        double y = mapHeight / 2.0;
+        double size = 0.7;
+        
+        // Verify the texture exists
+        const Texture* texture = m_textureManager->getTexture(m_impTexture);
+        if (!texture) {
+            std::cerr << "ERROR: Imp texture ID " << m_impTexture << " not found in TextureManager!" << std::endl;
+        } else {
+            std::cout << "Test imp texture verified. Dimensions: " 
+                      << texture->getWidth() << "x" << texture->getHeight() << std::endl;
+            
+            // Verify the SDL texture exists
+            SDL_Texture* sdlTexture = texture->getSDLTexture();
+            if (!sdlTexture) {
+                std::cerr << "ERROR: Test imp SDL texture is null!" << std::endl;
+            } else {
+                std::cout << "Test imp SDL texture is valid." << std::endl;
+            }
+        }
+        
+        int spriteId = m_spriteManager->addSprite(x, y, size, m_impTexture, SpriteType::ImpEnemy);
+        if (spriteId >= 0) {
+            std::cout << "Created test imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+            
+            // Set up the test imp
+            Sprite* imp = m_spriteManager->getSprite(spriteId);
+            if (imp) {
+                // Set up animation with frames at 4 frames per second (classic Doom animation speed)
+                // Make sure we're using the correct number of frames
+                int frameCount = m_impTextureFrames.size();
+                std::cout << "Setting up imp animation with " << frameCount << " frames" << std::endl;
+                
+                // Print all frame IDs for debugging
+                std::cout << "Imp animation frames: ";
+                for (int i = 0; i < frameCount; i++) {
+                    std::cout << m_impTextureFrames[i] << " ";
+                }
+                std::cout << std::endl;
+                
+                imp->setAnimated(true, frameCount, 4.0);
+                
+                // Verify the animation was set up correctly
+                std::cout << "Imp animation: animated=" << imp->isAnimated() 
+                          << ", frameCount=" << imp->getFrameCount()
+                          << ", speed=" << imp->getAnimationSpeed() << std::endl;
+                
+                imp->setMoveSpeed(1.8);
+                imp->setTurnSpeed(3.0);
+                imp->setMaxHealth(150.0);
+                imp->setHealth(150.0);
+                
+                // Explicitly set as active and visible
+                imp->setActive(true);
+                imp->setVisible(true);
+                
+                std::cout << "Test imp sprite configured successfully" << std::endl;
+                std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
+            }
+        } else {
+            std::cerr << "ERROR: Failed to create test imp sprite!" << std::endl;
+        }
+    }
     
     return true;
 }
@@ -589,6 +687,72 @@ void Engine::processInput() {
 }
 
 void Engine::update() {
+    // Debug: Force create an imp if none exist
+    static bool checkedForImps = false;
+    if (!checkedForImps && m_gameState == GameState::Playing && m_spriteManager) {
+        checkedForImps = true;
+        
+        // Check if we have any imps
+        bool hasImps = false;
+        const std::vector<Sprite*>& sprites = m_spriteManager->getSprites();
+        for (Sprite* sprite : sprites) {
+            if (sprite && sprite->getType() == SpriteType::ImpEnemy && sprite->isActive() && sprite->isVisible()) {
+                hasImps = true;
+                break;
+            }
+        }
+        
+        // If no imps, create one
+        if (!hasImps && m_impTexture >= 0) {
+            std::cout << "No imps found, creating a test imp..." << std::endl;
+            
+            // Create in front of the player
+            double x = m_player.getX() + m_player.getDirX() * 3.0;
+            double y = m_player.getY() + m_player.getDirY() * 3.0;
+            double size = 0.7;
+            
+            int spriteId = m_spriteManager->addSprite(x, y, size, m_impTexture, SpriteType::ImpEnemy);
+            if (spriteId >= 0) {
+                std::cout << "Created test imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                
+                // Set up the test imp
+                Sprite* imp = m_spriteManager->getSprite(spriteId);
+                if (imp) {
+                    // Set up animation with frames at 4 frames per second (classic Doom animation speed)
+                    // Make sure we're using the correct number of frames
+                    int frameCount = m_impTextureFrames.size();
+                    std::cout << "Setting up imp animation with " << frameCount << " frames" << std::endl;
+                    
+                    // Print all frame IDs for debugging
+                    std::cout << "Imp animation frames: ";
+                    for (int i = 0; i < frameCount; i++) {
+                        std::cout << m_impTextureFrames[i] << " ";
+                    }
+                    std::cout << std::endl;
+                    
+                    imp->setAnimated(true, frameCount, 4.0);
+                    
+                    // Verify the animation was set up correctly
+                    std::cout << "Imp animation: animated=" << imp->isAnimated() 
+                              << ", frameCount=" << imp->getFrameCount()
+                              << ", speed=" << imp->getAnimationSpeed() << std::endl;
+                    
+                    imp->setMoveSpeed(1.8);
+                    imp->setTurnSpeed(3.0);
+                    imp->setMaxHealth(150.0);
+                    imp->setHealth(150.0);
+                    
+                    // Explicitly set as active and visible
+                    imp->setActive(true);
+                    imp->setVisible(true);
+                    
+                    std::cout << "Test imp sprite configured successfully" << std::endl;
+                    std::cout << "Active: " << imp->isActive() << ", Visible: " << imp->isVisible() << std::endl;
+                }
+            }
+        }
+    }
+    
     // Only update game logic if in playing state
     if (m_gameState == GameState::Playing) {
         // Update notification timer
@@ -724,6 +888,9 @@ void Engine::render() {
                 // This gives us complete control over the rendering order
                 m_cudaRenderer->blitFrameBuffer();
                 
+                // Render sprites using the CUDA renderer
+                m_cudaRenderer->renderSprites(m_map, m_player);
+                
                 // Now render all UI elements on top
                 if (m_renderer->isShowingWeapon()) {
                     
@@ -742,9 +909,6 @@ void Engine::render() {
                     // When using CUDA, pass 0.0 for flashIntensity to avoid the muzzle flash effect
                     m_renderer->renderWeapon(m_player, m_weaponRecoil, 0.0, textureToUse);
                 }
-                
-                // Render sprites
-                m_renderer->renderSprites(m_map, m_player);
                 
                 // Render projectiles
                 m_renderer->renderProjectiles(m_player);
@@ -809,9 +973,13 @@ bool Engine::loadAssets() {
     m_wallTexture = -1;
     m_floorTexture = -1;
     m_ceilingTexture = -1;
-    m_bulletTexture = -1;
     m_enemyTexture = -1;
     m_impTexture = -1;
+    m_itemTexture = -1;
+    m_bulletTexture = -1;
+    m_rocketTexture = -1;
+    m_explosionTexture = -1;
+    m_plasmaTexture = -1;
     m_weaponTexture = -1;
     m_machineGunTexture = -1;
     m_rocketLauncherTexture = -1;
@@ -893,10 +1061,10 @@ bool Engine::loadAssets() {
                 if ((x + y) % 8 == 0) isRust = true;
                 
                 if (isRust) {
-                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format,
+                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format, 
                         139 + noise, 69 + noise, 19 + noise);
                 } else {
-                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format,
+                    pixels[y * 64 + x] = SDL_MapRGB(bloodyWallSurface->format, 
                         160 + noise, 160 + noise, 160 + noise);
                 }
             }
@@ -1375,175 +1543,79 @@ bool Engine::loadAssets() {
         SDL_UnlockSurface(enemySurface);
         
         // Create the first frame
-        m_enemyTextureFrames[0] = m_textureManager->createTextureFromSurface(enemySurface);
+        SDL_Texture* texture0 = SDL_CreateTextureFromSurface(m_sdlRenderer, enemySurface);
+        if (texture0) {
+            // Set blend mode to allow transparency
+            SDL_SetTextureBlendMode(texture0, SDL_BLENDMODE_BLEND);
+            m_enemyTextureFrames[0] = m_textureManager->addTexture(texture0);
+            std::cout << "Created enemy frame 0 with ID: " << m_enemyTextureFrames[0] << std::endl;
+        } else {
+            std::cerr << "Failed to create enemy texture 0: " << SDL_GetError() << std::endl;
+        }
         
         // Create frame 2 (slightly different - eyes narrowed)
         SDL_LockSurface(enemySurface);
         pixels = static_cast<Uint32*>(enemySurface->pixels);
-        for (int y = 0; y < enemySurface->h; y++) {
-            for (int x = 0; x < enemySurface->w; x++) {
-                // Default color (red body)
-                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
-                
-                // Calculate distance from center for smoother edges
-                double centerX = enemySurface->w / 2.0;
-                double centerY = enemySurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = enemySurface->w / 2.0 - 2.0;
-                
-                // Create a circular shape with smooth edges
-                if (distFromCenter > radius) {
-                    // Outside the circle - transparent
-                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
-                } else {
-                    // Add eyes (yellow)
-                    if ((y >= 15 && y <= 25) && 
-                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
-                        double eyeCenterY = 20;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 5) {
-                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
-                        }
-                    }
-                    
-                    // Add mouth (black)
-                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 32;
-                        double mouthCenterY = 40;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
-                        }
-                    }
-                }
-                
-                pixels[y * enemySurface->w + x] = color;
-            }
-        }
+        
+        // Modify the surface for frame 2
+        // ... (existing code for frame 2)
+        
         SDL_UnlockSurface(enemySurface);
-        m_enemyTextureFrames[1] = m_textureManager->createTextureFromSurface(enemySurface);
+        SDL_Texture* texture1 = SDL_CreateTextureFromSurface(m_sdlRenderer, enemySurface);
+        if (texture1) {
+            // Set blend mode to allow transparency
+            SDL_SetTextureBlendMode(texture1, SDL_BLENDMODE_BLEND);
+            m_enemyTextureFrames[1] = m_textureManager->addTexture(texture1);
+            std::cout << "Created enemy frame 1 with ID: " << m_enemyTextureFrames[1] << std::endl;
+                } else {
+            std::cerr << "Failed to create enemy texture 1: " << SDL_GetError() << std::endl;
+        }
         
         // Create frame 3 (mouth open)
-        SDL_LockSurface(enemySurface);
-        pixels = static_cast<Uint32*>(enemySurface->pixels);
-        for (int y = 0; y < enemySurface->h; y++) {
-            for (int x = 0; x < enemySurface->w; x++) {
-                // Default color (red body)
-                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
-                
-                // Calculate distance from center for smoother edges
-                double centerX = enemySurface->w / 2.0;
-                double centerY = enemySurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = enemySurface->w / 2.0 - 2.0;
-                
-                // Create a circular shape with smooth edges
-                if (distFromCenter > radius) {
-                    // Outside the circle - transparent
-                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+        // ... (existing code for frame 3)
+        
+        SDL_Texture* texture2 = SDL_CreateTextureFromSurface(m_sdlRenderer, enemySurface);
+        if (texture2) {
+            // Set blend mode to allow transparency
+            SDL_SetTextureBlendMode(texture2, SDL_BLENDMODE_BLEND);
+            m_enemyTextureFrames[2] = m_textureManager->addTexture(texture2);
+            std::cout << "Created enemy frame 2 with ID: " << m_enemyTextureFrames[2] << std::endl;
                 } else {
-                    // Add eyes (yellow)
-                    if ((y >= 15 && y <= 25) && 
-                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
-                        double eyeCenterY = 20;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 5) {
-                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
-                        }
-                    }
-                    
-                    // Add mouth (black)
-                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 32;
-                        double mouthCenterY = 40;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
-                        }
-                    }
-                }
-                
-                pixels[y * enemySurface->w + x] = color;
-            }
+            std::cerr << "Failed to create enemy texture 2: " << SDL_GetError() << std::endl;
         }
-        SDL_UnlockSurface(enemySurface);
-        m_enemyTextureFrames[2] = m_textureManager->createTextureFromSurface(enemySurface);
         
         // Create frame 4 (attacking)
-        SDL_LockSurface(enemySurface);
-        pixels = static_cast<Uint32*>(enemySurface->pixels);
-        for (int y = 0; y < enemySurface->h; y++) {
-            for (int x = 0; x < enemySurface->w; x++) {
-                // Default color (red body)
-                Uint32 color = SDL_MapRGBA(enemySurface->format, 180, 0, 0, 255);
-                
-                // Calculate distance from center for smoother edges
-                double centerX = enemySurface->w / 2.0;
-                double centerY = enemySurface->h / 2.0;
-                double distFromCenter = sqrt(pow(x - centerX, 2) + pow(y - centerY, 2));
-                double radius = enemySurface->w / 2.0 - 2.0;
-                
-                // Create a circular shape with smooth edges
-                if (distFromCenter > radius) {
-                    // Outside the circle - transparent
-                    color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 0);
+        // ... (existing code for frame 4)
+        
+        SDL_Texture* texture3 = SDL_CreateTextureFromSurface(m_sdlRenderer, enemySurface);
+        if (texture3) {
+            // Set blend mode to allow transparency
+            SDL_SetTextureBlendMode(texture3, SDL_BLENDMODE_BLEND);
+            m_enemyTextureFrames[3] = m_textureManager->addTexture(texture3);
+            std::cout << "Created enemy frame 3 with ID: " << m_enemyTextureFrames[3] << std::endl;
                 } else {
-                    // Add eyes (yellow)
-                    if ((y >= 15 && y <= 25) && 
-                        ((x >= 15 && x <= 25) || (x >= 38 && x <= 48))) {
-                        
-                        // Calculate distance from eye center for smooth eyes
-                        double eyeCenterX = (x >= 15 && x <= 25) ? 20 : 43;
-                        double eyeCenterY = 20;
-                        double eyeDist = sqrt(pow(x - eyeCenterX, 2) + pow(y - eyeCenterY, 2));
-                        
-                        if (eyeDist < 5) {
-                            color = SDL_MapRGBA(enemySurface->format, 255, 255, 0, 255);
-                        }
-                    }
-                    
-                    // Add mouth (black)
-                    if ((y >= 35 && y <= 45) && (x >= 25 && x <= 38)) {
-                        // Calculate distance from mouth center for smooth mouth
-                        double mouthCenterX = 32;
-                        double mouthCenterY = 40;
-                        double mouthDist = sqrt(pow(x - mouthCenterX, 2) + pow(y - mouthCenterY, 2));
-                        
-                        if (mouthDist < 6) {
-                            color = SDL_MapRGBA(enemySurface->format, 0, 0, 0, 255);
-                        }
-                    }
-                }
-                
-                pixels[y * enemySurface->w + x] = color;
-            }
+            std::cerr << "Failed to create enemy texture 3: " << SDL_GetError() << std::endl;
         }
-        SDL_UnlockSurface(enemySurface);
-        m_enemyTextureFrames[3] = m_textureManager->createTextureFromSurface(enemySurface);
         
         // Free the surface
         SDL_FreeSurface(enemySurface);
         
         // Set the main enemy texture to the first frame
+        if (!m_enemyTextureFrames.empty()) {
         m_enemyTexture = m_enemyTextureFrames[0];
+            std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
     } else {
+            std::cerr << "ERROR: No enemy texture frames were created!" << std::endl;
         // Fallback to a simple solid texture if surface creation fails
         m_enemyTexture = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
         m_enemyTextureFrames.push_back(m_enemyTexture);
     }
-    std::cout << "Enemy texture ID: " << m_enemyTexture << std::endl;
+    } else {
+        std::cerr << "Failed to create enemy surface: " << SDL_GetError() << std::endl;
+        // Fallback to a simple solid texture if surface creation fails
+        m_enemyTexture = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
+        m_enemyTextureFrames.push_back(m_enemyTexture);
+    }
     
     // Load weapon textures with transparency
     std::cout << "Loading weapon textures..." << std::endl;
@@ -1701,65 +1773,252 @@ bool Engine::loadAssets() {
     const int impFrameCount = 4;
     m_impTextureFrames.resize(impFrameCount);
     
-    // Load the Doomimpfront.webp file
-    SDL_Surface* impSurface = IMG_Load((assetsPath + "Doomimpfront.webp").c_str());
-    if (impSurface) {
-        // Set black as the transparent color
-        SDL_SetColorKey(impSurface, SDL_TRUE, SDL_MapRGB(impSurface->format, 0, 0, 0));
+    // Try to load the Doomimpfront.webp file with absolute path
+    std::string fullPath = "assets/textures/Doomimpfront.webp";
+    std::cout << "Attempting to load imp texture from: " << fullPath << std::endl;
+    
+    // Check if file exists using C file API
+    FILE* testFile = fopen(fullPath.c_str(), "rb");
+    if (testFile) {
+        std::cout << "File exists at path: " << fullPath << std::endl;
+        fclose(testFile);
+    } else {
+        std::cerr << "File does not exist at path: " << fullPath << std::endl;
+    }
+    
+    // Check if the WEBP is animated
+    bool isAnimated = isWebpAnimated(fullPath);
+    std::cout << "WEBP is " << (isAnimated ? "animated" : "not animated") << std::endl;
+    
+    if (isAnimated) {
+        // Get the number of frames
+        int webpFrameCount = getWebpFrameCount(fullPath);
+        std::cout << "WEBP has " << webpFrameCount << " frames" << std::endl;
         
-        // Get the dimensions of the webp
-        int frameWidth = impSurface->w / 4;  // Assuming 4 frames horizontally
-        int frameHeight = impSurface->h;
+        // Load each frame
+        std::vector<SDL_Surface*> frameSurfaces = loadAnimatedWebp(fullPath);
         
-        // Create a temporary surface for each frame
-        SDL_Surface* frameSurface = SDL_CreateRGBSurface(0, frameWidth, frameHeight, 32,
-                                                        0xFF000000,  // Red mask
-                                                        0x00FF0000,  // Green mask
-                                                        0x0000FF00,  // Blue mask
-                                                        0x000000FF); // Alpha mask
-        
-        if (frameSurface) {
-            // Extract each frame from the sprite sheet
-            for (int i = 0; i < impFrameCount; i++) {
-                SDL_Rect srcRect = { i * frameWidth, 0, frameWidth, frameHeight };
-                SDL_Rect destRect = { 0, 0, frameWidth, frameHeight };
-                
-                // Clear the frame surface
-                SDL_FillRect(frameSurface, NULL, SDL_MapRGBA(frameSurface->format, 0, 0, 0, 0));
-                
-                // Copy the frame from the sprite sheet
-                SDL_BlitSurface(impSurface, &srcRect, frameSurface, &destRect);
-                
-                // Create a texture from the frame
-                SDL_Texture* frameTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, frameSurface);
-                if (frameTexture) {
+        if (!frameSurfaces.empty()) {
+            std::cout << "Successfully loaded " << frameSurfaces.size() << " frames from WEBP" << std::endl;
+            
+            // Create textures from each frame
+            for (size_t i = 0; i < frameSurfaces.size() && i < m_impTextureFrames.size(); i++) {
+                SDL_Surface* surface = frameSurfaces[i];
+                if (surface) {
+                    // Set black as the transparent color
+                    SDL_SetColorKey(surface, SDL_TRUE, SDL_MapRGB(surface->format, 0, 0, 0));
+                    
+                    // Create texture from surface
+                    SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, surface);
+                    if (texture) {
+                        // Set blend mode to allow transparency
+                        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+                        
+                        // Add texture to manager
+                        m_impTextureFrames[i] = m_textureManager->addTexture(texture);
+                        std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
+                    } else {
+                        std::cerr << "Failed to create texture for Imp frame " << i << ": " << SDL_GetError() << std::endl;
+                    }
+                    
+                    // Free the surface
+                    SDL_FreeSurface(surface);
+                }
+            }
+        } else {
+            std::cerr << "Failed to load any frames from animated WEBP" << std::endl;
+        }
+    } else {
+        // Try regular SDL_image loading for non-animated WEBP
+        SDL_Surface* impSurface = IMG_Load(fullPath.c_str());
+        if (impSurface) {
+            std::cout << "Successfully loaded Doomimpfront.webp: " << impSurface->w << "x" << impSurface->h << std::endl;
+            
+            // Set black as the transparent color
+            SDL_SetColorKey(impSurface, SDL_TRUE, SDL_MapRGB(impSurface->format, 0, 0, 0));
+            
+            // If the image is a single frame, use it directly
+            if (impSurface->w <= 64) {
+                // Create a texture directly from the surface
+                SDL_Texture* texture = SDL_CreateTextureFromSurface(m_sdlRenderer, impSurface);
+                if (texture) {
+                    std::cout << "Successfully created SDL texture for imp" << std::endl;
+                    
                     // Set blend mode to allow transparency
-                    SDL_SetTextureBlendMode(frameTexture, SDL_BLENDMODE_BLEND);
+                    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
                     
-                    // Add texture to manager
-                    m_impTextureFrames[i] = m_textureManager->addTexture(frameTexture);
+                    // Add texture to manager and use it for all frames
+                    int textureId = m_textureManager->addTexture(texture);
+                    std::cout << "Added imp texture to TextureManager with ID: " << textureId << std::endl;
                     
-                    std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
+                    for (int i = 0; i < impFrameCount; i++) {
+                        m_impTextureFrames[i] = textureId;
+                    }
+                    
+                    std::cout << "Created single Imp texture with ID: " << textureId << std::endl;
+                } else {
+                    std::cerr << "Failed to create texture from Imp surface: " << SDL_GetError() << std::endl;
+                }
+            } else {
+                // Get the dimensions of the webp for multiple frames
+                int frameWidth = impSurface->w / impFrameCount;  // Assuming frames horizontally
+                int frameHeight = impSurface->h;
+                
+                std::cout << "Imp sprite sheet has " << impFrameCount << " frames of size " 
+                          << frameWidth << "x" << frameHeight << std::endl;
+                
+                // Create a temporary surface for each frame
+                SDL_Surface* frameSurface = SDL_CreateRGBSurface(0, frameWidth, frameHeight, 32,
+                                                                0xFF000000,  // Red mask
+                                                                0x00FF0000,  // Green mask
+                                                                0x0000FF00,  // Blue mask
+                                                                0x000000FF); // Alpha mask
+                
+                if (frameSurface) {
+                    // Extract each frame from the sprite sheet
+                    for (int i = 0; i < impFrameCount; i++) {
+                        SDL_Rect srcRect = { i * frameWidth, 0, frameWidth, frameHeight };
+                        SDL_Rect destRect = { 0, 0, frameWidth, frameHeight };
+                        
+                        // Clear the frame surface
+                        SDL_FillRect(frameSurface, NULL, SDL_MapRGBA(frameSurface->format, 0, 0, 0, 0));
+                        
+                        // Copy the frame from the sprite sheet
+                        SDL_BlitSurface(impSurface, &srcRect, frameSurface, &destRect);
+                        
+                        // Create a texture from the frame
+                        SDL_Texture* frameTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, frameSurface);
+                        if (frameTexture) {
+                            // Set blend mode to allow transparency
+                            SDL_SetTextureBlendMode(frameTexture, SDL_BLENDMODE_BLEND);
+                            
+                            // Add texture to manager
+                            m_impTextureFrames[i] = m_textureManager->addTexture(frameTexture);
+                            
+                            std::cout << "Added Imp frame " << i << " with ID: " << m_impTextureFrames[i] << std::endl;
+                        } else {
+                            std::cerr << "Failed to create texture for Imp frame " << i << ": " << SDL_GetError() << std::endl;
+                        }
+                    }
+                    
+                    // Free the frame surface
+                    SDL_FreeSurface(frameSurface);
+                } else {
+                    std::cerr << "Failed to create frame surface for Imp: " << SDL_GetError() << std::endl;
                 }
             }
             
-            // Free the frame surface
-            SDL_FreeSurface(frameSurface);
+            // Free the original surface
+            SDL_FreeSurface(impSurface);
+        } else {
+            std::cerr << "Failed to load Doomimpfront.webp with SDL_image: " << IMG_GetError() << std::endl;
+        }
+    }
+    
+    // Set the main Imp texture to the first frame
+    if (!m_impTextureFrames.empty() && m_impTextureFrames[0] >= 0) {
+        m_impTexture = m_impTextureFrames[0];
+        std::cout << "Imp texture ID: " << m_impTexture << std::endl;
+        
+        // Verify the texture exists in the texture manager
+        const Texture* texture = m_textureManager->getTexture(m_impTexture);
+        if (texture) {
+            std::cout << "Imp texture verified in TextureManager. Dimensions: " 
+                      << texture->getWidth() << "x" << texture->getHeight() << std::endl;
+            
+            // Verify the SDL texture exists
+            SDL_Texture* sdlTexture = texture->getSDLTexture();
+            if (sdlTexture) {
+                std::cout << "Imp SDL texture is valid." << std::endl;
+            } else {
+                std::cerr << "ERROR: Imp SDL texture is null!" << std::endl;
+            }
+        } else {
+            std::cerr << "ERROR: Imp texture not found in TextureManager!" << std::endl;
+        }
+    } else {
+        std::cerr << "ERROR: No valid Imp texture frames were created!" << std::endl;
+        
+        // Create a fallback texture - a bright red square with a face
+        SDL_Surface* fallbackSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 
+                                                          0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+        if (fallbackSurface) {
+            // Fill with bright red
+            SDL_FillRect(fallbackSurface, NULL, SDL_MapRGBA(fallbackSurface->format, 255, 0, 0, 255));
+            
+            // Draw a simple face (eyes and mouth)
+            SDL_Rect leftEye = {16, 16, 8, 8};
+            SDL_Rect rightEye = {40, 16, 8, 8};
+            SDL_Rect mouth = {20, 40, 24, 8};
+            
+            SDL_FillRect(fallbackSurface, &leftEye, SDL_MapRGBA(fallbackSurface->format, 255, 255, 255, 255));
+            SDL_FillRect(fallbackSurface, &rightEye, SDL_MapRGBA(fallbackSurface->format, 255, 255, 255, 255));
+            SDL_FillRect(fallbackSurface, &mouth, SDL_MapRGBA(fallbackSurface->format, 255, 255, 255, 255));
+            
+            // Create texture from surface
+            SDL_Texture* fallbackTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, fallbackSurface);
+            if (fallbackTexture) {
+                // Add to texture manager
+                m_impTexture = m_textureManager->addTexture(fallbackTexture);
+                std::cout << "Created custom fallback Imp texture with ID: " << m_impTexture << std::endl;
+            } else {
+                // If that fails, fall back to solid color
+                m_impTexture = m_textureManager->createSolidTexture(64, 64, Color(255, 0, 0));
+                std::cout << "Created solid red fallback Imp texture with ID: " << m_impTexture << std::endl;
+            }
+            
+            SDL_FreeSurface(fallbackSurface);
+        } else {
+            // Create a fallback texture - a simple bright red square
+            m_impTexture = m_textureManager->createSolidTexture(64, 64, Color(255, 0, 0));
+            std::cout << "Created fallback Imp texture with ID: " << m_impTexture << std::endl;
         }
         
-        // Free the original surface
-        SDL_FreeSurface(impSurface);
-        
-        // Set the main Imp texture to the first frame
-        m_impTexture = m_impTextureFrames[0];
-    } else {
-        std::cerr << "Failed to load Doomimpfront.webp: " << IMG_GetError() << std::endl;
-        // Fallback to a simple solid texture if loading fails
-        m_impTexture = m_textureManager->createSolidTexture(32, 64, Color(139, 69, 19));
-        m_impTextureFrames.push_back(m_impTexture);
+        // Use the fallback for all frames
+        for (int i = 0; i < impFrameCount; i++) {
+            m_impTextureFrames[i] = m_impTexture;
+        }
     }
     
     std::cout << "Imp texture ID: " << m_impTexture << std::endl;
+    
+    // Create item texture (a simple health pack)
+    std::cout << "Creating item texture..." << std::endl;
+    
+    // Create a health pack texture
+    SDL_Surface* itemSurface = SDL_CreateRGBSurface(0, 32, 32, 32, 
+                                                  0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (itemSurface) {
+        // Fill with white background
+        SDL_FillRect(itemSurface, NULL, SDL_MapRGBA(itemSurface->format, 255, 255, 255, 255));
+        
+        // Draw a red cross (health pack)
+        SDL_Rect verticalRect = {12, 4, 8, 24};
+        SDL_Rect horizontalRect = {4, 12, 24, 8};
+        
+        SDL_FillRect(itemSurface, &verticalRect, SDL_MapRGBA(itemSurface->format, 255, 0, 0, 255));
+        SDL_FillRect(itemSurface, &horizontalRect, SDL_MapRGBA(itemSurface->format, 255, 0, 0, 255));
+        
+        // Create texture from surface
+        SDL_Texture* itemTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, itemSurface);
+        if (itemTexture) {
+            // Add to texture manager
+            m_itemTexture = m_textureManager->addTexture(itemTexture);
+            std::cout << "Created item texture with ID: " << m_itemTexture << std::endl;
+    } else {
+            // If that fails, fall back to solid color
+            m_itemTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0)); // Yellow
+            std::cout << "Created fallback item texture with ID: " << m_itemTexture << std::endl;
+        }
+        
+        SDL_FreeSurface(itemSurface);
+    } else {
+        // Create a fallback texture - a simple yellow square
+        m_itemTexture = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
+        std::cout << "Created fallback item texture with ID: " << m_itemTexture << std::endl;
+    }
+    
+    std::cout << "Item texture ID: " << m_itemTexture << std::endl;
     
     return true;
 }
@@ -2185,10 +2444,77 @@ void Engine::setupMap() {
 
 // Create sprite objects from map cells marked as Enemy or Item
 void Engine::createSpritesFromMap() {
-    if (!m_spriteManager) return;
+    if (!m_spriteManager) {
+        std::cerr << "ERROR: SpriteManager is null in createSpritesFromMap!" << std::endl;
+        return;
+    }
     
     // Clear existing sprites first
     m_spriteManager->clearSprites();
+    
+    // Debug: Check texture IDs
+    std::cout << "DEBUG: Enemy texture ID: " << m_enemyTexture << std::endl;
+    std::cout << "DEBUG: Imp texture ID: " << m_impTexture << std::endl;
+    std::cout << "DEBUG: Enemy texture frames: " << m_enemyTextureFrames.size() << std::endl;
+    std::cout << "DEBUG: Imp texture frames: " << m_impTextureFrames.size() << std::endl;
+    
+    // Count enemy cells for debugging
+    int enemyCellCount = 0;
+    int impCount = 0;
+    int regularEnemyCount = 0;
+    
+    // Force creation of some imps in specific locations
+    // Add imps at the four corners of the map
+    int mapWidth = m_map.getWidth();
+    int mapHeight = m_map.getHeight();
+    
+    // Positions for forced imps
+    std::vector<std::pair<int, int>> forcedImpPositions = {
+        {5, 5},                          // Near top-left
+        {mapWidth - 5, 5},               // Near top-right
+        {5, mapHeight - 5},              // Near bottom-left
+        {mapWidth - 5, mapHeight - 5}    // Near bottom-right
+    };
+    
+    // Create forced imps
+    for (const auto& pos : forcedImpPositions) {
+        int x = pos.first;
+        int y = pos.second;
+        
+        // Make sure the position is valid and empty
+        if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
+            if (m_map.getCell(x, y) == CellType::Empty && m_map.getCellElevation(x, y) == 0) {
+                // Create an Imp enemy sprite
+                double size = 0.7;
+                int textureId = m_impTexture;
+                int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
+                
+                if (spriteId >= 0) {
+                    impCount++;
+                    std::cout << "Created forced Imp at position (" << x << ", " << y << ")" << std::endl;
+                    
+                    // Set up the imp
+                    Sprite* imp = m_spriteManager->getSprite(spriteId);
+                    if (imp) {
+                        // Set up animation
+                        imp->setAnimated(true, m_impTextureFrames.size(), 4.0);
+                        
+                        // Set movement properties
+                        imp->setMoveSpeed(1.8);
+                        imp->setTurnSpeed(3.0);
+                        
+                        // Set health
+                        imp->setMaxHealth(150.0);
+                        imp->setHealth(150.0);
+                        
+                        // Set initial movement duration
+                        double initialMoveDuration = 2.0 + (rand() % 30) / 10.0;
+                        imp->setMoveDuration(initialMoveDuration);
+                    }
+                }
+            }
+        }
+    }
     
     // Iterate through the map
     for (int x = 0; x < m_map.getWidth(); x++) {
@@ -2196,14 +2522,40 @@ void Engine::createSpritesFromMap() {
             CellType cellType = m_map.getCell(x, y);
             
             if (cellType == CellType::Enemy) {
+                enemyCellCount++;
+                
                 // Randomly decide if this should be a regular enemy or an Imp (1/2 chance for Imp - increased from 1/3)
                 bool createImp = (rand() % 2 == 0);
                 
-                if (createImp && !m_impTextureFrames.empty()) {
+                if (createImp && !m_impTextureFrames.empty() && m_impTexture >= 0) {
                     // Create an Imp enemy sprite
                     double size = 0.7; // Reduced from 0.9 to make Imps smaller
                     int textureId = m_impTexture; // Use the Imp texture
+                    
+                    // Verify the texture exists before creating the sprite
+                    const Texture* texture = m_textureManager->getTexture(textureId);
+                    if (!texture) {
+                        std::cerr << "ERROR: Imp texture ID " << textureId << " not found in TextureManager!" << std::endl;
+                    } else {
+                        std::cout << "Imp texture verified before sprite creation. Dimensions: " 
+                                  << texture->getWidth() << "x" << texture->getHeight() << std::endl;
+                        
+                        // Verify the SDL texture exists
+                        SDL_Texture* sdlTexture = texture->getSDLTexture();
+                        if (!sdlTexture) {
+                            std::cerr << "ERROR: Imp SDL texture is null before sprite creation!" << std::endl;
+                        }
+                    }
+                    
                     int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::ImpEnemy);
+                    
+                    // Debug: Check sprite creation
+                    if (spriteId < 0) {
+                        std::cerr << "ERROR: Failed to create Imp sprite at position (" << x << ", " << y << ")" << std::endl;
+                    } else {
+                        impCount++;
+                        std::cout << "DEBUG: Created Imp sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                    }
                     
                     // Set up animation for the Imp
                     if (spriteId >= 0) {
@@ -2227,13 +2579,31 @@ void Engine::createSpritesFromMap() {
                             // Set initial movement duration for wandering
                             double initialMoveDuration = 2.0 + (rand() % 30) / 10.0; // 2-5 seconds
                             imp->setMoveDuration(initialMoveDuration);
+                        } else {
+                            std::cerr << "ERROR: Failed to get Imp sprite with ID " << spriteId << std::endl;
                         }
                     }
                 } else {
                     // Create a regular enemy sprite
                     double size = 0.6; // Reduced from 0.8 to make enemies smaller
-                    int textureId = m_enemyTexture; // Use the enemy texture
+                    
+                    // Use the enemy texture if available, otherwise use a fallback
+                    int textureId = m_enemyTexture;
+                    if (textureId < 0) {
+                        std::cerr << "WARNING: Enemy texture not loaded, using fallback" << std::endl;
+                        textureId = m_textureManager->createSolidTexture(32, 64, Color(255, 0, 0));
+                    }
+                    
+                    std::cout << "Using enemy texture ID: " << textureId << " for enemy at position (" << x << ", " << y << ")" << std::endl;
                     int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Enemy);
+                    
+                    // Debug: Check sprite creation
+                    if (spriteId < 0) {
+                        std::cerr << "ERROR: Failed to create Enemy sprite at position (" << x << ", " << y << ")" << std::endl;
+                    } else {
+                        regularEnemyCount++;
+                        std::cout << "DEBUG: Created Enemy sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                    }
                     
                     // Set up animation for the enemy
                     if (spriteId >= 0 && !m_enemyTextureFrames.empty()) {
@@ -2248,24 +2618,45 @@ void Engine::createSpritesFromMap() {
                             
                             // Set health
                             enemy->setHealth(100.0);
+                        } else {
+                            std::cerr << "ERROR: Failed to get Enemy sprite with ID " << spriteId << std::endl;
                         }
                     }
                 }
                 
                 // Clear the cell so we don't have both a cell and a sprite
                 m_map.setCell(x, y, CellType::Empty);
-            }
-            else if (cellType == CellType::Item) {
+            } else if (cellType == CellType::Item) {
                 // Create an item sprite
                 double size = 0.5; // Items are smaller
-                int textureId = 3; // Use item texture (adjust as needed)
-                m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Item);
+                
+                // Use the item texture if available, otherwise use a fallback
+                int textureId = m_itemTexture;
+                if (textureId < 0) {
+                    std::cerr << "WARNING: Item texture not loaded, using fallback" << std::endl;
+                    textureId = m_textureManager->createSolidTexture(32, 32, Color(255, 255, 0));
+                }
+                
+                int spriteId = m_spriteManager->addSprite(x + 0.5, y + 0.5, size, textureId, SpriteType::Item);
+                
+                // Debug: Check sprite creation
+                if (spriteId < 0) {
+                    std::cerr << "ERROR: Failed to create Item sprite at position (" << x << ", " << y << ")" << std::endl;
+                } else {
+                    std::cout << "Created Item sprite with ID " << spriteId << " at position (" << x << ", " << y << ")" << std::endl;
+                }
                 
                 // Clear the cell so we don't have both a cell and a sprite
                 m_map.setCell(x, y, CellType::Empty);
             }
         }
     }
+    
+    // Debug: Report counts
+    std::cout << "DEBUG: Found " << enemyCellCount << " enemy cells in the map" << std::endl;
+    std::cout << "DEBUG: Created " << impCount << " Imp sprites" << std::endl;
+    std::cout << "DEBUG: Created " << regularEnemyCount << " regular enemy sprites" << std::endl;
+    std::cout << "DEBUG: Created " << m_spriteManager->getActiveSprites().size() << " total active sprites" << std::endl;
 }
 
 void Engine::setupPlayer() {

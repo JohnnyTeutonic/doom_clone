@@ -703,7 +703,12 @@ SpriteManager::SpriteManager(const TextureManager* textureManager)
     : m_textureManager(textureManager)
 {
     // Set the singleton instance
+    std::cout << "Creating SpriteManager instance: " << this << std::endl;
+    if (s_instance != nullptr) {
+        std::cout << "WARNING: Overwriting existing SpriteManager instance: " << s_instance << " with " << this << std::endl;
+    }
     s_instance = this;
+    std::cout << "Set SpriteManager singleton to: " << s_instance << std::endl;
 }
 
 SpriteManager::~SpriteManager()
@@ -715,13 +720,38 @@ SpriteManager::~SpriteManager()
 }
 
 int SpriteManager::addSprite(double x, double y, double size, int textureId, SpriteType type) {
+    // Check if texture manager exists
+    if (!m_textureManager) {
+        std::cerr << "ERROR: TextureManager is null in SpriteManager::addSprite!" << std::endl;
+        return -1;
+    }
+    
     // Check if texture exists
-    if (!m_textureManager->getTexture(textureId)) {
+    const Texture* texture = m_textureManager->getTexture(textureId);
+    if (!texture) {
+        std::cerr << "ERROR: Invalid texture ID " << textureId << " in SpriteManager::addSprite!" << std::endl;
         return -1; // Invalid texture ID
     }
     
+    // Check if SDL texture exists
+    SDL_Texture* sdlTexture = texture->getSDLTexture();
+    if (!sdlTexture) {
+        std::cerr << "ERROR: Texture ID " << textureId << " has null SDL_Texture in SpriteManager::addSprite!" << std::endl;
+        return -1; // Invalid SDL texture
+    }
+    
+    // Create the sprite
     m_sprites.emplace_back(x, y, size, textureId, type);
-    return static_cast<int>(m_sprites.size() - 1);
+    
+    // Ensure the sprite is visible and active
+    int spriteId = static_cast<int>(m_sprites.size() - 1);
+    m_sprites[spriteId].setVisible(true);
+    m_sprites[spriteId].setActive(true);
+    
+    std::cout << "DEBUG: Added sprite with ID " << spriteId << ", type " << static_cast<int>(type) 
+              << ", texture ID " << textureId << " at position (" << x << ", " << y << ")" << std::endl;
+    
+    return spriteId;
 }
 
 void SpriteManager::removeSprite(int id) {

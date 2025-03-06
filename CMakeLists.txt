@@ -23,6 +23,33 @@ endif()
 find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
+# Set libwebp path - adjust this to your actual path
+set(LIBWEBP_DIR "C:/Libraries/libwebp")
+if(EXISTS "${LIBWEBP_DIR}")
+    message(STATUS "Found libwebp at ${LIBWEBP_DIR}")
+    include_directories("${LIBWEBP_DIR}/include")
+    link_directories("${LIBWEBP_DIR}/lib")
+    add_definitions(-DUSE_LIBWEBP)
+else()
+    # Try to find libwebp using pkg-config
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBWEBP libwebp)
+        pkg_check_modules(LIBWEBPDEMUX libwebpdemux)
+        
+        if(LIBWEBP_FOUND AND LIBWEBPDEMUX_FOUND)
+            message(STATUS "Found libwebp using pkg-config")
+            include_directories(${LIBWEBP_INCLUDE_DIRS} ${LIBWEBPDEMUX_INCLUDE_DIRS})
+            link_directories(${LIBWEBP_LIBRARY_DIRS} ${LIBWEBPDEMUX_LIBRARY_DIRS})
+            add_definitions(-DUSE_LIBWEBP)
+        else()
+            message(WARNING "libwebp not found using pkg-config, animated webp support will be limited")
+        endif()
+    else()
+        message(WARNING "pkg-config not found, animated webp support will be limited")
+    endif()
+endif()
+
 # Find SDL2 and related packages
 if(PLATFORM_WINDOWS)
     # For Windows, you may need to set SDL2 path manually if CMake can't find it
@@ -75,6 +102,7 @@ set(SOURCES
     src/utils.cpp
     src/audio.cpp
     src/cuda_renderer.cpp
+    src/webp_loader.cpp
 )
 
 # Header files
@@ -106,10 +134,28 @@ set_target_properties(doom_clone PROPERTIES
 if(PLATFORM_WINDOWS)
     target_compile_definitions(doom_clone PRIVATE PLATFORM_WINDOWS)
     # Direct linking for MinGW/Windows
-    target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
+    if(EXISTS "${LIBWEBP_DIR}")
+        target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} webp webpdemux)
+    else()
+        # Try pkg-config libraries
+        if(LIBWEBP_FOUND AND LIBWEBPDEMUX_FOUND)
+            target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${LIBWEBP_LIBRARIES} ${LIBWEBPDEMUX_LIBRARIES})
+        else()
+            target_link_libraries(doom_clone ${SDL2_LIBRARIES} SDL2_image SDL2_ttf SDL2_mixer ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
+        endif()
+    endif()
 else()
     target_compile_definitions(doom_clone PRIVATE PLATFORM_UNIX)
-    target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
+    if(EXISTS "${LIBWEBP_DIR}")
+        target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} webp webpdemux)
+    else()
+        # Try pkg-config libraries
+        if(LIBWEBP_FOUND AND LIBWEBPDEMUX_FOUND)
+            target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${LIBWEBP_LIBRARIES} ${LIBWEBPDEMUX_LIBRARIES})
+        else()
+            target_link_libraries(doom_clone SDL2 SDL2_image SDL2_ttf SDL2_mixer SDL2main m ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
+        endif()
+    endif()
 endif()
 
 # Copy assets to build directory

@@ -528,7 +528,10 @@ void Renderer::renderView(const Map& map, const Player& player) {
 }
 
 void Renderer::renderSprites(const Map& map, const Player& player) {
-    if (!m_spriteManager || !m_textureManager) return;
+    if (!m_spriteManager || !m_textureManager) {
+        std::cerr << "ERROR: SpriteManager or TextureManager is null in renderSprites!" << std::endl;
+        return;
+    }
     
     // Get player position and direction
     const Vec2& pos = player.getPosition();
@@ -541,18 +544,53 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
     
     // Get all active sprites
     std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
-    if (sprites.empty()) return;
+    if (sprites.empty()) {
+        // Debug message only if we expect sprites
+        std::cout << "No active sprites to render" << std::endl;
+        return;
+    }
     
-    // Sort sprites by distance (closest first for proper rendering)
+    std::cout << "Rendering " << sprites.size() << " active sprites" << std::endl;
+    
+    // Count sprites by type for debugging
+    int impCount = 0;
+    int enemyCount = 0;
+    int itemCount = 0;
+    int otherCount = 0;
+    
+    for (const Sprite* sprite : sprites) {
+        switch (sprite->getType()) {
+            case SpriteType::ImpEnemy:
+                impCount++;
+                break;
+            case SpriteType::Enemy:
+                enemyCount++;
+                break;
+            case SpriteType::Item:
+                itemCount++;
+                break;
+            default:
+                otherCount++;
+                break;
+        }
+    }
+    
+    std::cout << "Sprite types: " << impCount << " imps, " << enemyCount << " enemies, " 
+              << itemCount << " items, " << otherCount << " other" << std::endl;
+    
+    // Sort sprites by distance (furthest first for proper alpha blending)
     std::sort(sprites.begin(), sprites.end(), [&pos](const Sprite* a, const Sprite* b) {
         double distA = (a->getPosition() - pos).lengthSquared();
         double distB = (b->getPosition() - pos).lengthSquared();
-        return distA < distB;  // Sort in ascending order (closest first)
+        return distA > distB;  // Sort in descending order (furthest first)
     });
     
     // For each sprite
+    int renderedCount = 0;
     for (const Sprite* sprite : sprites) {
-        if (!sprite->isVisible() || !sprite->isActive()) continue;
+        if (!sprite->isVisible() || !sprite->isActive()) {
+            continue;
+        }
         
         // Skip sprites in invisible sectors (sector culling)
         int spriteSectorId = map.getSectorAt(sprite->getPosition().x, sprite->getPosition().y);
@@ -567,6 +605,11 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
         double invDet = 1.0 / (plane.x * dir.y - dir.x * plane.y);
         double transformX = invDet * (dir.y * spritePos.x - dir.x * spritePos.y);
         double transformY = invDet * (-plane.y * spritePos.x + plane.x * spritePos.y);
+        
+        // Skip sprites behind the camera
+        if (transformY <= 0.1) {
+            continue;
+        }
         
         // Calculate screen position
         int screenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
@@ -589,21 +632,45 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
         int drawEndX = spriteWidth / 2 + screenX;
         if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
         
+        // Skip if the sprite is completely off-screen
+        if (drawStartX >= m_screenWidth || drawEndX < 0 || drawStartY >= m_screenHeight || drawEndY < 0) {
+            continue;
+        }
+        
         // Get sprite texture
-        const Texture* texture = m_textureManager->getTexture(sprite->getTextureId());
-        if (!texture) continue;
+        int textureId = sprite->getTextureId();
+        const Texture* texture = m_textureManager->getTexture(textureId);
+        if (!texture) {
+            std::cerr << "ERROR: Invalid texture ID " << textureId << " for sprite!" << std::endl;
+            continue;
+        }
         
         // Draw the sprite
         SDL_Texture* sdlTexture = texture->getSDLTexture();
-        if (!sdlTexture) continue;
+        if (!sdlTexture) {
+            std::cerr << "ERROR: Null SDL_Texture for texture ID " << textureId << "!" << std::endl;
+            continue;
+        }
         
         // Set up source and destination rectangles
         SDL_Rect srcRect = {0, 0, texture->getWidth(), texture->getHeight()};
+        
+        // For animated sprites, use the current frame
+        if (sprite->getCurrentFrame() > 0) {
+            srcRect.x = sprite->getCurrentFrame() * texture->getWidth();
+        }
+        
         SDL_Rect dstRect = {drawStartX, drawStartY, drawEndX - drawStartX, drawEndY - drawStartY};
         
         // Render the sprite
-        SDL_RenderCopy(m_renderer, sdlTexture, &srcRect, &dstRect);
+        if (SDL_RenderCopy(m_renderer, sdlTexture, &srcRect, &dstRect) != 0) {
+            std::cerr << "ERROR: Failed to render sprite: " << SDL_GetError() << std::endl;
+        } else {
+            renderedCount++;
+        }
     }
+    
+    std::cout << "Successfully rendered " << renderedCount << " sprites" << std::endl;
 }
 
 void Renderer::renderMinimap(const Map& map, const Player& player, ProjectileManager& projectileManager) {
@@ -1091,7 +1158,6 @@ void Renderer::renderProjectiles(const Player& player) {
         
         // Skip if behind player or too far
         if (transformY <= 0.1) {
-            std::cout << "Bullet behind player, skipping" << std::endl;
             continue;
         }
         

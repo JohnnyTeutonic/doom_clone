@@ -19,7 +19,8 @@ sudo apt install -y \
     pkg-config \
     pulseaudio \
     libsdl2-mixer-2.0-0 \
-    libsdl2-mixer-dev
+    libwebp-dev \
+    libwebpdemux2 \
 
 echo "All required packages installed."
 echo "To build the game:"

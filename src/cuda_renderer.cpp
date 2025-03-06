@@ -35,6 +35,7 @@ CudaRenderer::CudaRenderer()
     , m_sdlRenderer(nullptr)
     , m_frameTexture(nullptr)
     , m_textureManager(nullptr)
+    , m_spriteManager(nullptr)
     , m_hostFrameBuffer(nullptr)
     , m_hostZBuffer(nullptr)
     , m_deviceFrameBuffer(nullptr)
@@ -711,9 +712,70 @@ void CudaRenderer::render(const Map& map, const Player& player) {
 void CudaRenderer::renderSprites(const Map& map, const Player& player) {
     // Get visible sectors
     const std::vector<int>& visibleSectors = map.getVisibleSectors();
+    std::cout << "CUDA: Map has " << visibleSectors.size() << " visible sectors" << std::endl;
     
-    // Get sprites from sprite manager
-    const std::vector<Sprite*>& sprites = SpriteManager::getInstance()->getSprites();
+    // Always use the singleton instance for consistency
+    SpriteManager* spriteManager = SpriteManager::getInstance();
+    if (!spriteManager) {
+        std::cerr << "ERROR: SpriteManager singleton is null in CudaRenderer::renderSprites!" << std::endl;
+        return;
+    }
+    
+    // Debug: Compare with member pointer
+    if (m_spriteManager != spriteManager) {
+        std::cerr << "WARNING: m_spriteManager != SpriteManager::getInstance() in CudaRenderer::renderSprites!" << std::endl;
+        std::cout << "CUDA: m_spriteManager = " << m_spriteManager << ", singleton = " << spriteManager << std::endl;
+        
+        // Update our member pointer to match the singleton
+        m_spriteManager = spriteManager;
+        std::cout << "CUDA: Updated m_spriteManager to match singleton" << std::endl;
+    }
+    
+    // Use getActiveSprites() instead of getSprites() to be consistent with the regular renderer
+    const std::vector<Sprite*> sprites = spriteManager->getActiveSprites();
+    std::cout << "CUDA: Found " << sprites.size() << " active sprites" << std::endl;
+    
+    // Debug: Also check all sprites
+    const std::vector<Sprite*>& allSprites = spriteManager->getSprites();
+    std::cout << "CUDA: Total sprites in manager: " << allSprites.size() << std::endl;
+    
+    // Debug: Check each sprite's active and visible state
+    for (size_t i = 0; i < allSprites.size(); i++) {
+        Sprite* sprite = allSprites[i];
+        if (sprite) {
+            std::cout << "CUDA: Sprite " << i << " - Type: " << static_cast<int>(sprite->getType()) 
+                      << ", Active: " << sprite->isActive() << ", Visible: " << sprite->isVisible() 
+                      << ", Position: (" << sprite->getX() << ", " << sprite->getY() << ")" << std::endl;
+        } else {
+            std::cout << "CUDA: Sprite " << i << " is null" << std::endl;
+        }
+    }
+    
+    // Count sprites by type for debugging
+    int impCount = 0;
+    int enemyCount = 0;
+    int itemCount = 0;
+    int otherCount = 0;
+    
+    for (const Sprite* sprite : sprites) {
+        switch (sprite->getType()) {
+            case SpriteType::ImpEnemy:
+                impCount++;
+                break;
+            case SpriteType::Enemy:
+                enemyCount++;
+                break;
+            case SpriteType::Item:
+                itemCount++;
+                break;
+            default:
+                otherCount++;
+                break;
+        }
+    }
+    
+    std::cout << "CUDA: Active sprite types: " << impCount << " imps, " << enemyCount << " enemies, " 
+              << itemCount << " items, " << otherCount << " other" << std::endl;
     
     // Sort sprites by distance (furthest first for correct alpha blending)
     std::vector<std::pair<float, Sprite*>> sortedSprites;
@@ -732,6 +794,8 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         sortedSprites.push_back(std::make_pair(distance, sprite));
     }
     
+    std::cout << "CUDA: Rendering " << sortedSprites.size() << " visible sprites" << std::endl;
+    
     // Sort sprites by distance (furthest first)
     std::sort(sortedSprites.begin(), sortedSprites.end(), 
         [](const std::pair<float, Sprite*>& a, const std::pair<float, Sprite*>& b) {
@@ -739,6 +803,7 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         });
     
     // Render sprites using SDL (for now, could be moved to CUDA in the future)
+    int renderedCount = 0;
     for (auto& pair : sortedSprites) {
         Sprite* sprite = pair.second;
         
@@ -750,6 +815,11 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         float invDet = 1.0f / (player.getPlaneX() * player.getDirY() - player.getDirX() * player.getPlaneY());
         float transformX = invDet * (player.getDirY() * spriteX - player.getDirX() * spriteY);
         float transformY = invDet * (-player.getPlaneY() * spriteX + player.getPlaneX() * spriteY);
+        
+        // Skip sprites behind the camera
+        if (transformY <= 0.1f) {
+            continue;
+        }
         
         // Calculate sprite screen position
         int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
@@ -764,17 +834,91 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         int drawStartY = std::max(0, m_screenHeight / 2 - spriteHeight / 2);
         int drawEndY = std::min(m_screenHeight - 1, m_screenHeight / 2 + spriteHeight / 2);
         
+        // Skip if the sprite is completely off-screen
+        if (drawStartX >= m_screenWidth || drawEndX < 0 || drawStartY >= m_screenHeight || drawEndY < 0) {
+            continue;
+        }
+        
         // Get sprite texture
-        SDL_Texture* texture = m_textureManager->getSDLTexture(sprite->getTextureId());
-        if (!texture) continue;
+        int textureId = sprite->getTextureId();
+        
+        // For animated sprites, adjust the texture ID based on the current frame
+        if (sprite->isAnimated() && sprite->getFrameCount() > 1) {
+            // For imp enemies, use the frame-specific textures
+            if (sprite->getType() == SpriteType::ImpEnemy) {
+                // Get the engine instance to access the imp texture frames
+                Engine* engine = Engine::getInstance();
+                if (engine) {
+                    const std::vector<int>& impFrames = engine->getImpTextureFrames();
+                    int currentFrame = sprite->getCurrentFrame();
+                    
+                    // Make sure the frame index is valid
+                    if (currentFrame >= 0 && currentFrame < impFrames.size()) {
+                        textureId = impFrames[currentFrame];
+                        std::cout << "CUDA: Using imp frame " << currentFrame << " with texture ID " << textureId << std::endl;
+                    }
+                } else {
+                    std::cerr << "CUDA: Engine::getInstance() returned nullptr" << std::endl;
+                    
+                    // Fallback: Use the base texture ID and add the current frame
+                    // This assumes that imp texture frames are stored sequentially
+                    int baseTextureId = sprite->getTextureId();
+                    int currentFrame = sprite->getCurrentFrame();
+                    textureId = baseTextureId + currentFrame;
+                    std::cout << "CUDA: Using fallback imp frame calculation: base=" << baseTextureId 
+                              << ", frame=" << currentFrame << ", result=" << textureId << std::endl;
+                }
+            }
+        }
+        
+        SDL_Texture* texture = m_textureManager->getSDLTexture(textureId);
+        if (!texture) {
+            std::cerr << "CUDA: Invalid texture ID " << textureId << " for sprite type " 
+                      << static_cast<int>(sprite->getType()) << std::endl;
+            
+            // Additional debugging for imp textures
+            if (sprite->getType() == SpriteType::ImpEnemy) {
+                std::cerr << "CUDA: Failed to get SDL texture for imp with texture ID " << textureId << std::endl;
+                std::cerr << "CUDA: Imp animation frame: " << sprite->getCurrentFrame() << std::endl;
+                
+                // Try to get the texture directly to see if it exists
+                const Texture* tex = m_textureManager->getTexture(textureId);
+                if (tex) {
+                    std::cerr << "CUDA: Texture exists but SDL_Texture is null. Dimensions: " 
+                              << tex->getWidth() << "x" << tex->getHeight() << std::endl;
+                } else {
+                    std::cerr << "CUDA: Texture does not exist in TextureManager" << std::endl;
+                }
+            }
+            
+            continue;
+        }
         
         // Set up source and destination rectangles
         SDL_Rect srcRect = { 0, 0, sprite->getWidth(), sprite->getHeight() };
+        
+        // For animated sprites using sprite sheets (not our imp implementation)
+        if (sprite->isAnimated() && sprite->getType() != SpriteType::ImpEnemy && sprite->getCurrentFrame() > 0) {
+            srcRect.x = sprite->getCurrentFrame() * sprite->getWidth();
+        }
+        
         SDL_Rect dstRect = { drawStartX, drawStartY, drawEndX - drawStartX, drawEndY - drawStartY };
         
         // Render sprite
-        SDL_RenderCopy(m_sdlRenderer, texture, &srcRect, &dstRect);
+        if (SDL_RenderCopy(m_sdlRenderer, texture, &srcRect, &dstRect) != 0) {
+            std::cerr << "CUDA: Failed to render sprite: " << SDL_GetError() << std::endl;
+        } else {
+            renderedCount++;
+            
+            // Debug info for imp sprites
+            if (sprite->getType() == SpriteType::ImpEnemy) {
+                std::cout << "CUDA: Rendered imp at (" << sprite->getX() << ", " << sprite->getY() 
+                          << ") with texture ID " << textureId << std::endl;
+            }
+        }
     }
+    
+    std::cout << "CUDA: Successfully rendered " << renderedCount << " sprites" << std::endl;
 }
 
 void CudaRenderer::renderUI(const Player& player) {

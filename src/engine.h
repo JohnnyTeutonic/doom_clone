@@ -37,6 +37,10 @@ public:
     Engine(int screenWidth = 800, int screenHeight = 600);
     ~Engine();
     
+    // Singleton access
+    static Engine* getInstance() { return s_instance; }
+    
+    // Core engine methods
     bool init(int screenWidth, int screenHeight, bool fullscreen, int targetFPS);
     void run();
     void shutdown();
@@ -150,7 +154,7 @@ private:
     // Timing
     Timer m_frameTimer;
     
-    // Asset IDs
+    // Texture IDs
     int m_wallTexture;
     int m_floorTexture;
     int m_ceilingTexture;
@@ -161,10 +165,15 @@ private:
     int m_machineGunTexture;
     int m_rocketLauncherTexture;
     int m_currentWeaponTexture;
+    int m_rocketTexture;
+    int m_explosionTexture;
+    int m_plasmaTexture;  // New texture for plasma projectiles
+    int m_itemTexture;  // Add item texture ID
+    
+    // Animation frames
     std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
     std::vector<int> m_impTextureFrames;    // Animation frames for Imp
     std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
-    int m_plasmaTexture;  // New texture for plasma projectiles
     
     // Notification system
     std::string m_notificationText;
@@ -189,6 +198,9 @@ private:
     void renderNotification();
     void renderMainMenu();
     void renderPauseOverlay();
+    
+    // Singleton instance
+    static Engine* s_instance;
 };
 
 #endif // ENGINE_H 

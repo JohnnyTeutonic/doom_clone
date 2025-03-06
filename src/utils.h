@@ -7,6 +7,11 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <thread>
+
+// Include SDL headers for SDL_Surface declarations
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 
 // Platform-specific includes
 #ifdef PLATFORM_WINDOWS
@@ -171,5 +176,20 @@ inline void sleep_ms(unsigned int ms) {
     usleep(ms * 1000);
 #endif
 }
+
+// Helper function to create a DOOM-style flat texture (for floors/ceilings)
+SDL_Surface* createDoomFlatTexture(int width, int height, bool isFloor);
+
+// Helper function to load an animated WEBP file and extract its frames
+std::vector<SDL_Surface*> loadAnimatedWebp(const std::string& filename);
+
+// Helper function to check if a WEBP file is animated
+bool isWebpAnimated(const std::string& filename);
+
+// Helper function to get the number of frames in an animated WEBP file
+int getWebpFrameCount(const std::string& filename);
+
+// Helper function to load a specific frame from an animated WEBP file
+SDL_Surface* loadWebpFrame(const std::string& filename, int frameIndex);
 
 #endif // UTILS_H 
