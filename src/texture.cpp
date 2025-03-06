@@ -412,6 +412,111 @@ void TextureManager::initDefaultTextures() {
     
     // Green wall texture
     createCheckerboardTexture(64, 64, Color(0, 100, 0), Color(34, 139, 34), 16);
+    
+    // Create DOOM-style wall texture
+    SDL_Surface* doomWallSurface = createDoomWallTexture(64, 64);
+    if (doomWallSurface) {
+        createTextureFromSurface(doomWallSurface);
+        SDL_FreeSurface(doomWallSurface);
+    }
+    
+    // Create DOOM-style floor textures - multiple variations
+    
+    // Floor texture 1 - FLOOR7_2 style (tan with octagon pattern)
+    SDL_Surface* doomFloorSurface1 = createDoomFlatTexture(64, 64, true);
+    if (doomFloorSurface1) {
+        createTextureFromSurface(doomFloorSurface1);
+        SDL_FreeSurface(doomFloorSurface1);
+    }
+    
+    // Floor texture 2 - Green marble style (FLOOR4_8 inspired)
+    SDL_Surface* floorSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (floorSurface) {
+        SDL_LockSurface(floorSurface);
+        Uint32* pixels = (Uint32*)floorSurface->pixels;
+        
+        // Create FLOOR1_6 style texture (gray stone)
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 15) - 7;
+                
+                // Add crack patterns
+                int px = x % 32;
+                int py = y % 32;
+                bool isCrack = ((px + py) % 13 == 0) || ((px * py) % 29 == 0);
+                
+                if (isCrack) {
+                    // Darker crack color
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        50 + noise, 50 + noise, 50 + noise);
+                } else {
+                    // Base stone gray color
+                    int variation = ((x + y) % 7) * 3;
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        90 + variation + noise, 90 + variation + noise, 90 + variation + noise);
+                }
+            }
+        }
+        SDL_UnlockSurface(floorSurface);
+        createTextureFromSurface(floorSurface);
+        SDL_FreeSurface(floorSurface);
+    }
+    
+    // Create DOOM-style ceiling textures
+    
+    // Ceiling texture 1 - CEIL3_5 style (blue grid pattern)
+    SDL_Surface* doomCeilingSurface1 = createDoomFlatTexture(64, 64, false);
+    if (doomCeilingSurface1) {
+        createTextureFromSurface(doomCeilingSurface1);
+        SDL_FreeSurface(doomCeilingSurface1);
+    }
+    
+    // Ceiling texture 2 - FLAT23 style (metal panels)
+    SDL_Surface* ceilingSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (ceilingSurface) {
+        SDL_LockSurface(ceilingSurface);
+        Uint32* pixels = (Uint32*)ceilingSurface->pixels;
+        
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 8) - 4;
+                
+                // Create a metal panel pattern
+                int panelX = x % 16;
+                int panelY = y % 16;
+                
+                // Panel edges
+                bool isPanelEdge = (panelX == 0 || panelX == 15 || panelY == 0 || panelY == 15);
+                
+                // Metal bolts in corners
+                bool isBolt = ((panelX <= 2 || panelX >= 13) && (panelY <= 2 || panelY >= 13));
+                
+                // Panel surface features
+                bool isFeature = ((panelX + panelY) % 7 == 0);
+                
+                if (isPanelEdge) {
+                    // Dark panel edge
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        60 + noise, 60 + noise, 65 + noise);
+                } else if (isBolt) {
+                    // Metal bolts
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        70 + noise, 70 + noise, 75 + noise);
+                } else if (isFeature) {
+                    // Surface feature (scratch or dent)
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        90 + noise, 90 + noise, 95 + noise);
+                } else {
+                    // Base metal panel color
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        80 + noise, 80 + noise, 85 + noise);
+                }
+            }
+        }
+        SDL_UnlockSurface(ceilingSurface);
+        createTextureFromSurface(ceilingSurface);
+        SDL_FreeSurface(ceilingSurface);
+    }
 }
 
 // Helper function to create a DOOM-style wall texture
@@ -442,6 +547,88 @@ SDL_Surface* createDoomWallTexture(int width, int height) {
             }
             
             pixels[y * width + x] = SDL_MapRGB(surface->format, r, g, b);
+        }
+    }
+    
+    SDL_UnlockSurface(surface);
+    return surface;
+}
+
+// Helper function to create a DOOM-style flat texture (for floors/ceilings)
+SDL_Surface* createDoomFlatTexture(int width, int height, bool isFloor) {
+    SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (!surface) {
+        std::cerr << "Failed to create surface: " << SDL_GetError() << std::endl;
+        return nullptr;
+    }
+    
+    SDL_LockSurface(surface);
+    Uint32* pixels = (Uint32*)surface->pixels;
+    
+    // Seed for consistent noise pattern
+    srand(isFloor ? 42 : 137);
+    
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int noise = (rand() % 10) - 5;
+            
+            if (isFloor) {
+                // FLOOR4_8 inspired texture (green marble-like pattern)
+                int patternX = x % 32;
+                int patternY = y % 32;
+                
+                // Create marble-like swirls
+                int swirl = ((patternX * patternX + patternY * patternY) % 32) / 2;
+                
+                // Determine if this is a vein in the marble
+                bool isVein = (((patternX + patternY + swirl) % 16) < 3) || 
+                             (((patternX * patternY + swirl) % 24) < 2);
+                
+                // Color the pixel based on the pattern
+                if (isVein) {
+                    // Dark green veins
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        40 + noise, 60 + noise, 40 + noise);
+                } else {
+                    // Base marble color (greenish)
+                    int variation = swirl % 4 * 5;
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        70 + variation + noise, 90 + variation + noise, 70 + variation + noise);
+                }
+            } else {
+                // CEIL1_2 inspired texture (brown with lines)
+                int patternX = x % 64;
+                int patternY = y % 64;
+                
+                // Create grid pattern with thin lines
+                bool isLine = ((patternX % 16 == 0) || (patternY % 16 == 0));
+                bool isSecondaryLine = ((patternX % 8 == 0 && patternX % 16 != 0) || 
+                                       (patternY % 8 == 0 && patternY % 16 != 0));
+                
+                // Small details in a 4x4 grid
+                int detailX = (patternX / 4) % 4;
+                int detailY = (patternY / 4) % 4;
+                bool isDetail = ((detailX == 0 || detailX == 3) && (detailY == 0 || detailY == 3));
+                
+                // Color the pixel based on the pattern
+                if (isLine) {
+                    // Darker brown lines
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        90 + noise, 70 + noise, 50 + noise);
+                } else if (isSecondaryLine) {
+                    // Slightly darker than base for secondary lines
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        110 + noise, 90 + noise, 70 + noise);
+                } else if (isDetail) {
+                    // Small details
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        130 + noise, 110 + noise, 90 + noise);
+                } else {
+                    // Base brown color
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        120 + noise, 100 + noise, 80 + noise);
+                }
+            }
         }
     }
     

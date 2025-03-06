@@ -1009,34 +1009,43 @@ bool Engine::loadAssets() {
         Uint32* pixels = (Uint32*)floorSurface->pixels;
         for (int y = 0; y < 64; y++) {
             for (int x = 0; x < 64; x++) {
-                int noise = (rand() % 20) - 10;
+                int noise = (rand() % 10) - 5; // Reduced noise for more consistent look
                 
-                // Create a Doom-like floor pattern with tiles
+                // Create an authentic DOOM-like floor pattern (FLOOR7_2 inspired)
+                bool isMainTile = false;
                 bool isTileEdge = false;
                 
-                // Create tile edges
-                if ((x % 8 == 0 || y % 8 == 0) && 
-                    (x % 16 != 0 && y % 16 != 0)) {
+                // Create octagonal tile pattern
+                int tileX = x % 32;
+                int tileY = y % 32;
+                
+                // Octagon edges
+                if ((tileX == 0 || tileX == 31 || tileY == 0 || tileY == 31) || 
+                    (tileX == 8 && tileY < 24 && tileY > 7) ||
+                    (tileX == 23 && tileY < 24 && tileY > 7) ||
+                    (tileY == 8 && tileX < 24 && tileX > 7) ||
+                    (tileY == 23 && tileX < 24 && tileX > 7)) {
                     isTileEdge = true;
                 }
                 
-                // Create main grid lines
-                bool isMainGrid = (x % 16 == 0 || y % 16 == 0);
+                // Diamond pattern in center
+                bool isDiamondPattern = 
+                    ((tileX + tileY >= 16 - 4 && tileX + tileY <= 16 + 4) || 
+                     (tileX - tileY <= 4 && tileX - tileY >= -4)) &&
+                    (tileX > 8 && tileX < 23 && tileY > 8 && tileY < 23);
                 
-                // Set colors based on pattern
-                if (isMainGrid) {
-                    // Dark main grid lines
+                if (isDiamondPattern) {
+                    // Diamond pattern (brownish)
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        120 + noise, 100 + noise, 80 + noise);
+                } else if (isTileEdge) {
+                    // Dark grout/edge (dark gray)
                     pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
                         50 + noise, 50 + noise, 50 + noise);
-                } else if (isTileEdge) {
-                    // Subtle tile edges
-                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
-                        70 + noise, 70 + noise, 70 + noise);
                 } else {
-                    // Base floor color with slight variation based on position
-                    int variation = ((x / 8 + y / 8) % 3) * 10;
+                    // Base tile color (grayish tan like DOOM's FLOOR7_2)
                     pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
-                        80 + variation + noise, 80 + variation + noise, 80 + variation + noise);
+                        100 + noise, 90 + noise, 75 + noise);
                 }
             }
         }
@@ -1056,37 +1065,43 @@ bool Engine::loadAssets() {
         Uint32* pixels = (Uint32*)ceilingSurface->pixels;
         for (int y = 0; y < 64; y++) {
             for (int x = 0; x < 64; x++) {
-                int noise = (rand() % 20) - 10;
+                int noise = (rand() % 8) - 4; // Reduced noise for more consistent look
                 
-                // Create a Doom-like ceiling pattern with squares and lines
-                bool isLine = false;
+                // Create a DOOM-like ceiling pattern (FLAT1 / CEIL3_5 inspired)
                 bool isSquare = false;
                 
-                // Create grid lines
-                if (x % 16 == 0 || y % 16 == 0) {
-                    isLine = true;
-                }
+                // Position within the repeating pattern (16x16)
+                int patternX = x % 16;
+                int patternY = y % 16;
                 
-                // Create square patterns in a checkerboard layout
-                int squareX = (x / 16) % 2;
-                int squareY = (y / 16) % 2;
-                if ((squareX == 0 && squareY == 0) || (squareX == 1 && squareY == 1)) {
-                    isSquare = true;
-                }
+                // Create main grid lines
+                bool isHorizontalLine = (patternY == 0 || patternY == 15);
+                bool isVerticalLine = (patternX == 0 || patternX == 15);
+                bool isInteriorLine = (patternX == 8 || patternY == 8);
                 
-                // Set colors based on pattern
-                if (isLine) {
-                    // Dark lines
+                // Small squares in a pattern
+                bool isSmallSquare = ((patternX >= 3 && patternX <= 5) && (patternY >= 3 && patternY <= 5)) || 
+                                     ((patternX >= 3 && patternX <= 5) && (patternY >= 10 && patternY <= 12)) ||
+                                     ((patternX >= 10 && patternX <= 12) && (patternY >= 3 && patternY <= 5)) ||
+                                     ((patternX >= 10 && patternX <= 12) && (patternY >= 10 && patternY <= 12));
+                
+                // Set colors based on pattern (using DOOM's typical grayish-blue ceiling palette)
+                if (isHorizontalLine || isVerticalLine) {
+                    // Darker border lines
                     pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
-                        80 + noise, 80 + noise, 90 + noise);
-                } else if (isSquare) {
-                    // Lighter squares
+                        60 + noise, 60 + noise, 70 + noise);
+                } else if (isInteriorLine) {
+                    // Slightly lighter interior lines
                     pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
-                        130 + noise, 130 + noise, 140 + noise);
-                } else {
-                    // Base ceiling color
+                        75 + noise, 75 + noise, 85 + noise);
+                } else if (isSmallSquare) {
+                    // Light gray accent squares
                     pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
                         110 + noise, 110 + noise, 120 + noise);
+                } else {
+                    // Base bluish-gray color
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        90 + noise, 90 + noise, 105 + noise);
                 }
             }
         }
@@ -1097,6 +1112,16 @@ bool Engine::loadAssets() {
         m_ceilingTexture = m_textureManager->createSolidTexture(64, 64, Color(64, 64, 96));
     }
     std::cout << "Ceiling texture ID: " << m_ceilingTexture << std::endl;
+    
+    // NOTE: Alternative DOOM-like textures are available from TextureManager:
+    // Floor options: 5 (gray stone), 6 (green marble)
+    // Ceiling options: 7 (brown grid), 8 (metal panels)
+    
+    // Use DOOM-like textures from the TextureManager (initialized in TextureManager::initDefaultTextures)
+    // These will override the procedurally generated textures above
+    m_floorTexture = 6;    // Use green marble floor (FLOOR4_8 style)
+    m_ceilingTexture = 8;  // Use metal panel ceiling (FLAT23 style)
+    std::cout << "Using DOOM-like textures for floor and ceiling" << std::endl;
     
     // Create bullet texture
     std::cout << "Creating bullet texture..." << std::endl;

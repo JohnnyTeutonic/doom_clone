@@ -14,6 +14,9 @@ class TextureManager;
 // Helper function to create a DOOM-style wall texture
 SDL_Surface* createDoomWallTexture(int width, int height);
 
+// Helper function to create a DOOM-style flat texture (for floors/ceilings)
+SDL_Surface* createDoomFlatTexture(int width, int height, bool isFloor);
+
 class Texture {
 private:
     int m_width;
