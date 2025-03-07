@@ -35,15 +35,26 @@ __device__ float3 calculatePointLight(
     float diffuse = normal.x * lightDir.x + normal.y * lightDir.y;
     diffuse = fmaxf(0.0f, diffuse);
     
+    // Sharpen diffuse lighting for more defined shadows (Doom-like)
+    diffuse = powf(diffuse, 1.3f);
+    
     // Calculate attenuation (falloff with distance)
+    // Use more dramatic falloff for the Doom look
     float attenuation = fmaxf(0.0f, 1.0f - (lightDist / light.radius));
-    attenuation = attenuation * attenuation; // Squared falloff for more realistic effect
+    // Classic Doom had sharper light falloff
+    attenuation = powf(attenuation, 1.8f); // Stronger falloff for more defined shadows
     
     // Calculate the final light contribution
     float3 result;
     result.x = light.r * light.intensity * diffuse * attenuation;
     result.y = light.g * light.intensity * diffuse * attenuation;
     result.z = light.b * light.intensity * diffuse * attenuation;
+    
+    // Enhance light/shadow contrast for Doom-like appearance
+    float contrast = 1.2f;
+    result.x = fminf(1.0f, result.x * contrast);
+    result.y = fminf(1.0f, result.y * contrast);
+    result.z = fminf(1.0f, result.z * contrast);
     
     return result;
 }
@@ -56,11 +67,20 @@ __device__ float3 calculateDirectionalLight(
     float diffuse = -(normal.x * light.dirX + normal.y * light.dirY);
     diffuse = fmaxf(0.0f, diffuse);
     
-    // Calculate the final light contribution
+    // Enhance shadow contrast for Doom-like appearance
+    diffuse = powf(diffuse, 1.4f); // Sharper lighting edges
+    
+    // Calculate the final light contribution with enhanced contrast
+    float contrast = 1.25f;
     float3 result;
-    result.x = light.r * light.intensity * diffuse;
-    result.y = light.g * light.intensity * diffuse;
-    result.z = light.b * light.intensity * diffuse;
+    result.x = light.r * light.intensity * diffuse * contrast;
+    result.y = light.g * light.intensity * diffuse * contrast;
+    result.z = light.b * light.intensity * diffuse * contrast;
+    
+    // Ensure we don't exceed maximum brightness
+    result.x = fminf(1.0f, result.x);
+    result.y = fminf(1.0f, result.y);
+    result.z = fminf(1.0f, result.z);
     
     return result;
 }
@@ -74,11 +94,13 @@ __device__ float3 calculateLighting(
     int numActiveLights,
     const CudaAmbientLight& ambient
 ) {
-    // Start with ambient light
+    // Adjust ambient lighting to support horizontal shadows better
+    // Doom had strong shadowing at the top of walls, so we'll start with darker ambient
+    float ambientFactor = 0.80f;  // Slightly darker ambient for more dramatic shadows
     float3 totalLight;
-    totalLight.x = ambient.r * ambient.intensity;
-    totalLight.y = ambient.g * ambient.intensity;
-    totalLight.z = ambient.b * ambient.intensity;
+    totalLight.x = ambient.r * ambient.intensity * ambientFactor;
+    totalLight.y = ambient.g * ambient.intensity * ambientFactor;
+    totalLight.z = ambient.b * ambient.intensity * ambientFactor;
     
     // Apply all light sources - make sure we don't exceed array bounds
     for (int i = 0; i < numActiveLights; i++) {
@@ -117,13 +139,21 @@ __device__ float3 calculateLighting(
         totalLight.z += lightColor.z;
     }
     
-    // Apply distance attenuation
-    float distFactor = fminf(1.0f, 8.0f / distance);
+    // Apply classic Doom-style distance falloff (more dramatic than modern lighting)
+    float distFactor = 1.0f;
     
-    // Ensure minimum brightness
-    totalLight.x = fmaxf(0.2f, totalLight.x * distFactor);
-    totalLight.y = fmaxf(0.2f, totalLight.y * distFactor);
-    totalLight.z = fmaxf(0.2f, totalLight.z * distFactor);
+    // Enhanced falloff for more defined shadows at distance
+    if (distance > 1.5f) {
+        // More dramatic falloff curve that emphasizes closer walls
+        distFactor = powf(6.0f / distance, 1.3f);
+        distFactor = fminf(1.0f, distFactor);
+    }
+    
+    // Doom had fairly dark shadow areas
+    float minBrightness = 0.12f;  // Darker minimum for better contrast
+    totalLight.x = fmaxf(minBrightness, totalLight.x * distFactor);
+    totalLight.y = fmaxf(minBrightness, totalLight.y * distFactor);
+    totalLight.z = fmaxf(minBrightness, totalLight.z * distFactor);
     
     // Ensure maximum brightness
     totalLight.x = fminf(1.0f, totalLight.x);
@@ -336,6 +366,29 @@ extern "C" __global__ void raycastKernel(
     // Calculate lighting for this wall
     float3 lighting = calculateLighting(wallPos, normal, perpWallDist, playerPos, lights, numLights, *ambient);
     
+    // Replace vertical corner shadows with horizontal top-edge shadows (classic Doom style)
+    // But still apply subtle darkening near wall edges/corners for better wall definition
+    float cornerFactor = 1.0f;
+    float edgeDist = min(wallX, 1.0f - wallX); // Distance to nearest vertical edge/corner
+    
+    // Add enhanced darkening near corners/wall intersections (common in Doom)
+    if (edgeDist < 0.12f) { // Wider shadow area at corners (was 0.08f)
+        // Stronger corner darkening to complement the longer top shadows
+        cornerFactor = 0.75f + (edgeDist / 0.12f) * 0.25f; // 75% brightness at corners (was 85%)
+        lighting.x *= cornerFactor;
+        lighting.y *= cornerFactor;
+        lighting.z *= cornerFactor;
+    }
+    
+    // Apply distance darkness like classic Doom (stronger distance falloff)
+    float doomStyleDistanceShadow = fminf(1.0f, 4.0f / perpWallDist); // More aggressive distance falloff
+    doomStyleDistanceShadow = powf(doomStyleDistanceShadow, 1.6f); // Steeper falloff curve for longer shadows
+    
+    // Apply distance shadow effect
+    lighting.x *= doomStyleDistanceShadow;
+    lighting.y *= doomStyleDistanceShadow;
+    lighting.z *= doomStyleDistanceShadow;
+    
     // Draw the wall
     for (int i = drawStart; i <= drawEnd; i++) {
         // CRITICAL FIX: Determine if this is the very top row of wall pixels
@@ -431,11 +484,46 @@ extern "C" __global__ void raycastKernel(
         g = static_cast<uint8_t>(g * lighting.y);
         b = static_cast<uint8_t>(b * lighting.z);
         
-        // Make color darker for y-sides (additional shading for depth perception)
+        // Make colors darker for y-sides (enhanced for classic Doom appearance)
         if (side == 1) {
-            r = static_cast<uint8_t>(r * 0.8f);
-            g = static_cast<uint8_t>(g * 0.8f);
-            b = static_cast<uint8_t>(b * 0.8f);
+            // Stronger side shadow effect (more like classic Doom)
+            r = static_cast<uint8_t>(r * 0.7f);
+            g = static_cast<uint8_t>(g * 0.7f);
+            b = static_cast<uint8_t>(b * 0.7f);
+        }
+        
+        // Apply classic Doom horizontal shadow bands emanating from top edge
+        float heightFactor = static_cast<float>(i - drawStart) / static_cast<float>(drawEnd - drawStart);
+        
+        // Create strong shadow at top that gradually fades as it goes down (classic Doom style)
+        // Extend shadows to cover 55% of wall height (instead of 35%)
+        if (heightFactor < 0.55f) {
+            // More dramatic shadow gradient from top
+            float shadowStrength;
+            
+            if (heightFactor < 0.08f) {
+                // Very top is darkest (30% brightness - even darker for more contrast)
+                shadowStrength = 0.3f + (heightFactor / 0.08f) * 0.2f;
+            } else if (heightFactor < 0.25f) {
+                // Middle section of shadow (50% to 70% brightness)
+                shadowStrength = 0.5f + ((heightFactor - 0.08f) / (0.25f - 0.08f)) * 0.2f;
+            } else {
+                // Lower section of shadow (70% to 100% brightness) - longer fade-out
+                shadowStrength = 0.7f + ((heightFactor - 0.25f) / (0.55f - 0.25f)) * 0.3f;
+            }
+            
+            r = static_cast<uint8_t>(r * shadowStrength);
+            g = static_cast<uint8_t>(g * shadowStrength);
+            b = static_cast<uint8_t>(b * shadowStrength);
+        }
+        
+        // Add subtle darkening at the very bottom of walls (as in Doom)
+        if (heightFactor > 0.85f) {
+            // Lower portion of wall gets progressively darker
+            float bottomShadow = 1.0f - ((heightFactor - 0.85f) * 0.6f);
+            r = static_cast<uint8_t>(r * bottomShadow);
+            g = static_cast<uint8_t>(g * bottomShadow);
+            b = static_cast<uint8_t>(b * bottomShadow);
         }
         
         // Recombine
