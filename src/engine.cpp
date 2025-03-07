@@ -385,6 +385,9 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
         
         // Add 3 more imps at different positions
         addAdditionalImps();
+        
+        // Add 3 random imps in random locations
+        addRandomImps();
     }
     
     return true;
@@ -3587,4 +3590,76 @@ void Engine::addAdditionalImps() {
     }
     
     std::cout << "Successfully added " << successCount << " additional imps to the map" << std::endl;
+}
+
+void Engine::addRandomImps() {
+    if (!m_spriteManager || m_impTexture < 0) {
+        std::cerr << "Cannot add random imps - sprite manager or imp texture not available" << std::endl;
+        return;
+    }
+    
+    std::cout << "Adding 3 random imps to the map..." << std::endl;
+    
+    // Get map dimensions
+    int mapWidth = m_map.getWidth();
+    int mapHeight = m_map.getHeight();
+    
+    // Get player position to ensure we don't spawn too close
+    const Vec2& playerPos = m_player.getPosition();
+    double minDistanceFromPlayer = 5.0; // Minimum distance from player (cells)
+    
+    // Number of imps to create
+    int impsToCreate = 3;
+    int impsCreated = 0;
+    int maxAttempts = 50; // Maximum attempts to find suitable positions
+    
+    // Create imps
+    for (int i = 0; i < impsToCreate; i++) {
+        int attempts = 0;
+        bool validPosition = false;
+        double x = 0.0, y = 0.0;
+        
+        // Try to find a valid position
+        while (!validPosition && attempts < maxAttempts) {
+            // Generate random position
+            x = 1.0 + static_cast<double>(rand() % (mapWidth - 2)); // Avoid map edges
+            y = 1.0 + static_cast<double>(rand() % (mapHeight - 2)); // Avoid map edges
+            
+            // Add 0.5 to center in cell
+            x += 0.5;
+            y += 0.5;
+            
+            // Check if position is valid (not in a wall and not too close to player)
+            int cellX = static_cast<int>(x);
+            int cellY = static_cast<int>(y);
+            
+            // Calculate distance from player
+            double distFromPlayer = sqrt(pow(x - playerPos.x, 2) + pow(y - playerPos.y, 2));
+            
+            // Check if position is valid
+            if (m_map.getCell(cellX, cellY) != CellType::Wall && 
+                distFromPlayer >= minDistanceFromPlayer) {
+                validPosition = true;
+            }
+            
+            attempts++;
+        }
+        
+        // If we found a valid position, create an imp
+        if (validPosition) {
+            // Random size between 0.6 and 0.9
+            double size = 0.6 + (static_cast<double>(rand()) / RAND_MAX) * 0.3;
+            
+            // Create the imp
+            int spriteId = createImpEnemy(x, y, size);
+            if (spriteId >= 0) {
+                std::cout << "Created random imp #" << (impsCreated + 1) 
+                          << " at position (" << x << ", " << y 
+                          << ") with ID " << spriteId << std::endl;
+                impsCreated++;
+            }
+        }
+    }
+    
+    std::cout << "Successfully added " << impsCreated << " random imps to the map" << std::endl;
 }
