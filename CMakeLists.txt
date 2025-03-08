@@ -5,6 +5,18 @@ project(DoomClone VERSION 1.0 LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable SIMD instruction sets
+if(MSVC)
+    # MSVC automatically detects and uses the highest available instruction set
+    # But we can explicitly enable specific sets if needed
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:SSE2")
+else()
+    # GCC and Clang
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2")
+    # Optional: Enable AVX if available
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
+endif()
+
 # Set CUDA standard
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
@@ -121,6 +133,9 @@ set(HEADERS
     src/audio.h
     src/cuda_renderer.h
 )
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 
 # Define executable
 add_executable(doom_clone ${SOURCES} ${CUDA_SOURCES} ${HEADERS})

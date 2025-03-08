@@ -127,7 +127,7 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
 
 void Renderer::renderView(const Map& map, const Player& player) {
     // Clear the z-buffer
-    std::fill(m_zBuffer.begin(), m_zBuffer.end(), std::numeric_limits<double>::max());
+    clearZBuffer();
     
     // Get player position, direction, and vertical angles
     const Vec2& pos = player.getPosition();
@@ -1646,4 +1646,13 @@ void Renderer::renderUI(const Player& player) {
     if (m_showMinimap && m_engine) {
         renderMinimap(m_engine->getMap(), player);
     }
+}
+
+// Clear the z-buffer
+void Renderer::clearZBuffer() {
+    #if defined(__SSE2__) || defined(_MSC_VER)
+    optimized::fill_doubles(m_zBuffer.data(), m_zBuffer.data() + m_zBuffer.size(), std::numeric_limits<double>::max());
+    #else
+    std::fill(m_zBuffer.begin(), m_zBuffer.end(), std::numeric_limits<double>::max());
+    #endif
 } 

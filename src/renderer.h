@@ -205,6 +205,9 @@ public:
     
     // Get the SDL renderer
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }
+    
+    // Clear the Z-buffer
+    void clearZBuffer();
 };
 
 #endif // RENDERER_H 

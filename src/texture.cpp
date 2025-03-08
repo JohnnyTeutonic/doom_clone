@@ -277,6 +277,49 @@ const uint32_t* Texture::getPixelData() const {
     // Resize the buffer if necessary
     buffer.resize(m_width * m_height);
     
+    #if defined(__SSE2__) || defined(_MSC_VER)
+    // SSE optimized version
+    // Process pixels in batches of 4
+    int totalPixels = m_width * m_height;
+    int vectorizedEnd = totalPixels - (totalPixels % 4);
+    
+    for (int i = 0; i < vectorizedEnd; i += 4) {
+        // Load 4 colors from the texture
+        Color c0 = (i < m_pixels.size()) ? m_pixels[i] : Color{0, 0, 0};
+        Color c1 = (i+1 < m_pixels.size()) ? m_pixels[i+1] : Color{0, 0, 0};
+        Color c2 = (i+2 < m_pixels.size()) ? m_pixels[i+2] : Color{0, 0, 0};
+        Color c3 = (i+3 < m_pixels.size()) ? m_pixels[i+3] : Color{0, 0, 0};
+        
+        // Convert to ARGB format using SSE
+        __m128i r_vals = _mm_set_epi32(c3.r, c2.r, c1.r, c0.r);
+        __m128i g_vals = _mm_set_epi32(c3.g, c2.g, c1.g, c0.g);
+        __m128i b_vals = _mm_set_epi32(c3.b, c2.b, c1.b, c0.b);
+        __m128i a_vals = _mm_set1_epi32(0xFF); // Alpha is always 255
+        
+        // Shift and combine to create ARGB pixels
+        r_vals = _mm_slli_epi32(r_vals, 16);
+        g_vals = _mm_slli_epi32(g_vals, 8);
+        a_vals = _mm_slli_epi32(a_vals, 24);
+        
+        // Combine all channels
+        __m128i argb = _mm_or_si128(a_vals, r_vals);
+        argb = _mm_or_si128(argb, g_vals);
+        argb = _mm_or_si128(argb, b_vals);
+        
+        // Store result in buffer
+        _mm_storeu_si128((__m128i*)&buffer[i], argb);
+    }
+    
+    // Handle remaining pixels
+    for (int i = vectorizedEnd; i < totalPixels; i++) {
+        if (i < m_pixels.size()) {
+            Color color = m_pixels[i];
+            buffer[i] = (0xFF << 24) | (color.r << 16) | (color.g << 8) | color.b;
+        } else {
+            buffer[i] = 0xFF000000; // Transparent black for out of bounds
+        }
+    }
+    #else
     // Convert Color pixels to uint32_t ARGB format
     for (int y = 0; y < m_height; y++) {
         for (int x = 0; x < m_width; x++) {
@@ -284,6 +327,7 @@ const uint32_t* Texture::getPixelData() const {
             buffer[y * m_width + x] = (0xFF << 24) | (color.r << 16) | (color.g << 8) | color.b;
         }
     }
+    #endif
     
     return buffer.data();
 }

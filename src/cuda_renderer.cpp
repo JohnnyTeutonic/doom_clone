@@ -101,8 +101,36 @@ bool CudaRenderer::init(int screenWidth, int screenHeight, SDL_Renderer* sdlRend
         m_hostZBuffer = new float[screenWidth * screenHeight];
         
         // Initialize host memory
+        #if defined(__SSE2__) || defined(_MSC_VER)
+        // SSE-optimized buffer initialization
+        const size_t pixelCount = screenWidth * screenHeight;
+        const size_t vectorizedSize = pixelCount / 4;
+        const size_t remainder = pixelCount % 4;
+
+        // Set up SSE constants
+        __m128i zero_int = _mm_setzero_si128();
+        __m128 far_clip = _mm_set1_ps(10000.0f);
+
+        // Initialize frame buffer with zeros using SSE
+        for (size_t i = 0; i < vectorizedSize; ++i) {
+            _mm_storeu_si128((__m128i*)&m_hostFrameBuffer[i * 4], zero_int);
+        }
+
+        // Initialize Z-buffer with far clip value using SSE
+        for (size_t i = 0; i < vectorizedSize; ++i) {
+            _mm_storeu_ps(&m_hostZBuffer[i * 4], far_clip);
+        }
+
+        // Handle any remaining pixels
+        for (size_t i = vectorizedSize * 4; i < pixelCount; ++i) {
+            m_hostFrameBuffer[i] = 0;
+            m_hostZBuffer[i] = 10000.0f;
+        }
+        #else
+        // Standard initialization
         std::fill_n(m_hostFrameBuffer, screenWidth * screenHeight, 0);
         std::fill_n(m_hostZBuffer, screenWidth * screenHeight, 10000.0f);
+        #endif
     } catch (const std::bad_alloc& e) {
         std::cerr << "Failed to allocate host memory: " << e.what() << std::endl;
         cleanup();
@@ -455,10 +483,300 @@ void CudaRenderer::copyTexturesToDevice() {
     uint32_t* ceilingTextureData = nullptr;
     
     try {
-        wallTextureData = new uint32_t[4 * m_wallTextureWidth * m_wallTextureHeight];
-        floorTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
-        ceilingTextureData = new uint32_t[m_wallTextureWidth * m_wallTextureHeight];
+        // Use aligned memory allocation for better SSE performance
+        #ifdef _MSC_VER
+        wallTextureData = (uint32_t*)_aligned_malloc(4 * texSize, 16);
+        floorTextureData = (uint32_t*)_aligned_malloc(texSize, 16);
+        ceilingTextureData = (uint32_t*)_aligned_malloc(texSize, 16);
+        #else
+        wallTextureData = (uint32_t*)aligned_alloc(16, 4 * texSize);
+        floorTextureData = (uint32_t*)aligned_alloc(16, texSize);
+        ceilingTextureData = (uint32_t*)aligned_alloc(16, texSize);
+        #endif
         
+        if (!wallTextureData || !floorTextureData || !ceilingTextureData) {
+            throw std::runtime_error("Failed to allocate aligned memory for textures");
+        }
+        
+        // Initialize with default patterns as fallbacks using SSE where possible
+        #if defined(__SSE2__) || defined(_MSC_VER)
+        // SSE-optimized initialization for wall textures
+        for (int i = 0; i < 4; i++) {
+            for (int y = 0; y < m_wallTextureHeight; y++) {
+                // Process pixels in batches of 4 using SSE
+                int x = 0;
+                for (; x + 3 < m_wallTextureWidth; x += 4) {
+                    // Create authentic Doom-inspired texture patterns with SSE
+                    __m128i r_vals = _mm_set1_epi32(0);
+                    __m128i g_vals = _mm_set1_epi32(0);
+                    __m128i b_vals = _mm_set1_epi32(0);
+                    
+                    for (int j = 0; j < 4; j++) {
+                        // Base colors for different texture variations (authentic Doom palette)
+                        uint8_t r, g, b;
+                        int pixel_x = x + j;
+                        
+                        // Different pattern for each texture slot
+                        switch (i) {
+                            case 0: // Brown tech pattern (similar to STARTAN from Doom)
+                                {
+                                    bool largePattern = ((pixel_x / 16) + (y / 16)) % 2 == 0;
+                                    bool edgeDetail = (pixel_x % 16 < 2) || (y % 16 < 2);
+                                    bool smallDetail = ((pixel_x / 4) + (y / 4)) % 2 == 0;
+                                    
+                                    // Base brown color (authentic Doom STARTAN)
+                                    r = 145; g = 123; b = 96;
+                                    
+                                    // Apply pattern variations
+                                    if (edgeDetail) {
+                                        // Darker lines/seams between concrete blocks
+                                        r = 110; g = 90; b = 77;
+                                    } else if (smallDetail) {
+                                        // Random darker spots
+                                        r = 130; g = 110; b = 85;
+                                    } else if (largePattern) {
+                                        // Random lighter spots
+                                        r = 160; g = 140; b = 110;
+                                    }
+                                    
+                                    // Add some noise based on the combination of position
+                                    int noise = ((pixel_x * 7 + y * 13) % 8) - 4;
+                                    r = std::min(255, std::max(0, static_cast<int>(r) + noise));
+                                    g = std::min(255, std::max(0, static_cast<int>(g) + noise));
+                                    b = std::min(255, std::max(0, static_cast<int>(b) + noise));
+                                }
+                                break;
+                                
+                            case 1: // Reddish demonic texture (like REDWALL)
+                                {
+                                    bool vertLine = (pixel_x % 32 < 2);
+                                    bool horzLine = (y % 24 < 2);
+                                    bool pattern = ((pixel_x / 8) ^ (y / 8)) & 1;
+                                    
+                                    // Deep red base
+                                    r = 160; g = 70; b = 60;
+                                    
+                                    // Apply variations
+                                    if (vertLine || horzLine) { r = 100; g = 40; b = 35; }
+                                    if (pattern) { r -= 20; g -= 10; b -= 5; }
+                                }
+                                break;
+                                
+                            case 2: // Gray tech pattern (like COMPTILE)
+                                {
+                                    int cellX = pixel_x % 16;
+                                    int cellY = y % 16;
+                                    bool isBorder = cellX < 2 || cellY < 2 || cellX > 13 || cellY > 13;
+                                    bool isInnerDetail = (cellX > 4 && cellX < 12 && cellY > 4 && cellY < 12);
+                                    
+                                    // Base gray color
+                                    r = 120; g = 120; b = 130;
+                                    
+                                    // Apply grid pattern
+                                    if (isBorder) { r = 70; g = 70; b = 80; }
+                                    if (isInnerDetail) { r = 100; g = 100; b = 110; }
+                                }
+                                break;
+                                
+                            case 3: // Green-brown tech (like SLADWALL)
+                                {
+                                    int patternX = (pixel_x / 8) % 3;
+                                    int patternY = (y / 8) % 3;
+                                    bool edgeDetail = (pixel_x % 8 < 1) || (y % 8 < 1);
+                                    
+                                    // Greenish brown base
+                                    r = 120; g = 110; b = 60;
+                                    
+                                    // Pattern variations
+                                    if (patternX == 0 || patternY == 0) { r -= 20; g -= 15; }
+                                    if (edgeDetail) { r = 70; g = 65; b = 35; }
+                                }
+                                break;
+                                
+                            default:
+                                // Fallback brown
+                                r = 120; g = 100; b = 80;
+                        }
+                        
+                        // Only add noise to textures 1-3 (texture 0 already has its own noise pattern)
+                        if (i > 0) {
+                            int noise = ((pixel_x * 13 + y * 7) % 10) - 5;
+                            r = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(r) + noise)));
+                            g = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(g) + noise)));
+                            b = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(b) + noise)));
+                        }
+                        
+                        // Combine into final ARGB color
+                        uint32_t color = (0xFF << 24) | (r << 16) | (g << 8) | b;
+                        
+                        // Store color in our temporary array
+                        // Using an array-based approach compatible with SSE2
+                        static uint32_t colors[4];
+                        colors[j] = color;
+                        
+                        // Only create the SSE register once we have all 4 colors
+                        if (j == 3) {
+                            // Create r_vals with all 4 colors at once (SSE2 compatible)
+                            r_vals = _mm_setr_epi32(colors[0], colors[1], colors[2], colors[3]);
+                            
+                            // Store the four pixels at once (only when j==3, meaning we have all 4 pixels)
+                            _mm_store_si128((__m128i*)&wallTextureData[i * m_wallTextureWidth * m_wallTextureHeight + y * m_wallTextureWidth + x], r_vals);
+                        }
+                    }
+                }
+                
+                // Handle remaining pixels (if width is not multiple of 4)
+                for (; x < m_wallTextureWidth; x++) {
+                    // Create authentic Doom-inspired texture patterns
+                    
+                    // Base colors for different texture variations (authentic Doom palette)
+                    uint8_t r, g, b;
+                    
+                    // Different pattern for each texture slot (same logic as above)
+                    // ... existing pattern code for remaining pixels
+                    switch (i) {
+                        case 0: // Brown tech pattern
+                            {
+                                bool largePattern = ((x / 16) + (y / 16)) % 2 == 0;
+                                bool edgeDetail = (x % 16 < 2) || (y % 16 < 2);
+                                bool smallDetail = ((x / 4) + (y / 4)) % 2 == 0;
+                                
+                                r = 145; g = 123; b = 96;
+                                
+                                if (edgeDetail) {
+                                    r = 110; g = 90; b = 77;
+                                } else if (smallDetail) {
+                                    r = 130; g = 110; b = 85;
+                                } else if (largePattern) {
+                                    r = 160; g = 140; b = 110;
+                                }
+                                
+                                int noise = ((x * 7 + y * 13) % 8) - 4;
+                                r = std::min(255, std::max(0, static_cast<int>(r) + noise));
+                                g = std::min(255, std::max(0, static_cast<int>(g) + noise));
+                                b = std::min(255, std::max(0, static_cast<int>(b) + noise));
+                            }
+                            break;
+                        case 1: // Reddish demonic texture
+                            {
+                                bool vertLine = (x % 32 < 2);
+                                bool horzLine = (y % 24 < 2);
+                                bool pattern = ((x / 8) ^ (y / 8)) & 1;
+                                
+                                r = 160; g = 70; b = 60;
+                                
+                                if (vertLine || horzLine) { r = 100; g = 40; b = 35; }
+                                if (pattern) { r -= 20; g -= 10; b -= 5; }
+                            }
+                            break;
+                        case 2: // Gray tech pattern
+                            {
+                                int cellX = x % 16;
+                                int cellY = y % 16;
+                                bool isBorder = cellX < 2 || cellY < 2 || cellX > 13 || cellY > 13;
+                                bool isInnerDetail = (cellX > 4 && cellX < 12 && cellY > 4 && cellY < 12);
+                                
+                                r = 120; g = 120; b = 130;
+                                
+                                if (isBorder) { r = 70; g = 70; b = 80; }
+                                if (isInnerDetail) { r = 100; g = 100; b = 110; }
+                            }
+                            break;
+                        case 3: // Green-brown tech
+                            {
+                                int patternX = (x / 8) % 3;
+                                int patternY = (y / 8) % 3;
+                                bool edgeDetail = (x % 8 < 1) || (y % 8 < 1);
+                                
+                                r = 120; g = 110; b = 60;
+                                
+                                if (patternX == 0 || patternY == 0) { r -= 20; g -= 15; }
+                                if (edgeDetail) { r = 70; g = 65; b = 35; }
+                            }
+                            break;
+                        default:
+                            r = 120; g = 100; b = 80;
+                    }
+                    
+                    if (i > 0) {
+                        int noise = ((x * 13 + y * 7) % 10) - 5;
+                        r = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(r) + noise)));
+                        g = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(g) + noise)));
+                        b = static_cast<uint8_t>(std::min(255, std::max(0, static_cast<int>(b) + noise)));
+                    }
+                    
+                    uint32_t color = (0xFF << 24) | (r << 16) | (g << 8) | b;
+                    wallTextureData[i * m_wallTextureWidth * m_wallTextureHeight + y * m_wallTextureWidth + x] = color;
+                }
+            }
+        }
+        
+        // Default floor texture (grid pattern) using SSE
+        for (int y = 0; y < m_wallTextureHeight; y++) {
+            int x = 0;
+            __m128i grid_color = _mm_set1_epi32(0xFF444444);    // Dark grid color
+            __m128i fill_color = _mm_set1_epi32(0xFF888888);    // Light fill color
+            
+            for (; x + 3 < m_wallTextureWidth; x += 4) {
+                // Create a mask for which pixels are grid lines
+                int mask = 0;
+                for (int j = 0; j < 4; j++) {
+                    bool isGrid = ((x + j) % 16 == 0) || (y % 16 == 0);
+                    mask |= (isGrid ? (1 << j) : 0);
+                }
+                
+                // Select colors based on mask
+                __m128i colors;
+                if (mask == 0) {
+                    // All fill color
+                    colors = fill_color;
+                } else if (mask == 15) {
+                    // All grid color
+                    colors = grid_color;
+                } else {
+                    // Mixed - need to blend per pixel
+                    colors = _mm_set_epi32(
+                        (mask & 8) ? 0xFF444444 : 0xFF888888,
+                        (mask & 4) ? 0xFF444444 : 0xFF888888,
+                        (mask & 2) ? 0xFF444444 : 0xFF888888,
+                        (mask & 1) ? 0xFF444444 : 0xFF888888
+                    );
+                }
+                
+                // Store four pixels at once
+                _mm_store_si128((__m128i*)&floorTextureData[y * m_wallTextureWidth + x], colors);
+            }
+            
+            // Handle remaining pixels
+            for (; x < m_wallTextureWidth; x++) {
+                bool isGrid = (x % 16 == 0) || (y % 16 == 0);
+                uint32_t color = isGrid ? 0xFF444444 : 0xFF888888;
+                floorTextureData[y * m_wallTextureWidth + x] = color;
+            }
+        }
+        
+        // Default ceiling texture (gradient) using SSE
+        for (int y = 0; y < m_wallTextureHeight; y++) {
+            uint8_t value = static_cast<uint8_t>(128 + (y * 127) / m_wallTextureHeight);
+            uint32_t color = 0xFF000000 | (value << 16) | (value << 8) | value;
+            
+            // Create an SSE register with the same color for all 4 pixels
+            __m128i color_vec = _mm_set1_epi32(color);
+            
+            // Process pixels in batches of 4
+            int x = 0;
+            for (; x + 3 < m_wallTextureWidth; x += 4) {
+                _mm_store_si128((__m128i*)&ceilingTextureData[y * m_wallTextureWidth + x], color_vec);
+            }
+            
+            // Handle remaining pixels
+            for (; x < m_wallTextureWidth; x++) {
+                ceilingTextureData[y * m_wallTextureWidth + x] = color;
+            }
+        }
+        #else
+        // Non-SSE fallback implementation (original code)
+        // ... existing code for initializing textures
         // Initialize with default patterns as fallbacks
         for (int i = 0; i < 4; i++) {
             for (int y = 0; y < m_wallTextureHeight; y++) {
@@ -576,20 +894,59 @@ void CudaRenderer::copyTexturesToDevice() {
         }
         
         // Default ceiling texture (gradient)
-                for (int y = 0; y < m_wallTextureHeight; y++) {
-                    for (int x = 0; x < m_wallTextureWidth; x++) {
+        for (int y = 0; y < m_wallTextureHeight; y++) {
+            for (int x = 0; x < m_wallTextureWidth; x++) {
                 uint8_t value = static_cast<uint8_t>(128 + (y * 127) / m_wallTextureHeight);
                 uint32_t color = 0xFF000000 | (value << 16) | (value << 8) | value;
                 ceilingTextureData[y * m_wallTextureWidth + x] = color;
             }
         }
+        #endif
         
-        // Load actual textures first for walls
+        // Load actual textures first for walls - use optimized memory copy
+        #if defined(__SSE2__) || defined(_MSC_VER)
         for (int i = 0; i < 4 && i < m_wallTextureVariations.size(); i++) {
             // Get the correct texture ID from wall variations instead of using i directly
             int textureId = m_wallTextureVariations[i];
             const Texture* texture = m_textureManager->getTexture(textureId);
             
+            if (texture && texture->getWidth() > 0 && texture->getHeight() > 0) {
+                const uint32_t* pixels = texture->getPixelData();
+                if (pixels) {
+                    // Copy to the corresponding section of wall texture data
+                    uint32_t* dest = wallTextureData + (i * m_wallTextureWidth * m_wallTextureHeight);
+                    const uint32_t* src = pixels;
+                    size_t pixelCount = m_wallTextureWidth * m_wallTextureHeight;
+                    
+                    // Optimize memory copy using SSE
+                    size_t vectorSize = pixelCount / 4;
+                    size_t remainder = pixelCount % 4;
+                    
+                    // Copy 4 pixels at a time using SSE
+                    for (size_t j = 0; j < vectorSize; ++j) {
+                        __m128i pixels_vec = _mm_loadu_si128((__m128i*)src);
+                        _mm_store_si128((__m128i*)dest, pixels_vec);
+                        src += 4;
+                        dest += 4;
+                    }
+                    
+                    // Copy remaining pixels
+                    for (size_t j = 0; j < remainder; ++j) {
+                        *dest++ = *src++;
+                    }
+                } else {
+                    std::cout << "CUDA: Wall texture " << textureId << " has no pixel data" << std::endl;
+                }
+            } else {
+                std::cout << "CUDA: Wall texture ID " << textureId << " is invalid or has zero dimensions" << std::endl;
+            }
+        }
+        #else
+        // Non-SSE fallback for loading textures
+        for (int i = 0; i < 4 && i < m_wallTextureVariations.size(); i++) {
+            // Get the correct texture ID from wall variations instead of using i directly
+            int textureId = m_wallTextureVariations[i];
+            const Texture* texture = m_textureManager->getTexture(textureId);
             
             if (texture && texture->getWidth() > 0 && texture->getHeight() > 0) {
                 const uint32_t* pixels = texture->getPixelData();
@@ -607,6 +964,7 @@ void CudaRenderer::copyTexturesToDevice() {
                 std::cout << "CUDA: Wall texture ID " << textureId << " is invalid or has zero dimensions" << std::endl;
             }
         }
+        #endif
 
         // If we don't have enough wall textures, fill in with fallbacks
         if (m_wallTextureVariations.size() < 4) {
@@ -619,9 +977,32 @@ void CudaRenderer::copyTexturesToDevice() {
             
             // Get the pixel data from the first texture slot
             uint32_t* firstTextureData = wallTextureData;
-            size_t texSize = m_wallTextureWidth * m_wallTextureHeight * sizeof(uint32_t);
             
             // Copy the first texture to all other slots (1-3) to ensure consistency
+            #if defined(__SSE2__) || defined(_MSC_VER)
+            for (int i = 1; i < 4; i++) {
+                uint32_t* dest = wallTextureData + (i * m_wallTextureWidth * m_wallTextureHeight);
+                const uint32_t* src = firstTextureData;
+                size_t pixelCount = m_wallTextureWidth * m_wallTextureHeight;
+                
+                // Optimize copy with SSE
+                size_t vectorSize = pixelCount / 4;
+                size_t remainder = pixelCount % 4;
+                
+                for (size_t j = 0; j < vectorSize; ++j) {
+                    __m128i pixels_vec = _mm_load_si128((__m128i*)src);
+                    _mm_store_si128((__m128i*)dest, pixels_vec);
+                    src += 4;
+                    dest += 4;
+                }
+                
+                // Copy remaining pixels
+                for (size_t j = 0; j < remainder; ++j) {
+                    *dest++ = *src++;
+                }
+            }
+            #else
+            // Non-SSE fallback
             for (int i = 1; i < 4; i++) {
                 memcpy(
                     wallTextureData + (i * m_wallTextureWidth * m_wallTextureHeight),
@@ -629,6 +1010,7 @@ void CudaRenderer::copyTexturesToDevice() {
                     texSize
                 );
             }
+            #endif
         }
         
         // Load floor texture (using texture index 4)
@@ -637,7 +1019,30 @@ void CudaRenderer::copyTexturesToDevice() {
         if (floorTexture && floorTexture->getWidth() > 0 && floorTexture->getHeight() > 0) {
             const uint32_t* floorPixels = floorTexture->getPixelData();
             if (floorPixels) {
+                #if defined(__SSE2__) || defined(_MSC_VER)
+                // Optimize copy with SSE
+                size_t pixelCount = m_wallTextureWidth * m_wallTextureHeight;
+                size_t vectorSize = pixelCount / 4;
+                size_t remainder = pixelCount % 4;
+                
+                uint32_t* dest = floorTextureData;
+                const uint32_t* src = floorPixels;
+                
+                for (size_t j = 0; j < vectorSize; ++j) {
+                    __m128i pixels_vec = _mm_loadu_si128((__m128i*)src);
+                    _mm_store_si128((__m128i*)dest, pixels_vec);
+                    src += 4;
+                    dest += 4;
+                }
+                
+                // Copy remaining pixels
+                for (size_t j = 0; j < remainder; ++j) {
+                    *dest++ = *src++;
+                }
+                #else
+                // Non-SSE fallback
                 memcpy(floorTextureData, floorPixels, texSize);
+                #endif
                 floorTextureLoaded = true;
             }
         }
@@ -652,7 +1057,30 @@ void CudaRenderer::copyTexturesToDevice() {
         if (ceilingTexture && ceilingTexture->getWidth() > 0 && ceilingTexture->getHeight() > 0) {
             const uint32_t* ceilingPixels = ceilingTexture->getPixelData();
             if (ceilingPixels) {
+                #if defined(__SSE2__) || defined(_MSC_VER)
+                // Optimize copy with SSE
+                size_t pixelCount = m_wallTextureWidth * m_wallTextureHeight;
+                size_t vectorSize = pixelCount / 4;
+                size_t remainder = pixelCount % 4;
+                
+                uint32_t* dest = ceilingTextureData;
+                const uint32_t* src = ceilingPixels;
+                
+                for (size_t j = 0; j < vectorSize; ++j) {
+                    __m128i pixels_vec = _mm_loadu_si128((__m128i*)src);
+                    _mm_store_si128((__m128i*)dest, pixels_vec);
+                    src += 4;
+                    dest += 4;
+                }
+                
+                // Copy remaining pixels
+                for (size_t j = 0; j < remainder; ++j) {
+                    *dest++ = *src++;
+                }
+                #else
+                // Non-SSE fallback
                 memcpy(ceilingTextureData, ceilingPixels, texSize);
+                #endif
                 ceilingTextureLoaded = true;
             }
         }
@@ -661,35 +1089,45 @@ void CudaRenderer::copyTexturesToDevice() {
             std::cout << "Using default ceiling texture pattern" << std::endl;
         }
         
-        // Copy textures to device with error checking
+        // Copy textures to device with error checking - use CUDA streams for asynchronous transfers
         cudaError_t error;
         
-        error = cudaMemcpy(m_deviceWallTextures, wallTextureData, 4 * texSize, cudaMemcpyHostToDevice);
+        // Launch 3 asynchronous copies in parallel when possible
+        error = cudaMemcpyAsync(m_deviceWallTextures, wallTextureData, 4 * texSize, cudaMemcpyHostToDevice, m_cudaStream);
         if (error != cudaSuccess) {
             std::cerr << "Failed to copy wall textures to device: " << cudaGetErrorString(error) << std::endl;
             throw std::runtime_error("CUDA memory copy failed");
         }
         
-        error = cudaMemcpy(m_deviceFloorTextures, floorTextureData, texSize, cudaMemcpyHostToDevice);
+        error = cudaMemcpyAsync(m_deviceFloorTextures, floorTextureData, texSize, cudaMemcpyHostToDevice, m_cudaStream);
         if (error != cudaSuccess) {
             std::cerr << "Failed to copy floor textures to device: " << cudaGetErrorString(error) << std::endl;
             throw std::runtime_error("CUDA memory copy failed");
         }
         
-        error = cudaMemcpy(m_deviceCeilingTextures, ceilingTextureData, texSize, cudaMemcpyHostToDevice);
+        error = cudaMemcpyAsync(m_deviceCeilingTextures, ceilingTextureData, texSize, cudaMemcpyHostToDevice, m_cudaStream);
         if (error != cudaSuccess) {
             std::cerr << "Failed to copy ceiling textures to device: " << cudaGetErrorString(error) << std::endl;
             throw std::runtime_error("CUDA memory copy failed");
         }
+        
+        // Synchronize to ensure all copies are complete
+        cudaStreamSynchronize(m_cudaStream);
     }
     catch (const std::exception& e) {
         std::cerr << "Exception in copyTexturesToDevice: " << e.what() << std::endl;
     }
     
-    // Free host memory
-    delete[] wallTextureData;
-    delete[] floorTextureData;
-    delete[] ceilingTextureData;
+    // Free host memory with proper aligned free
+    #ifdef _MSC_VER
+    if (wallTextureData) _aligned_free(wallTextureData);
+    if (floorTextureData) _aligned_free(floorTextureData);
+    if (ceilingTextureData) _aligned_free(ceilingTextureData);
+    #else
+    free(wallTextureData);
+    free(floorTextureData);
+    free(ceilingTextureData);
+    #endif
 }
 
 void CudaRenderer::generateFrame(const Map& map, const Player& player) {
