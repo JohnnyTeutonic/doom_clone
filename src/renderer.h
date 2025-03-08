@@ -151,7 +151,7 @@ public:
     void renderWeapon(const Player& player, double recoil = 0.0, double flashIntensity = 0.0, int weaponTextureId = 5);
     
     // Render muzzle flash
-    void renderMuzzleFlash(double intensity);
+    void renderMuzzleFlash(double intensity, double recoil = 0.0);
     
     // Render text
     void renderText(const std::string& text, int x, int y, const Color& color);
