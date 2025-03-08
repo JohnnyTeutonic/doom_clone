@@ -11,7 +11,7 @@ Player::Player()
     , m_moveSpeed(5.0)
     , m_rotSpeed(3.0)
     , m_health(100.0)
-    , m_ammo(50)
+    , m_ammo(10)
     , m_verticalAngle(0.0)  // For stairs and world effects
     , m_lookAngle(0.0)      // For mouse look
     , m_verticalLookSpeed(3.0)
@@ -590,9 +590,19 @@ bool Player::fire() {
         return false;
     }
     
-    if (m_timeSinceLastShot < m_weaponCooldown) {
+    // Hard limit to 10 shots total regardless of ammo value
+    static int& totalShotsFired = getTotalShotsFired();
+    if (totalShotsFired >= 10) {
+        std::cout << "HARD LIMIT: Maximum 10 shots allowed. Total shots fired: " << totalShotsFired << std::endl;
         return false;
     }
+    
+    if (m_timeSinceLastShot < m_weaponCooldown) {
+        std::cout << "COOLDOWN: Can't fire yet, cooldown still active." << std::endl;
+        return false;
+    }
+    
+    std::cout << "AMMO CHECK: Current ammo before firing: " << m_ammo << std::endl;
     
     if (m_ammo <= 0) {
         std::cout << "Out of ammo!" << std::endl;
@@ -625,6 +635,8 @@ bool Player::fire() {
     
     // Always decrement ammo and reset cooldown, even if projectile creation fails
     m_ammo--;
+    totalShotsFired++;
+    std::cout << "AMMO CONSUMED: Decremented ammo to: " << m_ammo << ". Total shots fired: " << totalShotsFired << std::endl;
     m_timeSinceLastShot = 0.0;  // Reset cooldown
     
     // Get nearby sprites for close-range hit detection
@@ -894,6 +906,9 @@ bool Player::fire() {
             const double CHAINSAW_RANGE = 1.0;
             bool hitEnemy = false;
             
+            // Ensure even melee weapons consume ammo
+            std::cout << "CHAINSAW: Consuming ammo for chainsaw attack." << std::endl;
+            
             if (m_spriteManager) {
                 std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
                 
@@ -953,6 +968,7 @@ bool Player::fire() {
     
     std::cout << "  Firing result: " << (success ? "SUCCESS" : "FAILED") << std::endl;
     std::cout << "  Ammo now: " << m_ammo << std::endl;
+    std::cout << "FINAL AMMO CHECK: Ammo after all processing: " << m_ammo << std::endl;
     std::cout << "=======================================" << std::endl;
     
     return success;
@@ -960,7 +976,12 @@ bool Player::fire() {
 
 void Player::reload() {
     // A very simplified reload mechanism
-    m_ammo = 50;  // Reset to max ammo
+    m_ammo = 10;  // Reset to max ammo
+    
+    // Reset the total shots fired counter
+    static int& totalShotsFired = Player::getTotalShotsFired();
+    totalShotsFired = 0;
+    std::cout << "RELOAD: Ammo reset to 10. Total shots fired reset to 0." << std::endl;
 }
 
 void Player::takeDamage(double amount) {
@@ -1228,4 +1249,9 @@ void Player::updateJump(double deltaTime) {
 
 bool Player::isOnGround() const {
     return m_jumpHeight <= m_groundLevel && m_verticalVelocity <= 0;
+}
+
+int& Player::getTotalShotsFired() {
+    static int totalShotsFired = 0;
+    return totalShotsFired;
 } 

@@ -608,7 +608,6 @@ void Renderer::renderSprites(const Map& map, const Player& player) {
         
         // Skip if behind player or too far
         if (transformY <= 0.1 || transformY > 20.0) {
-            std::cout << "  Skipping sprite at position (" << sprite->getPosition().x << ", " << sprite->getPosition().y << ")" << std::endl;
             continue;
         }
         
@@ -1202,7 +1201,6 @@ void Renderer::renderProjectiles(const Player& player) {
         
         // Skip if behind player or too far
         if (transformY <= 0.1 || transformY > 20.0) {
-            std::cout << "  Skipping " << typeStr << " - behind player or too far (transformY: " << transformY << ")" << std::endl;
             continue;
         }
         

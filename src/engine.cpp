@@ -564,7 +564,7 @@ void Engine::restartGame() {
     // Reset player
     m_player.init(m_map.getWidth() / 2.0, m_map.getHeight() / 2.0, 1.0, 0.0);
     m_player.setHealth(100.0);
-    m_player.setAmmo(50);
+    m_player.setAmmo(10);
     
     // Reset game state
     setState(GameState::Playing);
@@ -2741,7 +2741,7 @@ void Engine::setupPlayer() {
     
     // Set player stats
     m_player.setHealth(100.0);
-    m_player.setAmmo(50);
+    m_player.setAmmo(10);
     m_player.setGrenades(3);
     
     // Set player movement speeds
@@ -3628,7 +3628,6 @@ void Engine::addAdditionalImps() {
         
         // Skip if position is in a wall
         if (m_map.getCell(cellX, cellY) == CellType::Wall) {
-            std::cout << "Skipping imp at (" << pos.x << ", " << pos.y << ") - position is in a wall" << std::endl;
             
             // Try to find an adjacent empty cell
             const int dx[] = {0, 1, 0, -1, 1, 1, -1, -1};

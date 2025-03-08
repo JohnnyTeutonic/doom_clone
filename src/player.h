@@ -181,6 +181,9 @@ public:
         if (scaledAngle > m_maxVerticalAngle) scaledAngle = m_maxVerticalAngle;
         m_lookAngle = scaledAngle;
     }
+
+    // Static method to track total shots fired
+    static int& getTotalShotsFired();
 };
 
 #endif // PLAYER_H 

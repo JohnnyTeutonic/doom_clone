@@ -1345,7 +1345,6 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         sortedSprites.push_back(std::make_pair(distance, sprite));
     }
     
-    std::cout << "CUDA: Rendering " << sortedSprites.size() << " visible sprites" << std::endl;
     
     // Sort sprites by distance (furthest first)
     std::sort(sortedSprites.begin(), sortedSprites.end(), 
@@ -1419,11 +1418,6 @@ void CudaRenderer::renderSprites(const Map& map, const Player& player) {
         int access, w, h;
         SDL_QueryTexture(texture, &format, &access, &w, &h);
         
-        // For imp sprites, print detailed information
-        if (sprite->getType() == SpriteType::ImpEnemy) {
-            std::cout << "CUDA: Rendering imp texture: " << w << "x" << h 
-                      << " format: " << SDL_GetPixelFormatName(format) << std::endl;
-        }
         
         // Set up source and destination rectangles
         SDL_Rect srcRect = { 0, 0, sprite->getWidth(), sprite->getHeight() };
