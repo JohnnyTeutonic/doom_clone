@@ -184,6 +184,9 @@ public:
 
     // Static method to track total shots fired
     static int& getTotalShotsFired();
+    
+    // Method to check and pick up nearby items
+    void checkNearbyItems();
 };
 
 #endif // PLAYER_H 

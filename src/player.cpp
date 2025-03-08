@@ -70,6 +70,9 @@ void Player::update(double deltaTime, const Map& map) {
     // Update jumping physics
     updateJump(deltaTime);
     
+    // Check for nearby items to pick up
+    checkNearbyItems();
+    
     // Debug output for jump state
     if (m_isJumping || m_verticalVelocity != 0.0) {
         std::cout << "Jump State - IsJumping: " << m_isJumping 
@@ -1254,4 +1257,31 @@ bool Player::isOnGround() const {
 int& Player::getTotalShotsFired() {
     static int totalShotsFired = 0;
     return totalShotsFired;
+}
+
+// New method to check for and pick up nearby items
+void Player::checkNearbyItems() {
+    if (!m_spriteManager) return;
+    
+    // Get all active sprites
+    std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+    
+    // Check each sprite
+    for (Sprite* sprite : sprites) {
+        if (!sprite || !sprite->isActive() || sprite->getType() != SpriteType::Item) {
+            continue;
+        }
+        
+        // Calculate distance to sprite
+        double dist = (sprite->getPosition() - m_position).length();
+        
+        // Pickup range - can be adjusted
+        const double PICKUP_RANGE = 1.0;
+        
+        // If in range, apply item effect
+        if (dist <= PICKUP_RANGE) {
+            std::cout << "Player picked up item at distance: " << dist << std::endl;
+            sprite->applyItemEffect(this);
+        }
+    }
 } 

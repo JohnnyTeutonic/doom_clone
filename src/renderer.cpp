@@ -1186,9 +1186,6 @@ void Renderer::renderProjectiles(const Player& player) {
             case ProjectileType::Grenade: typeStr = "Grenade"; break;
             case ProjectileType::BFG: typeStr = "BFG"; break;
         }
-        std::cout << "Processing " << typeStr << " projectile (ID: " << projectile->getId() 
-                  << ") at position (" << projectile->getPosition().x << ", " 
-                  << projectile->getPosition().y << ")" << std::endl;
         
         // Calculate projectile position relative to player
         double projX = projectile->getPosition().x - pos.x;

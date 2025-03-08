@@ -408,7 +408,7 @@ void Engine::run() {
             Sprite* ammoBox = m_spriteManager->getSprite(spriteId);
             if (ammoBox) {
                 ammoBox->setItemType(ItemType::AmmoMedium);
-                std::cout << "Created ammo box at position (20, 20) with sprite ID: " << spriteId << std::endl;
+                std::cout << "Created medium ammo box at position (20, 20) with sprite ID: " << spriteId << std::endl;
             } else {
                 std::cerr << "ERROR: Failed to get ammo box sprite after creation" << std::endl;
             }

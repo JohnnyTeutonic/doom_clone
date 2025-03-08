@@ -642,18 +642,18 @@ void Sprite::applyItemEffect(Player* player) {
             break;
             
         case ItemType::AmmoSmall:
-            player->setAmmo(player->getAmmo() + 5);
-            std::cout << "Picked up small ammo pack (+5 ammo)" << std::endl;
+            player->setAmmo(player->getAmmo() + 2);
+            std::cout << "Picked up small ammo pack (+2 ammo)" << std::endl;
             break;
             
         case ItemType::AmmoMedium:
-            player->setAmmo(player->getAmmo() + 20);
-            std::cout << "Picked up medium ammo pack (+20 ammo)" << std::endl;
+            player->setAmmo(player->getAmmo() + 5);
+            std::cout << "Picked up medium ammo pack (+5 ammo)" << std::endl;
             break;
             
         case ItemType::AmmoLarge:
-            player->setAmmo(player->getAmmo() + 100);
-            std::cout << "Picked up large ammo pack (+100 ammo)" << std::endl;
+            player->setAmmo(player->getAmmo() + 10);
+            std::cout << "Picked up large ammo pack (+10 ammo)" << std::endl;
             break;
             
         case ItemType::WeaponShotgun:
