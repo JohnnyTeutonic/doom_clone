@@ -1053,12 +1053,33 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
     // Position weapon at bottom of screen
     int weaponY = m_screenHeight - weaponHeight;
     
-    // Special vertical adjustment for rocket launcher - move it lower on the screen
-    // Check if this is the rocket launcher by aspect ratio or texture ID
-    // The rocket launcher has a more squarish aspect ratio compared to other weapons
-    if (aspectRatio < 0.9f) {  // This should identify the rocket launcher
-        // Move the rocket launcher lower - show less of it above the bottom of the screen
-        weaponY += static_cast<int>(weaponHeight * 0.2f);  // Show about 20% less of the weapon
+    // Add debug output to check current texture
+    std::cout << "Rendering weapon with textureID: " << weaponTextureId 
+              << ", aspect ratio: " << aspectRatio << std::endl;
+    
+    // Specific vertical adjustment for rocket launcher
+    bool isRocketLauncher = false;
+    
+    // Check if this is the rocket launcher by texture ID
+    // Updated to include textureID 17 which is the actual rocket launcher ID
+    if (weaponTextureId == 17 || (weaponTextureId >= 7 && weaponTextureId <= 10)) {
+        isRocketLauncher = true;
+        std::cout << "ROCKET LAUNCHER DETECTED - applying vertical adjustment" << std::endl;
+    }
+    
+    // Alternative detection method using aspect ratio as a backup
+    // Updated to include the aspect ratio around 1.34 which is the rocket launcher's ratio
+    if (!isRocketLauncher && (aspectRatio < 0.9f || (aspectRatio > 1.3f && aspectRatio < 1.4f) || aspectRatio > 1.5f)) {
+        isRocketLauncher = true;
+        std::cout << "ROCKET LAUNCHER DETECTED by aspect ratio - applying vertical adjustment" << std::endl;
+    }
+    
+    // Apply a much more significant adjustment
+    if (isRocketLauncher) {
+        // Move the rocket launcher much lower - 40% further down for better positioning
+        int rocketAdjustment = static_cast<int>(weaponHeight * 0.40f);
+        weaponY += rocketAdjustment;
+        std::cout << "Adjusted rocket Y position by " << rocketAdjustment << " pixels" << std::endl;
     }
     
     // Apply recoil effect
@@ -1476,21 +1497,40 @@ void Renderer::renderMuzzleFlash(double intensity, double recoil) {
         
         weaponY = m_screenHeight - weaponHeight;
         
-        // Special vertical adjustment for rocket launcher - move it lower on the screen
-        // Check if this is the rocket launcher by aspect ratio or texture ID
-        // The rocket launcher has a more squarish aspect ratio compared to other weapons
-        if (aspectRatio < 0.9f) {  // This should identify the rocket launcher
-            // Move the rocket launcher lower - show less of it above the bottom of the screen
-            weaponY += static_cast<int>(weaponHeight * 0.2f);  // Show about 20% less of the weapon
+        // Determine if this is the rocket launcher based on aspect ratio
+        bool isRocketLauncher = false;
+        if (aspectRatio < 0.9f || (aspectRatio > 1.3f && aspectRatio < 1.4f) || aspectRatio > 1.5f) {
+            isRocketLauncher = true;
+            std::cout << "ROCKET LAUNCHER DETECTED in muzzle flash - applying adjustment" << std::endl;
         }
         
-        // Position the flash at the end of the barrel - adjusted for shotgun.webp
-        // This is a rough estimate; adjust based on your texture
-        int flashX = weaponX + weaponWidth * 0.8;
-        int flashY = weaponY + weaponHeight * 0.3;
+        // Apply the same vertical adjustment as in renderWeapon
+        if (isRocketLauncher) {
+            // Move the rocket launcher much lower - 40% further down
+            int rocketAdjustment = static_cast<int>(weaponHeight * 0.40f);
+            weaponY += rocketAdjustment;
+            std::cout << "Adjusted muzzle flash Y position by " << rocketAdjustment << " pixels" << std::endl;
+        }
         
         // Apply recoil effect for flash positioning
         int recoilY = static_cast<int>(recoil * 20);  // Scale recoil to pixels
+        
+        // Position the flash at the end of the barrel - adjusted for the weapon type
+        // For rocket launcher, position it near the top of the weapon
+        float flashXRatio, flashYRatio;
+        
+        if (isRocketLauncher) {
+            // Position the flash at the rocket launcher barrel
+            flashXRatio = 0.7f;  // 70% from the left edge
+            flashYRatio = 0.18f; // Adjusted to be higher up on the rocket launcher (was 0.25f)
+        } else {
+            // Default positioning for other weapons
+            flashXRatio = 0.8f;  // 80% from the left edge
+            flashYRatio = 0.3f;  // 30% from the top
+        }
+        
+        int flashX = weaponX + static_cast<int>(weaponWidth * flashXRatio);
+        int flashY = weaponY + static_cast<int>(weaponHeight * flashYRatio) + recoilY;
         
         // Draw the flash as a yellow/orange circle
         for (int y = -flashSize; y <= flashSize; y++) {

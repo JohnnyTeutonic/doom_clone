@@ -2472,7 +2472,6 @@ void Engine::createSpritesFromMap() {
                         // Check the texture format and blend mode
                         Uint32 format;
                         SDL_QueryTexture(sdlTexture, &format, NULL, NULL, NULL);
-                        std::cout << "Imp texture format: " << SDL_GetPixelFormatName(format) << std::endl;
                         
                         // Ensure blend mode is set
                         SDL_BlendMode blendMode;
