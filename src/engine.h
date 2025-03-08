@@ -179,6 +179,7 @@ private:
     int m_explosionTexture;
     int m_plasmaTexture;  // New texture for plasma projectiles
     int m_itemTexture;  // Add item texture ID
+    int m_ammoBoxTexture; // Texture ID for ammo box
     
     // Animation frames
     std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies

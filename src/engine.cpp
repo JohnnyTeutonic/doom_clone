@@ -394,6 +394,36 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
 }
 
 void Engine::run() {
+    // Set up the game
+    setupMap();
+    setupPlayer();
+    setupInput();
+    
+    // Create an ammo box at position (20, 20)
+    if (m_spriteManager && m_ammoBoxTexture >= 0) {
+        double size = 0.5; // Size of the ammo box sprite
+        int spriteId = m_spriteManager->addSprite(20, 20, size, m_ammoBoxTexture, SpriteType::Item);
+        if (spriteId >= 0) {
+            // Get the sprite and set its item type to AmmoMedium
+            Sprite* ammoBox = m_spriteManager->getSprite(spriteId);
+            if (ammoBox) {
+                ammoBox->setItemType(ItemType::AmmoMedium);
+                std::cout << "Created ammo box at position (20, 20) with sprite ID: " << spriteId << std::endl;
+            } else {
+                std::cerr << "ERROR: Failed to get ammo box sprite after creation" << std::endl;
+            }
+        } else {
+            std::cerr << "ERROR: Failed to create ammo box sprite at position (20, 20)" << std::endl;
+        }
+    } else {
+        std::cerr << "ERROR: Cannot create ammo box - SpriteManager or texture is invalid" << std::endl;
+        std::cerr << "  SpriteManager: " << (m_spriteManager ? "Valid" : "Invalid") << std::endl;
+        std::cerr << "  Ammo Box Texture ID: " << m_ammoBoxTexture << std::endl;
+    }
+    
+    // Reset the last frame time
+    m_lastFrameTime = SDL_GetTicks();
+    
     if (!m_running) {
         std::cerr << "Cannot run engine - not initialized!" << std::endl;
         return;
@@ -1987,6 +2017,57 @@ bool Engine::loadAssets() {
     }
     
     std::cout << "Item texture ID: " << m_itemTexture << std::endl;
+    
+    // Create ammo box texture
+    std::cout << "Creating ammo box texture..." << std::endl;
+    
+    // Create a surface for the ammo box
+    SDL_Surface* ammoBoxSurface = SDL_CreateRGBSurface(0, 32, 32, 32,
+                                                      0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    
+    // Initialize ammo box texture ID
+    m_ammoBoxTexture = -1;
+    
+    if (ammoBoxSurface) {
+        // Fill with dark gray background (box color)
+        SDL_FillRect(ammoBoxSurface, NULL, SDL_MapRGBA(ammoBoxSurface->format, 80, 80, 80, 255));
+        
+        // Draw a lighter gray border
+        SDL_Rect borderRect = {0, 0, 32, 32};
+        SDL_Rect innerRect = {2, 2, 28, 28};
+        
+        SDL_FillRect(ammoBoxSurface, &borderRect, SDL_MapRGBA(ammoBoxSurface->format, 120, 120, 120, 255));
+        SDL_FillRect(ammoBoxSurface, &innerRect, SDL_MapRGBA(ammoBoxSurface->format, 80, 80, 80, 255));
+        
+        // Add some ammo box details - bullet icons
+        SDL_Rect bullet1 = {8, 8, 4, 16};
+        SDL_Rect bullet2 = {16, 8, 4, 16};
+        SDL_Rect bullet3 = {24, 8, 4, 16};
+        
+        SDL_FillRect(ammoBoxSurface, &bullet1, SDL_MapRGBA(ammoBoxSurface->format, 200, 180, 0, 255));
+        SDL_FillRect(ammoBoxSurface, &bullet2, SDL_MapRGBA(ammoBoxSurface->format, 200, 180, 0, 255));
+        SDL_FillRect(ammoBoxSurface, &bullet3, SDL_MapRGBA(ammoBoxSurface->format, 200, 180, 0, 255));
+        
+        // Create texture from surface
+        SDL_Texture* ammoBoxTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, ammoBoxSurface);
+        if (ammoBoxTexture) {
+            // Add to texture manager
+            m_ammoBoxTexture = m_textureManager->addTexture(ammoBoxTexture);
+            std::cout << "Created ammo box texture with ID: " << m_ammoBoxTexture << std::endl;
+        } else {
+            // If that fails, fall back to solid color
+            m_ammoBoxTexture = m_textureManager->createSolidTexture(32, 32, Color(150, 150, 0)); // Gold-ish
+            std::cout << "Created fallback ammo box texture with ID: " << m_ammoBoxTexture << std::endl;
+        }
+        
+        SDL_FreeSurface(ammoBoxSurface);
+    } else {
+        // Create a fallback texture - a simple gold-ish square
+        m_ammoBoxTexture = m_textureManager->createSolidTexture(32, 32, Color(150, 150, 0));
+        std::cout << "Created fallback ammo box texture with ID: " << m_ammoBoxTexture << std::endl;
+    }
+    
+    std::cout << "Ammo box texture ID: " << m_ammoBoxTexture << std::endl;
     
     return true;
 }
