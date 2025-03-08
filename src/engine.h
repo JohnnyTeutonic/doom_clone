@@ -104,6 +104,9 @@ public:
     void addAdditionalImps();
     void addRandomImps();
     
+    // Create barrels at random locations
+    void createRandomBarrels(int count);
+    
     // Audio
     void playSound(const std::string& soundName);
     
@@ -180,6 +183,7 @@ private:
     int m_plasmaTexture;  // New texture for plasma projectiles
     int m_itemTexture;  // Add item texture ID
     int m_ammoBoxTexture; // Texture ID for ammo box
+    int m_barrelTexture; // Texture ID for barrel
     
     // Animation frames
     std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies

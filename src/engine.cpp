@@ -2,6 +2,7 @@
 #include <iostream>
 #include <random>
 #include <cmath>
+#include <ctime>  // For std::time
 
 Engine::Engine(int screenWidth, int screenHeight)
     : m_window(nullptr)
@@ -420,6 +421,9 @@ void Engine::run() {
         std::cerr << "  SpriteManager: " << (m_spriteManager ? "Valid" : "Invalid") << std::endl;
         std::cerr << "  Ammo Box Texture ID: " << m_ammoBoxTexture << std::endl;
     }
+    
+    // Create barrels at random locations
+    createRandomBarrels(6);
     
     // Reset the last frame time
     m_lastFrameTime = SDL_GetTicks();
@@ -962,6 +966,8 @@ bool Engine::loadAssets() {
     m_weaponTexture = -1;
     m_machineGunTexture = -1;
     m_rocketLauncherTexture = -1;
+    m_ammoBoxTexture = -1;
+    m_barrelTexture = -1;
     
     // Load sound effects first
     if (m_audioSystem) {
@@ -2069,6 +2075,67 @@ bool Engine::loadAssets() {
     
     std::cout << "Ammo box texture ID: " << m_ammoBoxTexture << std::endl;
     
+    // Create barrel texture
+    std::cout << "Creating barrel texture..." << std::endl;
+    
+    // Initialize barrel texture ID
+    m_barrelTexture = -1;
+    
+    // Create a surface for the barrel
+    SDL_Surface* barrelSurface = SDL_CreateRGBSurface(0, 32, 32, 32,
+                                                     0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    
+    if (barrelSurface) {
+        // Fill with barrel color (brown base)
+        SDL_FillRect(barrelSurface, NULL, SDL_MapRGBA(barrelSurface->format, 120, 80, 40, 255));
+        
+        // Draw barrel details
+        // Barrel outline (darker brown)
+        SDL_Rect topRect = {0, 0, 32, 4};
+        SDL_Rect bottomRect = {0, 28, 32, 4};
+        SDL_FillRect(barrelSurface, &topRect, SDL_MapRGBA(barrelSurface->format, 80, 50, 20, 255));
+        SDL_FillRect(barrelSurface, &bottomRect, SDL_MapRGBA(barrelSurface->format, 80, 50, 20, 255));
+        
+        // Metal bands (gray)
+        SDL_Rect band1 = {0, 10, 32, 2};
+        SDL_Rect band2 = {0, 20, 32, 2};
+        SDL_FillRect(barrelSurface, &band1, SDL_MapRGBA(barrelSurface->format, 160, 160, 160, 255));
+        SDL_FillRect(barrelSurface, &band2, SDL_MapRGBA(barrelSurface->format, 160, 160, 160, 255));
+        
+        // Add highlights and shadows for 3D effect
+        for (int y = 4; y < 28; y++) {
+            if (y == 10 || y == 11 || y == 20 || y == 21) continue; // Skip the bands
+            
+            // Left highlight (lighter brown)
+            SDL_Rect highlight = {2, y, 3, 1};
+            SDL_FillRect(barrelSurface, &highlight, SDL_MapRGBA(barrelSurface->format, 150, 100, 50, 255));
+            
+            // Right shadow (darker brown)
+            SDL_Rect shadow = {27, y, 3, 1};
+            SDL_FillRect(barrelSurface, &shadow, SDL_MapRGBA(barrelSurface->format, 90, 60, 30, 255));
+        }
+        
+        // Create texture from surface
+        SDL_Texture* barrelTexture = SDL_CreateTextureFromSurface(m_sdlRenderer, barrelSurface);
+        if (barrelTexture) {
+            // Add to texture manager
+            m_barrelTexture = m_textureManager->addTexture(barrelTexture);
+            std::cout << "Created barrel texture with ID: " << m_barrelTexture << std::endl;
+        } else {
+            // If that fails, fall back to solid color
+            m_barrelTexture = m_textureManager->createSolidTexture(32, 32, Color(120, 80, 40)); // Brown
+            std::cout << "Created fallback barrel texture with ID: " << m_barrelTexture << std::endl;
+        }
+        
+        SDL_FreeSurface(barrelSurface);
+    } else {
+        // Create a fallback texture - a simple brown square
+        m_barrelTexture = m_textureManager->createSolidTexture(32, 32, Color(120, 80, 40));
+        std::cout << "Created fallback barrel texture with ID: " << m_barrelTexture << std::endl;
+    }
+    
+    std::cout << "Barrel texture ID: " << m_barrelTexture << std::endl;
+    
     return true;
 }
 
@@ -2085,7 +2152,7 @@ void Engine::setupMap() {
     m_map.setEngine(this);
     
     // Seed the random number generator
-    srand(static_cast<unsigned int>(time(nullptr)));
+    srand(static_cast<unsigned int>(std::time(nullptr)));
     
     // Define the second level area
     int secondLevelStartX = m_map.getWidth() / 2;
@@ -3741,4 +3808,73 @@ void Engine::addRandomImps() {
     }
     
     std::cout << "Successfully added " << impsCreated << " random imps to the map" << std::endl;
+}
+
+// New method to create barrels at random locations
+void Engine::createRandomBarrels(int count) {
+    if (!m_spriteManager || m_barrelTexture < 0) {
+        std::cerr << "ERROR: Cannot create barrels - SpriteManager or texture is invalid" << std::endl;
+        return;
+    }
+    
+    // Initialize random seed
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    
+    // Get map dimensions for random placement
+    int mapWidth = m_map.getWidth();
+    int mapHeight = m_map.getHeight();
+    
+    // Keep track of created barrels
+    int barrelCount = 0;
+    
+    // Try to place barrels (with a limit on attempts to avoid infinite loops)
+    const int maxAttempts = 100;
+    int attempts = 0;
+    
+    while (barrelCount < count && attempts < maxAttempts) {
+        attempts++;
+        
+        // Generate random position (avoiding edges of the map)
+        int x = 2 + std::rand() % (mapWidth - 4);  // Stay 2 units away from edges
+        int y = 2 + std::rand() % (mapHeight - 4);
+        
+        // Make sure it's not too close to the player's starting position
+        double playerDist = std::sqrt(std::pow(x - m_player.getX(), 2) + std::pow(y - m_player.getY(), 2));
+        if (playerDist < 5.0) {  // Don't place barrels too close to player
+            continue;
+        }
+        
+        // Check if the location is empty (no wall or other obstacle)
+        if (m_map.getCell(x, y) != CellType::Empty) {
+            continue;
+        }
+        
+        // Check if there's already a sprite at this location
+        bool locationOccupied = false;
+        std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+        for (Sprite* sprite : sprites) {
+            if (!sprite) continue;
+            
+            Vec2 spritePos = sprite->getPosition();
+            double dist = std::sqrt(std::pow(x - spritePos.x, 2) + std::pow(y - spritePos.y, 2));
+            if (dist < 1.0) {  // Don't place barrels too close to other sprites
+                locationOccupied = true;
+                break;
+            }
+        }
+        
+        if (locationOccupied) {
+            continue;
+        }
+        
+        // Create a barrel sprite at the random position
+        double size = 0.5;  // Barrel size
+        int spriteId = m_spriteManager->addSprite(x, y, size, m_barrelTexture, SpriteType::Decoration);
+        if (spriteId >= 0) {
+            std::cout << "Created barrel at position (" << x << ", " << y << ") with sprite ID: " << spriteId << std::endl;
+            barrelCount++;
+        }
+    }
+    
+    std::cout << "Created " << barrelCount << " barrels out of " << count << " requested" << std::endl;
 }
