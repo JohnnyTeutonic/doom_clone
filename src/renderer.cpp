@@ -815,6 +815,135 @@ void Renderer::renderHUD(Player* player)
     // Draw health indicator
     std::string healthText = "Health: " + std::to_string(player->getHealth());
     drawText(healthText, 20, m_screenHeight - 40, Colors::RED);
+    
+    // Draw minimap in the top-right corner
+    Map* map = player->getMap();
+    if (map) {
+        renderMinimap(map, player, m_screenWidth - 150, 20, 130);
+    }
+}
+
+void Renderer::renderMinimap(Map* map, Player* player, int x, int y, int size)
+{
+    if (!map || !player) return;
+    
+    // Draw background rectangle with a dark gray (not black) color
+    Rect minimapRect(x, y, size, size);
+    renderDebugRect(minimapRect, Color(40, 40, 40, 255), true);
+    
+    // Get player position as the center of the minimap view
+    Vec2 playerPos = player->getPosition();
+    
+    // Adjust scale to ensure walls are visible - use a fixed, appropriate scale
+    double scale = size / 50.0; // Smaller denominator means more zoomed in
+    
+    // Draw all walls directly using setPixel for better visibility
+    const auto& sectors = map->getSectors();
+    for (const auto& sector : sectors) {
+        const auto& walls = sector->getWalls();
+        
+        // Choose wall color
+        Color wallColor(200, 200, 200); // Bright white/gray for standard walls
+        
+        // Special color for the staircase sector
+        double floorHeight = sector->getFloorHeight();
+        if (std::abs(floorHeight) < 0.1 && sector->getFloorTextureId() == 3) {
+            wallColor = Color(0, 255, 0); // Bright green for stairs
+        }
+        
+        // Special color for the upper room
+        if (floorHeight > 2.5) {
+            wallColor = Color(255, 128, 0); // Orange for upper room
+        }
+        
+        // Draw walls
+        for (const auto& wall : walls) {
+            Vec2 start = wall->getStart();
+            Vec2 end = wall->getEnd();
+            
+            // Convert to minimap coordinates, centered on player
+            int startX = x + size/2 + static_cast<int>((start.x - playerPos.x) * scale);
+            int startY = y + size/2 + static_cast<int>((start.y - playerPos.y) * scale);
+            int endX = x + size/2 + static_cast<int>((end.x - playerPos.x) * scale);
+            int endY = y + size/2 + static_cast<int>((end.y - playerPos.y) * scale);
+            
+            // Draw a thicker line for better visibility
+            drawThickLine(startX, startY, endX, endY, wallColor, 2);
+            
+            // Add a yellow dot for portal entrances
+            if (wall->isPortal()) {
+                int midX = (startX + endX) / 2;
+                int midY = (startY + endY) / 2;
+                
+                // Special highlight for staircase entrance
+                if (wall->getAdjoiningSector() && wall->getAdjoiningSector()->getFloorTextureId() == 3) {
+                    // Draw a bright yellow dot
+                    for (int dx = -3; dx <= 3; dx++) {
+                        for (int dy = -3; dy <= 3; dy++) {
+                            if (dx*dx + dy*dy <= 9) { // Circle with radius 3
+                                setPixel(midX + dx, midY + dy, Color(255, 255, 0));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Draw player position (always at center with player-centered map)
+    int playerX = x + size/2;
+    int playerY = y + size/2;
+    
+    // Draw player position as a red diamond
+    for (int dx = -4; dx <= 4; dx++) {
+        for (int dy = -4; dy <= 4; dy++) {
+            if (std::abs(dx) + std::abs(dy) <= 4) { // Diamond shape
+                setPixel(playerX + dx, playerY + dy, Color(255, 0, 0));
+            }
+        }
+    }
+    
+    // Draw player direction as a bright yellow line
+    Vec2 dirVec = player->getDirection().normalized() * 8;
+    int dirX = playerX + static_cast<int>(dirVec.x);
+    int dirY = playerY + static_cast<int>(dirVec.y);
+    drawThickLine(playerX, playerY, dirX, dirY, Color(255, 255, 0), 2);
+    
+    // Draw minimap border
+    renderDebugRect(minimapRect, Color(255, 255, 255), false);
+}
+
+// Helper function to draw a thick line
+void Renderer::drawThickLine(int x1, int y1, int x2, int y2, const Color& color, int thickness) {
+    // Basic line drawing using Bresenham's algorithm
+    int dx = std::abs(x2 - x1);
+    int dy = std::abs(y2 - y1);
+    int sx = (x1 < x2) ? 1 : -1;
+    int sy = (y1 < y2) ? 1 : -1;
+    int err = dx - dy;
+    
+    while (true) {
+        // Draw a filled circle at this point for thickness
+        for (int tx = -thickness/2; tx <= thickness/2; tx++) {
+            for (int ty = -thickness/2; ty <= thickness/2; ty++) {
+                if (tx*tx + ty*ty <= (thickness*thickness)/4) {
+                    setPixel(x1 + tx, y1 + ty, color);
+                }
+            }
+        }
+        
+        if (x1 == x2 && y1 == y2) break;
+        
+        int e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x1 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y1 += sy;
+        }
+    }
 }
 
 void Renderer::renderDebugInfo(const std::string& text, int x, int y, const Color& color) 

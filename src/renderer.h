@@ -136,11 +136,17 @@ public:
     // HUD rendering
     void renderHUD(Player* player);
     
+    // Render a minimap to help with navigation
+    void renderMinimap(Map* map, Player* player, int x, int y, int size);
+    
     // Get SDL renderer
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }
     
     // Set background color
     void setBackgroundColor(const Color& color) { m_backgroundColor = color; }
+    
+    // Render a thick line
+    void drawThickLine(int x1, int y1, int x2, int y2, const Color& color, int thickness);
     
 private:
     SDL_Window* m_window;             // SDL window

@@ -97,6 +97,7 @@ public:
     const PlayerSettings& getSettings() const { return m_settings; }
     int getHealth() const { return m_health; }
     int getArmor() const { return m_armor; }
+    Map* getMap() const { return m_map; }
     
     // Setters
     void setPosition(const Vec2& position);

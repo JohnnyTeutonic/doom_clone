@@ -17,7 +17,7 @@
 std::shared_ptr<Map> createTestMap() {
     auto map = std::make_shared<Map>();
     
-    // Create a main sector for our complex map
+    // Create a main sector for our complex map (ground floor)
     auto mainSector = std::make_shared<Sector>();
     mainSector->setFloorHeight(0.0);
     mainSector->setCeilingHeight(3.0);
@@ -37,8 +37,315 @@ std::shared_ptr<Map> createTestMap() {
         mainSector->addWall(wallPtr);
     }
     
-    // Add the sector to the map
+    // Add the ground floor sector to the map
     map->addSector(mainSector);
+    
+    // ========================
+    // CREATE STAIRCASE SECTOR
+    // ========================
+    
+    // Create a staircase sector that connects to the main floor
+    double stairStartX = 5.0 + 6.0;  // Start stairs in the east corridor
+    double stairStartY = 5.0;
+    double stairWidth = 3.0;
+    double stairLength = 8.0;
+    
+    // Create a sector for the staircase
+    auto stairSector = std::make_shared<Sector>();
+    stairSector->setFloorHeight(0.0);       // Start at ground level
+    stairSector->setCeilingHeight(6.0);     // Higher ceiling to accommodate stairs
+    stairSector->setFloorTextureId(3);      // Different texture for stairs
+    stairSector->setCeilingTextureId(2);
+    
+    // Create walls for the staircase sector
+    auto stairWall1 = std::make_shared<Wall>(
+        Vec2(stairStartX, stairStartY - stairWidth/2),
+        Vec2(stairStartX + stairLength, stairStartY - stairWidth/2),
+        3
+    );
+    
+    auto stairWall2 = std::make_shared<Wall>(
+        Vec2(stairStartX + stairLength, stairStartY - stairWidth/2),
+        Vec2(stairStartX + stairLength, stairStartY + stairWidth/2),
+        3
+    );
+    
+    auto stairWall3 = std::make_shared<Wall>(
+        Vec2(stairStartX + stairLength, stairStartY + stairWidth/2),
+        Vec2(stairStartX, stairStartY + stairWidth/2),
+        3
+    );
+    
+    auto stairWall4 = std::make_shared<Wall>(
+        Vec2(stairStartX, stairStartY + stairWidth/2),
+        Vec2(stairStartX, stairStartY - stairWidth/2),
+        3
+    );
+    
+    // Set the walls as portals to connect sectors
+    stairWall4->setType(WallType::PORTAL);
+    stairWall4->setAdjoiningSector(mainSector.get());
+    
+    // Find the matching wall in the main sector to make a portal
+    // Look for the wall in the main sector that corresponds to where we're attaching the stairs
+    bool foundPortalWall = false;
+    for (const auto& wall : mainSector->getWalls()) {
+        // Check if this wall is close to our desired connection point
+        // We need to check if the wall is roughly at the right position and orientation
+        Vec2 wallStart = wall->getStart();
+        Vec2 wallEnd = wall->getEnd();
+        
+        // Check if this is a vertical wall near our stair entrance
+        bool isVertical = std::abs(wallStart.x - wallEnd.x) < 0.1;
+        bool isAtXPosition = std::abs(wallStart.x - stairStartX) < 0.5;
+        bool isInYRange = (wallStart.y <= stairStartY + stairWidth/2 + 0.5) && 
+                          (wallEnd.y >= stairStartY - stairWidth/2 - 0.5);
+        
+        if (isVertical && isAtXPosition && isInYRange) {
+            // Make this wall a portal to the stair sector
+            wall->setType(WallType::PORTAL);
+            wall->setAdjoiningSector(stairSector.get());
+            foundPortalWall = true;
+            break;
+        }
+    }
+    
+    // If we couldn't find a matching wall, create one
+    if (!foundPortalWall) {
+        // Create a custom portal in the eastern corridor
+        auto portalWall = std::make_shared<Wall>(
+            Vec2(stairStartX, stairStartY - stairWidth/2),
+            Vec2(stairStartX, stairStartY + stairWidth/2),
+            2
+        );
+        portalWall->setType(WallType::PORTAL);
+        portalWall->setAdjoiningSector(stairSector.get());
+        mainSector->addWall(portalWall);
+    }
+    
+    // Add clear visual markers to indicate the staircase entrance
+    // Add a pair of pillars on each side of the staircase entrance
+    double markerSize = 0.5;
+    double markerOffset = stairWidth/2 + 0.3;
+    
+    // Left pillar (using a distinctive texture)
+    auto leftMarker1 = std::make_shared<Wall>(
+        Vec2(stairStartX - 0.3, stairStartY - markerOffset - markerSize),
+        Vec2(stairStartX + 0.3, stairStartY - markerOffset - markerSize),
+        0  // Different texture for marker
+    );
+    auto leftMarker2 = std::make_shared<Wall>(
+        Vec2(stairStartX + 0.3, stairStartY - markerOffset - markerSize),
+        Vec2(stairStartX + 0.3, stairStartY - markerOffset),
+        0
+    );
+    auto leftMarker3 = std::make_shared<Wall>(
+        Vec2(stairStartX + 0.3, stairStartY - markerOffset),
+        Vec2(stairStartX - 0.3, stairStartY - markerOffset),
+        0
+    );
+    auto leftMarker4 = std::make_shared<Wall>(
+        Vec2(stairStartX - 0.3, stairStartY - markerOffset),
+        Vec2(stairStartX - 0.3, stairStartY - markerOffset - markerSize),
+        0
+    );
+    
+    // Right pillar (using a distinctive texture)
+    auto rightMarker1 = std::make_shared<Wall>(
+        Vec2(stairStartX - 0.3, stairStartY + markerOffset),
+        Vec2(stairStartX + 0.3, stairStartY + markerOffset),
+        0
+    );
+    auto rightMarker2 = std::make_shared<Wall>(
+        Vec2(stairStartX + 0.3, stairStartY + markerOffset),
+        Vec2(stairStartX + 0.3, stairStartY + markerOffset + markerSize),
+        0
+    );
+    auto rightMarker3 = std::make_shared<Wall>(
+        Vec2(stairStartX + 0.3, stairStartY + markerOffset + markerSize),
+        Vec2(stairStartX - 0.3, stairStartY + markerOffset + markerSize),
+        0
+    );
+    auto rightMarker4 = std::make_shared<Wall>(
+        Vec2(stairStartX - 0.3, stairStartY + markerOffset + markerSize),
+        Vec2(stairStartX - 0.3, stairStartY + markerOffset),
+        0
+    );
+    
+    // Add directional arrows on the floor pointing to the stairs
+    // Create a series of small walls forming an arrow shape
+    auto arrow1 = std::make_shared<Wall>(
+        Vec2(stairStartX - 2.5, stairStartY - 0.8),
+        Vec2(stairStartX - 0.8, stairStartY),
+        2  // Use a distinctive texture
+    );
+    auto arrow2 = std::make_shared<Wall>(
+        Vec2(stairStartX - 0.8, stairStartY),
+        Vec2(stairStartX - 2.5, stairStartY + 0.8),
+        2
+    );
+    
+    // Add all markers to the main sector
+    mainSector->addWall(leftMarker1);
+    mainSector->addWall(leftMarker2);
+    mainSector->addWall(leftMarker3);
+    mainSector->addWall(leftMarker4);
+    mainSector->addWall(rightMarker1);
+    mainSector->addWall(rightMarker2);
+    mainSector->addWall(rightMarker3);
+    mainSector->addWall(rightMarker4);
+    mainSector->addWall(arrow1);
+    mainSector->addWall(arrow2);
+    
+    // Add a sign at the staircase entrance
+    double signHeight = 0.8;
+    double signWidth = 1.5;
+    auto signWall = std::make_shared<Wall>(
+        Vec2(stairStartX - 0.8, stairStartY - signWidth/2),
+        Vec2(stairStartX - 0.8, stairStartY + signWidth/2),
+        0  // Use a distinctive texture
+    );
+    signWall->setHeight(signHeight);
+    signWall->setBottomOffset(1.2);  // Position the sign above eye level
+    mainSector->addWall(signWall);
+    
+    // Add walls to stair sector
+    stairSector->addWall(stairWall1);
+    stairSector->addWall(stairWall2);
+    stairSector->addWall(stairWall3);
+    stairSector->addWall(stairWall4);
+    
+    // Create stair steps inside the staircase
+    int numSteps = 8;
+    double stepLength = stairLength / numSteps;
+    double stepHeight = 3.0 / numSteps;
+    
+    for (int i = 0; i < numSteps; i++) {
+        double stepX = stairStartX + i * stepLength;
+        
+        // Create a wall representing the vertical rise of the step
+        auto stepRiser = std::make_shared<Wall>(
+            Vec2(stepX + stepLength, stairStartY - stairWidth/2 + 0.1),
+            Vec2(stepX + stepLength, stairStartY + stairWidth/2 - 0.1),
+            3  // Texture for step risers
+        );
+        
+        // Set properties for this step
+        stepRiser->setHeight(stepHeight);
+        stepRiser->setBottomOffset(i * stepHeight);
+        
+        // Add the step to the stair sector
+        stairSector->addWall(stepRiser);
+    }
+    
+    // Add stair sector to map
+    map->addSector(stairSector);
+    
+    // ========================
+    // CREATE UPPER ROOM SECTOR
+    // ========================
+    
+    // Create a distinctive upper room that connects to the staircase
+    double upperRoomHeight = 3.0;
+    double upperFloorLevel = 3.0;  // Height of the upper floor
+    
+    // Create a sector for the upper room
+    auto upperRoomSector = std::make_shared<Sector>();
+    upperRoomSector->setFloorHeight(upperFloorLevel);  // Higher floor level
+    upperRoomSector->setCeilingHeight(upperFloorLevel + upperRoomHeight);
+    upperRoomSector->setFloorTextureId(4);  // Distinctive floor texture
+    upperRoomSector->setCeilingTextureId(0);  // Different ceiling texture
+    
+    // Define dimensions for the upper room
+    double upperRoomSize = 12.0;
+    double upperRoomX = stairStartX + stairLength + upperRoomSize/2;
+    double upperRoomY = stairStartY;
+    
+    // Create walls for the hexagonal upper room
+    std::vector<Vec2> hexPoints;
+    int numSides = 6;
+    for (int i = 0; i < numSides; i++) {
+        double angle = i * 2.0 * 3.14159265358979323846 / numSides;
+        hexPoints.push_back(Vec2(
+            upperRoomX + upperRoomSize * cos(angle),
+            upperRoomY + upperRoomSize * sin(angle)
+        ));
+    }
+    
+    // Create the walls connecting the points
+    std::vector<std::shared_ptr<Wall>> upperRoomWalls;
+    for (int i = 0; i < numSides; i++) {
+        int nextIdx = (i + 1) % numSides;
+        
+        // Skip the segment where the staircase connects
+        if (i != 4) {  // Adjust this index based on your hexagon orientation
+            upperRoomWalls.push_back(std::make_shared<Wall>(
+                hexPoints[i],
+                hexPoints[nextIdx],
+                0  // Different texture for upper room
+            ));
+        }
+    }
+    
+    // Create the portal connecting the staircase to the upper room
+    auto upperRoomEntrance = std::make_shared<Wall>(
+        hexPoints[4],
+        hexPoints[5],
+        0
+    );
+    upperRoomEntrance->setType(WallType::PORTAL);
+    upperRoomEntrance->setAdjoiningSector(stairSector.get());
+    
+    // Connect staircase to upper room
+    stairWall2->setType(WallType::PORTAL);
+    stairWall2->setAdjoiningSector(upperRoomSector.get());
+    
+    // Add walls to upper room sector
+    for (const auto& wall : upperRoomWalls) {
+        upperRoomSector->addWall(wall);
+    }
+    upperRoomSector->addWall(upperRoomEntrance);
+    
+    // Add decorative features to upper room
+    // Create a central structure in the upper room
+    double pillarSize = 1.0;
+    for (int i = 0; i < 3; i++) {
+        double radius = upperRoomSize * 0.3;
+        double angle = i * 2.0 * 3.14159265358979323846 / 3;
+        Vec2 pillarCenter(
+            upperRoomX + radius * cos(angle),
+            upperRoomY + radius * sin(angle)
+        );
+        
+        auto pillar1 = std::make_shared<Wall>(
+            Vec2(pillarCenter.x - pillarSize, pillarCenter.y - pillarSize),
+            Vec2(pillarCenter.x + pillarSize, pillarCenter.y - pillarSize),
+            2  // Different texture for pillars
+        );
+        auto pillar2 = std::make_shared<Wall>(
+            Vec2(pillarCenter.x + pillarSize, pillarCenter.y - pillarSize),
+            Vec2(pillarCenter.x + pillarSize, pillarCenter.y + pillarSize),
+            2
+        );
+        auto pillar3 = std::make_shared<Wall>(
+            Vec2(pillarCenter.x + pillarSize, pillarCenter.y + pillarSize),
+            Vec2(pillarCenter.x - pillarSize, pillarCenter.y + pillarSize),
+            2
+        );
+        auto pillar4 = std::make_shared<Wall>(
+            Vec2(pillarCenter.x - pillarSize, pillarCenter.y + pillarSize),
+            Vec2(pillarCenter.x - pillarSize, pillarCenter.y - pillarSize),
+            2
+        );
+        
+        upperRoomSector->addWall(pillar1);
+        upperRoomSector->addWall(pillar2);
+        upperRoomSector->addWall(pillar3);
+        upperRoomSector->addWall(pillar4);
+    }
+    
+    // Add upper room sector to map
+    map->addSector(upperRoomSector);
     
     // Build BSP tree for the map
     map->buildBSPTree();

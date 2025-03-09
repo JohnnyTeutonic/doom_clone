@@ -12,6 +12,13 @@
 #include <random>
 #include <chrono>
 
+// For SDL integration
+#ifdef _WIN32
+#include <SDL.h>
+#else
+#include <SDL2/SDL.h>
+#endif
+
 // Constants
 constexpr double PI = 3.14159265358979323846;
 constexpr double TWO_PI = PI * 2.0;
@@ -146,6 +153,16 @@ struct Rect {
     
     // Get center of rectangle
     Vec2 center() const { return Vec2(x + width / 2, y + height / 2); }
+    
+    // Convert to SDL_Rect
+    SDL_Rect toSDLRect() const {
+        SDL_Rect rect;
+        rect.x = static_cast<int>(x);
+        rect.y = static_cast<int>(y);
+        rect.w = static_cast<int>(width);
+        rect.h = static_cast<int>(height);
+        return rect;
+    }
 };
 
 // Circle
