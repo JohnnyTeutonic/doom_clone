@@ -553,28 +553,55 @@ void Renderer::drawWallSpans()
                     break;
                 }
                 
-                case 1: { // Tech panels - high contrast
-                    // Simplified tech pattern with high contrast
+                case 1: { // Tech panels - industrial metal look
+                    // Enhanced tech panel pattern with metal finish
                     int panelSize = 32;
                     
                     // Panel grid - thicker lines
                     bool isEdge = (static_cast<int>(texU * 64) % panelSize < 4) || 
                                  (static_cast<int>(texV * 64) % panelSize < 4);
                     
-                    // Draw pentagram in center with high visibility
+                    // Panel division lines (additional detail)
+                    bool isSubdivision = ((static_cast<int>(texU * 64) % (panelSize/2) < 2) && 
+                                         (static_cast<int>(texU * 64) % panelSize >= 4)) || 
+                                        ((static_cast<int>(texV * 64) % (panelSize/2) < 2) && 
+                                         (static_cast<int>(texV * 64) % panelSize >= 4));
+                    
+                    // Add some bolt/rivet details
                     double localU = (texU * 64) / 64.0;
                     double localV = (texV * 64) / 64.0;
-                    double centerU = 0.5, centerV = 0.5;
-                    double dist = sqrt(pow(localU - centerU, 2) + pow(localV - centerV, 2));
                     
-                    bool onPentagram = (dist > 0.3 && dist < 0.4);
+                    // Position bolts at panel corners
+                    int cornerX = static_cast<int>(texU * 64) / panelSize;
+                    int cornerY = static_cast<int>(texV * 64) / panelSize;
+                    double cornerLocalU = fmod(texU * 64, panelSize) / panelSize;
+                    double cornerLocalV = fmod(texV * 64, panelSize) / panelSize;
                     
-                    if (onPentagram) {
-                        wallColor = Color(255, 0, 0);  // Bright red pentagram
-                    } else if (isEdge) {
-                        wallColor = Color(100, 100, 120);  // Metal edge
+                    bool isBolt = (cornerLocalU < 0.15 || cornerLocalU > 0.85) && 
+                                 (cornerLocalV < 0.15 || cornerLocalV > 0.85) &&
+                                 (cornerLocalU < 0.08 || cornerLocalU > 0.92 || 
+                                  cornerLocalV < 0.08 || cornerLocalV > 0.92);
+                    
+                    // Add some wear to the panels
+                    int wear = (cornerX * 13 + cornerY * 7) % 10;
+                    
+                    if (isEdge) {
+                        // Dark metal edge
+                        wallColor = Color(70, 70, 80);
+                    } else if (isSubdivision) {
+                        // Secondary panel divider
+                        wallColor = Color(85, 85, 95);
+                    } else if (isBolt) {
+                        // Bolt/rivet detail
+                        wallColor = Color(110, 110, 120);
                     } else {
-                        wallColor = Color(40, 40, 60);  // Dark panel
+                        // Base industrial metal panel
+                        int variation = ((cornerX * 5 + cornerY * 7) % 10) - 5;
+                        wallColor = Color(
+                            60 + variation + (wear > 7 ? -15 : 0),
+                            65 + variation + (wear > 7 ? -10 : 0),
+                            75 + variation + (wear > 7 ? -5 : 0)
+                        );
                     }
                     break;
                 }
