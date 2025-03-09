@@ -181,12 +181,49 @@ bool Map::isValidPosition(double x, double y) const {
     // Get the cell type
     CellType cellType = m_cells[cellY][cellX];
     
-    // Check if cell is empty, stairs, or stair steps
-    return cellType == CellType::Empty || 
-           cellType == CellType::Stairs || 
-           cellType == CellType::StairStep1 || 
-           cellType == CellType::StairStep2 || 
-           cellType == CellType::StairStep3;
+    // Always allow movement into empty spaces, stairs, or stair steps
+    bool isPassable = cellType == CellType::Empty || 
+                     cellType == CellType::Stairs || 
+                     cellType == CellType::StairStep1 || 
+                     cellType == CellType::StairStep2 || 
+                     cellType == CellType::StairStep3;
+    
+    // Special handling for room boundaries - check if adjacent cells have different elevations
+    if (!isPassable) {
+        // Additional checks for rooms with different elevations
+        // If this is a room boundary (elevation changes around this cell), consider allowing passage
+        int currentElevation = getCellElevation(cellX, cellY);
+        
+        // Check neighboring cells for elevation changes (potential room boundaries)
+        bool hasElevationChange = false;
+        
+        // Check in all 4 directions
+        const int dx[] = {0, 1, 0, -1};
+        const int dy[] = {-1, 0, 1, 0};
+        
+        for (int i = 0; i < 4; i++) {
+            int nx = cellX + dx[i];
+            int ny = cellY + dy[i];
+            
+            // Skip if out of bounds
+            if (nx < 0 || nx >= m_width || ny < 0 || ny >= m_height) continue;
+            
+            // If there's an elevation difference and the cell is traversable, consider it a room boundary
+            if (getCellElevation(nx, ny) != currentElevation && 
+                (m_cells[ny][nx] == CellType::Empty || isStairs(nx, ny) || isStairStep(nx, ny))) {
+                hasElevationChange = true;
+                std::cout << "Detected room boundary at (" << cellX << "," << cellY << ") - allowing passage" << std::endl;
+                break;
+            }
+        }
+        
+        // If this is a room boundary, allow passage
+        if (hasElevationChange) {
+            return true;
+        }
+    }
+    
+    return isPassable;
 }
 
 int Map::getWallTexture(int x, int y) const {
