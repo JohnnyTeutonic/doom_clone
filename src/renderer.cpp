@@ -8,6 +8,7 @@
 // Forward declarations for texture functions
 Color getDoomFloorColor(int x, int y, int floorTileSize);
 Color getDoomCeilingColor(int x, int y, int tileSize);
+Color getDoomWallColor(int textureId, double u, double v, double distance);
 Vec2 pentagramPoint(int pointIndex, double centerX, double centerY, double radius);
 bool isInsidePentagram(double x, double y, double centerX, double centerY, double radius, double lineWidth);
 
@@ -202,8 +203,110 @@ void Renderer::renderMap(Map* map, Camera* camera)
     // Get visible walls from BSP tree
     std::vector<std::shared_ptr<Wall>> visibleWalls = map->getVisibleWalls(camera->getPosition());
     
+    // DEBUG: Make sure we actually have walls
+    static int frameCount = 0;
+    frameCount++;
+    
+    if (frameCount % 60 == 0) {  // Print only once per second (assuming 60 FPS)
+        std::cout << "Frame " << frameCount << ": Processing " << visibleWalls.size() << " visible walls" << std::endl;
+    }
+    
+    // If no walls, create some test walls
+    if (visibleWalls.empty()) {
+        // Create synthetic test walls if none are found
+        Vec2 camPos = camera->getPosition();
+        double camAngle = camera->getAngle();
+        
+        // Create walls in cardinal directions around camera
+        for (int i = 0; i < 4; i++) {
+            double angle = i * PI / 2 + camAngle;
+            Vec2 start(camPos.x + cos(angle) * 2 - sin(angle), camPos.y + sin(angle) * 2 + cos(angle));
+            Vec2 end(camPos.x + cos(angle) * 2 + sin(angle), camPos.y + sin(angle) * 2 - cos(angle));
+            
+            auto wall = std::make_shared<Wall>(start, end);
+            wall->setTextureId(i);
+            visibleWalls.push_back(wall);
+        }
+        
+        std::cout << "WARNING: No walls found! Added " << visibleWalls.size() << " test walls." << std::endl;
+    }
+    
+    // DIRECT WALL DEBUG: Draw walls directly to screen without any intermediate processing
+    double eyeX, eyeY, eyeZ, dirX, dirY, dirZ;
+    camera->getViewMatrix(eyeX, eyeY, eyeZ, dirX, dirY, dirZ);
+    
+    // Get camera FOV and calculate projection variables
+    double fov = camera->getFOV();
+    double halfFovTan = tan(fov / 2.0);
+    double aspectRatio = static_cast<double>(m_screenWidth) / m_screenHeight;
+    
+    // Draw each wall directly
+    for (const auto& wall : visibleWalls) {
+        Vec2 start = wall->getStart();
+        Vec2 end = wall->getEnd();
+        
+        // Transform points to camera space
+        double startX = start.x - eyeX;
+        double startY = start.y - eyeY;
+        double endX = end.x - eyeX;
+        double endY = end.y - eyeY;
+        
+        // Rotate points around camera (inverse of camera rotation)
+        double cosAngle = cos(-camera->getAngle());
+        double sinAngle = sin(-camera->getAngle());
+        
+        double rotStartX = startX * cosAngle - startY * sinAngle;
+        double rotStartY = startX * sinAngle + startY * cosAngle;
+        double rotEndX = endX * cosAngle - endY * sinAngle;
+        double rotEndY = endX * sinAngle + endY * cosAngle;
+        
+        // Skip walls behind the camera
+        if (rotStartX < 0.1 && rotEndX < 0.1) {
+            continue;
+        }
+        
+        // Calculate screen x-coordinates
+        double startScreenX = (rotStartY / rotStartX / halfFovTan / aspectRatio + 1.0) * m_screenWidth / 2.0;
+        double endScreenX = (rotEndY / rotEndX / halfFovTan / aspectRatio + 1.0) * m_screenWidth / 2.0;
+        
+        // Draw a bright line on screen to show where wall should be
+        int x1 = static_cast<int>(startScreenX);
+        int x2 = static_cast<int>(endScreenX);
+        
+        // Only draw if in screen bounds
+        if ((x1 >= 0 && x1 < m_screenWidth) || (x2 >= 0 && x2 < m_screenWidth)) {
+            // Use a bright distinctive color based on wall ID
+            int textureId = wall->getTextureId() % 4;
+            Color debugColor;
+            
+            switch (textureId) {
+                case 0: debugColor = Color(255, 255, 255); break; // White
+                case 1: debugColor = Color(255, 0, 255); break;   // Magenta
+                case 2: debugColor = Color(255, 255, 0); break;   // Yellow
+                case 3: debugColor = Color(0, 255, 255); break;   // Cyan
+                default: debugColor = Color(255, 0, 0); break;    // Red (fallback)
+            }
+            
+            // Draw colored vertical lines at wall positions
+            for (int x = std::max(0, x1); x <= std::min(m_screenWidth - 1, x2); x++) {
+                for (int y = 0; y < m_screenHeight; y++) {
+                    // Draw every 5th line for a dashed effect
+                    if ((x - x1) % 5 == 0) {
+                        // Force pixel to be visible regardless of Z-buffer
+                        setPixel(x, y, debugColor);
+                    }
+                }
+            }
+        }
+    }
+    
     // Process visible walls to generate spans
     processVisibleWalls(map, camera, visibleWalls);
+    
+    // DEBUG: Verify spans are being created
+    if (frameCount % 60 == 0) {  // Print only once per second
+        std::cout << "  Generated " << m_wallSpans.size() << " wall spans" << std::endl;
+    }
     
     // Render all spans in the correct order:
     // 1. Draw floor first (which checks z-buffer to avoid overwriting walls)
@@ -400,6 +503,9 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
         double wallLength = wall->getLength();
         double textureScaleX = 1.0 / wallLength;
         
+        // Wall direction for texture mapping
+        Vec2 wallDir = (end - start).normalized();
+        
         // Generate wall spans for each vertical column
         for (int x = screenStartX; x <= screenEndX; x++) {
             // Calculate t parameter for interpolation (0 to 1 along the wall)
@@ -417,8 +523,14 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
             // Interpolate distance for Z-buffer
             double distance = lerp(startDist, endDist, t);
             
-            // Calculate texture U coordinate
-            double u = t;
+            // Calculate texture U coordinate - use absolute position along the wall
+            // This ensures consistent texturing regardless of wall angle
+            Vec2 pointOnWall = start + wallDir * (t * wallLength);
+            double worldDistance = (pointOnWall - start).length();
+            
+            // The texture coordinate repeats every 2 world units
+            double textureRepeat = 2.0;
+            double u = (worldDistance / textureRepeat);
             
             // Create wall span
             WallSpan span;
@@ -463,6 +575,10 @@ void Renderer::drawWallSpans()
         return a.distance > b.distance;
     });
     
+    // Counter for debug visualization
+    static int frameCounter = 0;
+    frameCounter++;
+    
     // Draw each wall span
     for (const auto& span : m_wallSpans) {
         // Skip portal walls for this simplified version
@@ -472,37 +588,45 @@ void Renderer::drawWallSpans()
         int y1 = std::max(0, span.y1);
         int y2 = std::min(m_screenHeight - 1, span.y2);
         
-        // Calculate wall color based on texture and lighting
-        // Here we're using a simplified approach with basic colors
-        Color wallColor;
-        
-        // Determine color based on texture ID for this simplified version
-        switch (span.textureId % 5) {
-            case 0: wallColor = Color(150, 100, 80); break;  // Brown
-            case 1: wallColor = Color(120, 120, 120); break; // Gray
-            case 2: wallColor = Color(80, 100, 150); break;  // Blue-gray
-            case 3: wallColor = Color(140, 80, 80); break;   // Red-brown
-            case 4: wallColor = Color(80, 140, 80); break;   // Green
-            default: wallColor = Color(200, 200, 200); break; // Light gray
-        }
-        
-        // Adjust color based on distance for simple fog effect
-        double fogFactor = 1.0 - std::min(1.0, span.distance / 20.0);
-        Color foggedColor = Color::lerp(Colors::BLACK, wallColor, fogFactor);
-        
-        // Apply lighting
-        double lightLevel = span.lightLevel;
-        Color finalColor = Color::lerp(Color(0, 0, 0), foggedColor, lightLevel);
+        // SUPER OBVIOUS PATTERN:
+        // Use bright, unmistakable colors and patterns to test if walls are rendering at all
         
         // Draw the vertical strip
         for (int y = y1; y <= y2; y++) {
-            int index = y * m_screenWidth + span.x;
+            // Create a very visible pattern 
+            // - Alternate every 8 pixels vertically (bright yellow stripes on red)
+            // - Make walls pulse over time to make sure rendering updates
+            Color wallColor;
             
-            // Always draw walls, they should override the floor
-            // as we've already sorted them by distance
+            // Vertical stripe pattern
+            bool isStripe = ((y / 8) % 2 == 0);
+            
+            // Time-based pulsing (changes every ~30 frames)
+            bool pulsePhase = ((frameCounter / 30) % 2 == 0);
+            
+            // Extremely bright contrasting colors
+            if (isStripe) {
+                // Bright yellow stripes
+                wallColor = pulsePhase ? Color(255, 255, 0) : Color(200, 200, 0);
+            } else {
+                // Bright red background
+                wallColor = pulsePhase ? Color(255, 0, 0) : Color(200, 0, 0);
+            }
+            
+            // Special mode - draw diagonal pattern based on world position
+            if (span.x % 3 == 0) {
+                // Blue diagonal pattern for every third vertical strip
+                wallColor = Color(0, 0, 255);
+            }
+            
+            // Absolutely no blending or lighting - we want raw color
+            // Draw regardless of Z-buffer - force the walls to be visible
+            int index = y * m_screenWidth + span.x;
             if (index >= 0 && index < m_screenWidth * m_screenHeight) {
-                m_zBuffer[index] = span.distance;
-                setPixel(span.x, y, finalColor);
+                // Force override Z-buffer 
+                m_zBuffer[index] = 0.0; // Closest possible distance
+                // Directly set the pixel - maximum visibility
+                setPixel(span.x, y, wallColor);
             }
         }
     }
@@ -920,4 +1044,290 @@ Color getDoomCeilingColor(int x, int y, int tileSize) {
         std::min(255, std::max(0, static_cast<int>(baseCeilingColor.g) + variation / 2)),
         std::min(255, std::max(0, static_cast<int>(baseCeilingColor.b)))
     );
+}
+
+// Function to generate a DOOM-like wall texture - fixed version
+Color getDoomWallColor(int textureId, double u, double v, double distance) {
+    // Texture coordinates (scaled to 0-1 range)
+    double texU = u - floor(u);
+    double texV = v - floor(v);
+    
+    // Convert to pixel coordinates (0-64 range for texture size)
+    int texX = static_cast<int>(texU * 64) % 64;
+    int texY = static_cast<int>(texV * 64) % 64;
+    
+    // Base colors for various wall types
+    Color stoneColor(70, 60, 50);        // Stone base
+    Color metalColor(80, 80, 90);        // Metal base
+    Color techColor(60, 70, 80);         // Tech base
+    Color demonicColor(80, 40, 40);      // Demonic base
+    Color accentColor(120, 30, 20);      // Accent color (red)
+    Color darkAccent(30, 20, 20);        // Dark accent
+    
+    // Select texture type based on ID
+    int textureType = textureId % 5;
+    
+    // Calculate pixel color based on texture type
+    Color baseColor;
+    
+    switch(textureType) {
+        case 0: { // Metal panels with rivets
+            // Grid layout
+            int panelSizeX = 16;
+            int panelSizeY = 32;
+            int panelX = texX / panelSizeX;
+            int panelY = texY / panelSizeY;
+            
+            // Panel edge detection (darker edges)
+            int edgeWidth = 2;
+            bool isEdge = (texX % panelSizeX < edgeWidth) || 
+                         (texX % panelSizeX >= panelSizeX - edgeWidth) ||
+                         (texY % panelSizeY < edgeWidth) ||
+                         (texY % panelSizeY >= panelSizeY - edgeWidth);
+            
+            // Rivet detection (small circular rivets at panel corners)
+            int rivetSize = 3;
+            bool isRivet = false;
+            
+            // Check each corner of the panel
+            for (int cornerX = 0; cornerX <= 1; cornerX++) {
+                for (int cornerY = 0; cornerY <= 1; cornerY++) {
+                    int rivetCenterX = cornerX * panelSizeX;
+                    int rivetCenterY = cornerY * panelSizeY;
+                    
+                    // Distance from this pixel to the rivet center
+                    int dx = (texX % panelSizeX) - rivetCenterX;
+                    int dy = (texY % panelSizeY) - rivetCenterY;
+                    int distSq = dx*dx + dy*dy;
+                    
+                    if (distSq < rivetSize*rivetSize) {
+                        isRivet = true;
+                    }
+                }
+            }
+            
+            // Color selection
+            if (isRivet) {
+                baseColor = darkAccent; // Dark rivet
+            } else if (isEdge) {
+                baseColor = Color(60, 60, 70); // Darker edge
+            } else {
+                // Slight variation to panel base color
+                int variation = ((panelX + panelY) % 3) - 1;
+                baseColor = Color(
+                    std::min(255, std::max(0, static_cast<int>(metalColor.r) + variation)),
+                    std::min(255, std::max(0, static_cast<int>(metalColor.g) + variation)),
+                    std::min(255, std::max(0, static_cast<int>(metalColor.b) + variation))
+                );
+            }
+            break;
+        }
+        
+        case 1: { // Stone/brick wall with cracks
+            // Brick layout
+            int brickWidth = 16;
+            int brickHeight = 8;
+            int offsetPerRow = 8; // Offset every other row
+            
+            // Calculate brick coordinates
+            int row = texY / brickHeight;
+            int col = texX / brickWidth;
+            int rowOffset = (row % 2) * offsetPerRow;
+            int effectiveX = texX + rowOffset;
+            col = effectiveX / brickWidth;
+            
+            // Brick edge detection
+            int mortarWidth = 1;
+            bool isMortar = (effectiveX % brickWidth < mortarWidth) || 
+                           (effectiveX % brickWidth >= brickWidth - mortarWidth) ||
+                           (texY % brickHeight < mortarWidth) ||
+                           (texY % brickHeight >= brickHeight - mortarWidth);
+            
+            // Crack pattern (seeded by position)
+            int seed = (col * 1234 + row * 5678) % 100;
+            bool hasCrack = (seed < 15); // 15% chance for a crack
+            
+            // Determine crack pattern
+            bool isOnCrack = false;
+            if (hasCrack) {
+                int crackX = brickWidth / 2 + (seed % 3) - 1;
+                int crackY = brickHeight / 2 + ((seed / 3) % 3) - 1;
+                int localX = effectiveX % brickWidth;
+                int localY = texY % brickHeight;
+                
+                int dx = localX - crackX;
+                int dy = localY - crackY;
+                
+                // Check if point is on a jagged line crack
+                isOnCrack = (abs(dx) <= 1 && abs(dy) <= 4) || 
+                            (abs(dx) <= 2 && abs(dy) <= 2);
+            }
+            
+            // Color selection
+            if (isMortar) {
+                baseColor = darkAccent; // Dark mortar
+            } else if (isOnCrack) {
+                baseColor = Color(20, 20, 20); // Dark crack
+            } else {
+                // Slight variation to brick color
+                int variation = ((col + row) % 5) - 2;
+                baseColor = Color(
+                    std::min(255, std::max(0, static_cast<int>(stoneColor.r) + variation)),
+                    std::min(255, std::max(0, static_cast<int>(stoneColor.g) + variation)),
+                    std::min(255, std::max(0, static_cast<int>(stoneColor.b) + variation))
+                );
+            }
+            break;
+        }
+        
+        case 2: { // Tech/circuit pattern
+            // Grid layout
+            int gridSize = 8;
+            
+            // Grid lines
+            bool isGridLine = (texX % gridSize <= 1) || (texY % gridSize <= 1);
+            
+            // Circuit patterns (horizontal and vertical lines)
+            bool isCircuitH = ((texY % (gridSize * 4)) / gridSize == 1) && 
+                             ((texX % gridSize) > 2) && ((texX % gridSize) < gridSize - 2);
+            
+            bool isCircuitV = ((texX % (gridSize * 4)) / gridSize == 2) && 
+                             ((texY % gridSize) > 2) && ((texY % gridSize) < gridSize - 2);
+            
+            // "Components" at certain intersections
+            int blockX = texX / gridSize;
+            int blockY = texY / gridSize;
+            int centerDistSq = ((texX % gridSize - gridSize/2) * (texX % gridSize - gridSize/2) + 
+                              (texY % gridSize - gridSize/2) * (texY % gridSize - gridSize/2));
+            bool isComponent = ((blockX + blockY) % 7 == 0) && (centerDistSq < 9);
+            
+            // Color selection
+            if (isComponent) {
+                baseColor = accentColor; // Red component
+            } else if (isGridLine || isCircuitH || isCircuitV) {
+                baseColor = Color(100, 110, 120); // Light circuit line
+            } else {
+                baseColor = techColor;
+            }
+            break;
+        }
+        
+        case 3: { // Demonic symbols and runes
+            // Background with subtle pattern
+            int patternX = texX / 8;
+            int patternY = texY / 8;
+            bool isDarker = ((patternX + patternY) % 2 == 0);
+            
+            // Create a pentagram centered in the texture
+            double centerX = 32.0;
+            double centerY = 32.0;
+            double radius = 24.0;
+            double lineWidth = 2.0;
+            
+            // Check if on pentagram
+            bool onPentagram = isInsidePentagram(
+                texX - centerX, texY - centerY, 
+                0, 0, radius, lineWidth);
+            
+            // Rune-like symbols in the corners
+            bool onRune = false;
+            
+            // Four corner runes
+            for (int cornerX = 0; cornerX <= 1; cornerX++) {
+                for (int cornerY = 0; cornerY <= 1; cornerY++) {
+                    int runeX = cornerX * 48 + 8;
+                    int runeY = cornerY * 48 + 8;
+                    
+                    // Simple rune patterns (box with cross)
+                    int dx = abs(texX - runeX);
+                    int dy = abs(texY - runeY);
+                    
+                    if ((dx < 3 && dy < 6) || (dx < 6 && dy < 3)) {
+                        onRune = true;
+                    }
+                }
+            }
+            
+            // Color selection
+            if (onPentagram) {
+                baseColor = accentColor; // Red pentagram
+            } else if (onRune) {
+                baseColor = Color(150, 30, 10); // Brighter rune
+            } else {
+                // Alternate slightly darker/lighter background
+                baseColor = isDarker ? 
+                    Color(std::max(0, static_cast<int>(demonicColor.r) - 10),
+                          std::max(0, static_cast<int>(demonicColor.g) - 5),
+                          std::max(0, static_cast<int>(demonicColor.b) - 5)) : 
+                    demonicColor;
+            }
+            break;
+        }
+        
+        case 4: { // Hellish flesh wall (veins and organic texture)
+            // Base color with organic-looking noise
+            int noiseX = texX / 4;
+            int noiseY = texY / 4;
+            int noise = ((noiseX * 7) + (noiseY * 19)) % 10;
+            
+            // Veins (curved lines)
+            bool onVein = false;
+            
+            // Create a few veins with different paths
+            for (int vein = 0; vein < 3; vein++) {
+                double veinX = 20 + vein * 15;
+                
+                // Sine wave path
+                double amplitude = 15.0;
+                double frequency = 0.05;
+                double phase = vein * PI / 3;
+                
+                // Calculate points along the vein
+                double veinY = 32 + amplitude * sin(frequency * texX + phase);
+                double veinDist = fabs(texY - veinY);
+                
+                if (veinDist < 2.0) {
+                    onVein = true;
+                }
+            }
+            
+            // Blood spots (small circles)
+            bool inBloodSpot = false;
+            
+            // Create several blood spots
+            for (int spot = 0; spot < 5; spot++) {
+                int spotX = (spot * 37) % 64;
+                int spotY = (spot * 23) % 64;
+                int spotRadius = 3 + (spot % 3);
+                
+                int dx = texX - spotX;
+                int dy = texY - spotY;
+                if (dx*dx + dy*dy < spotRadius*spotRadius) {
+                    inBloodSpot = true;
+                }
+            }
+            
+            // Color selection
+            if (inBloodSpot) {
+                baseColor = Color(120, 20, 20); // Dark red blood
+            } else if (onVein) {
+                baseColor = Color(140, 30, 30); // Brighter vein
+            } else {
+                // Flesh texture with noise
+                baseColor = Color(
+                    std::min(255, std::max(0, 100 - noise * 2)),  // Reddish base
+                    std::min(255, std::max(0, 50 - noise)),
+                    std::min(255, std::max(0, 50 - noise))
+                );
+            }
+            break;
+        }
+        
+        default:
+            baseColor = Color(200, 200, 200); // Light gray (fallback)
+    }
+    
+    // Apply distance-based darkening
+    double fogFactor = 1.0 - std::min(1.0, distance / 20.0);
+    return Color::lerp(Color(0, 0, 0), baseColor, fogFactor);
 } 
