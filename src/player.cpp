@@ -172,8 +172,27 @@ void Player::moveForward(double deltaTime, const Map& map) {
     // Check for valid position with collision detection
     // If we're crossing elevation without stairs, block movement
     if (crossingElevation) {
-        // Don't allow crossing elevation without stairs
-        std::cout << "Blocked movement across elevation boundary" << std::endl;
+        // Check if we're approaching stairs from either direction
+        bool approachingStairs = map.isStairs(newCellX, newCellY) || 
+                                 map.isStairStep(newCellX, newCellY) ||
+                                 map.isStairs(static_cast<int>(newX + m_direction.x), static_cast<int>(newY + m_direction.y));
+        
+        if (approachingStairs) {
+            // Allow movement if approaching stairs even across elevation
+            std::cout << "Approaching stairs - allowing elevation change" << std::endl;
+            
+            // Normal collision detection
+            bool validX = map.isValidPosition(newX, m_position.y);
+            bool validY = map.isValidPosition(m_position.x, newY);
+            
+            if (validX) m_position.x = newX;
+            if (validY) m_position.y = newY;
+            
+            m_isMoving = validX || validY;
+        } else {
+            // Don't allow crossing elevation without stairs
+            std::cout << "Blocked movement across elevation boundary" << std::endl;
+        }
     } else {
         // Normal collision detection
         bool validX = map.isValidPosition(newX, m_position.y);
@@ -181,9 +200,18 @@ void Player::moveForward(double deltaTime, const Map& map) {
         
         // Check if the new position maintains the same elevation (unless on stairs)
         if (validX) {
-            // Only move if we're not crossing elevation boundaries without stairs
+            // Add more debug information
+            CellType xCellType = map.getCell(static_cast<int>(newX), static_cast<int>(m_position.y));
+            bool isXStairs = map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y));
+            bool isXStairStep = map.isStairStep(static_cast<int>(newX), static_cast<int>(m_position.y));
             int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
-            if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
+            
+            std::cout << "X movement check - Cell type: " << static_cast<int>(xCellType) 
+                      << ", isStairs: " << isXStairs << ", isStairStep: " << isXStairStep 
+                      << ", elevation: " << newXElevation << " vs current: " << currentElevation << std::endl;
+            
+            // Allow movement either when elevation matches or when going to/from stairs
+            if (newXElevation == currentElevation || onStairs || isXStairs || isXStairStep) {
                 m_position.x = newX;
                 m_isMoving = true; // Set the moving flag when player moves
             } else {
@@ -192,9 +220,18 @@ void Player::moveForward(double deltaTime, const Map& map) {
         }
         
         if (validY) {
-            // Only move if we're not crossing elevation boundaries without stairs
+            // Add more debug information 
+            CellType yCellType = map.getCell(static_cast<int>(m_position.x), static_cast<int>(newY));
+            bool isYStairs = map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY));
+            bool isYStairStep = map.isStairStep(static_cast<int>(m_position.x), static_cast<int>(newY));
             int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
-            if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
+            
+            std::cout << "Y movement check - Cell type: " << static_cast<int>(yCellType) 
+                      << ", isStairs: " << isYStairs << ", isStairStep: " << isYStairStep 
+                      << ", elevation: " << newYElevation << " vs current: " << currentElevation << std::endl;
+            
+            // Allow movement either when elevation matches or when going to/from stairs
+            if (newYElevation == currentElevation || onStairs || isYStairs || isYStairStep) {
                 m_position.y = newY;
                 m_isMoving = true; // Set the moving flag when player moves
             } else {
@@ -298,8 +335,27 @@ void Player::moveBackward(double deltaTime, const Map& map) {
     // Check for valid position with collision detection
     // If we're crossing elevation without stairs, block movement
     if (crossingElevation) {
-        // Don't allow crossing elevation without stairs
-        std::cout << "Blocked backward movement across elevation boundary" << std::endl;
+        // Check if we're approaching stairs from either direction (looking behind)
+        bool approachingStairs = map.isStairs(newCellX, newCellY) || 
+                                 map.isStairStep(newCellX, newCellY) ||
+                                 map.isStairs(static_cast<int>(newX - m_direction.x), static_cast<int>(newY - m_direction.y));
+        
+        if (approachingStairs) {
+            // Allow movement if approaching stairs even across elevation
+            std::cout << "Approaching stairs - allowing elevation change" << std::endl;
+            
+            // Normal collision detection
+            bool validX = map.isValidPosition(newX, m_position.y);
+            bool validY = map.isValidPosition(m_position.x, newY);
+            
+            if (validX) m_position.x = newX;
+            if (validY) m_position.y = newY;
+            
+            m_isMoving = validX || validY;
+        } else {
+            // Don't allow crossing elevation without stairs
+            std::cout << "Blocked movement across elevation boundary" << std::endl;
+        }
     } else {
         // Normal collision detection
         bool validX = map.isValidPosition(newX, m_position.y);
@@ -307,24 +363,42 @@ void Player::moveBackward(double deltaTime, const Map& map) {
         
         // Check if the new position maintains the same elevation (unless on stairs)
         if (validX) {
-            // Only move if we're not crossing elevation boundaries without stairs
+            // Add more debug information
+            CellType xCellType = map.getCell(static_cast<int>(newX), static_cast<int>(m_position.y));
+            bool isXStairs = map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y));
+            bool isXStairStep = map.isStairStep(static_cast<int>(newX), static_cast<int>(m_position.y));
             int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
-            if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
+            
+            std::cout << "Backward X movement check - Cell type: " << static_cast<int>(xCellType) 
+                      << ", isStairs: " << isXStairs << ", isStairStep: " << isXStairStep 
+                      << ", elevation: " << newXElevation << " vs current: " << currentElevation << std::endl;
+            
+            // Allow movement either when elevation matches or when going to/from stairs
+            if (newXElevation == currentElevation || onStairs || isXStairs || isXStairStep) {
                 m_position.x = newX;
                 m_isMoving = true; // Set the moving flag when player moves
             } else {
-                std::cout << "Blocked backward X movement due to elevation change" << std::endl;
+                std::cout << "Blocked X movement due to elevation change" << std::endl;
             }
         }
         
         if (validY) {
-            // Only move if we're not crossing elevation boundaries without stairs
+            // Add more debug information
+            CellType yCellType = map.getCell(static_cast<int>(m_position.x), static_cast<int>(newY));
+            bool isYStairs = map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY));
+            bool isYStairStep = map.isStairStep(static_cast<int>(m_position.x), static_cast<int>(newY));
             int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
-            if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
+            
+            std::cout << "Backward Y movement check - Cell type: " << static_cast<int>(yCellType) 
+                      << ", isStairs: " << isYStairs << ", isStairStep: " << isYStairStep 
+                      << ", elevation: " << newYElevation << " vs current: " << currentElevation << std::endl;
+            
+            // Allow movement either when elevation matches or when going to/from stairs
+            if (newYElevation == currentElevation || onStairs || isYStairs || isYStairStep) {
                 m_position.y = newY;
                 m_isMoving = true; // Set the moving flag when player moves
             } else {
-                std::cout << "Blocked backward Y movement due to elevation change" << std::endl;
+                std::cout << "Blocked Y movement due to elevation change" << std::endl;
             }
         }
     }
