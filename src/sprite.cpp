@@ -32,7 +32,7 @@ void Sprite::update(double deltaTime)
     if (!m_active) {
         return;
     }
-    
+
     // Update animation if animated
     if (m_isAnimated) {
         updateAnimation(deltaTime);
@@ -52,7 +52,7 @@ void Sprite::setAnimated(bool animated, int frameCount, double speed)
     
     // Reset current frame if necessary
     if (m_currentFrame >= m_frameCount) {
-        m_currentFrame = 0;
+                m_currentFrame = 0;
     }
 }
 
@@ -60,7 +60,7 @@ void Sprite::setAnimationState(AnimationState state)
 {
     // Don't change state if already dead
     if (m_animState == AnimationState::DEAD) {
-        return;
+            return;
     }
     
     // Set new animation state

@@ -379,9 +379,9 @@ bool Player::checkWallCollisions(const Vec2& newPosition)
 bool Player::tryClimbStep(const Vec2& newPosition, double stepHeight)
 {
     // Not implemented yet - would allow climbing stairs
-    return false;
-}
-
+        return false;
+    }
+    
 std::shared_ptr<Sector> Player::findContainingSector() const
 {
     if (!m_map) return nullptr;

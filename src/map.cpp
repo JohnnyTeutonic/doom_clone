@@ -138,9 +138,9 @@ bool BSPNode::build(const std::vector<std::shared_ptr<Wall>>& walls)
     if (!m_splitter) {
         // If we can't choose a good splitter, store all walls as coplanar
         m_coplanarWalls = walls;
-        return true;
-    }
-    
+    return true;
+}
+
     // Partition walls into front, back, and coplanar sets
     std::vector<std::shared_ptr<Wall>> frontWalls;
     std::vector<std::shared_ptr<Wall>> backWalls;
@@ -433,22 +433,22 @@ bool Map::loadFromFile(const std::string& filename)
     }
     
     std::cerr << "Unknown map format" << std::endl;
-    return false;
-}
-
+        return false;
+    }
+    
 bool Map::saveToFile(const std::string& filename) const
 {
     // Implement map saving (placeholder)
-    return false;
-}
-
+        return false;
+    }
+    
 void Map::addSector(std::shared_ptr<Sector> sector)
 {
     if (sector) {
-        m_sectors.push_back(sector);
+            m_sectors.push_back(sector);
+        }
     }
-}
-
+    
 bool Map::buildBSPTree()
 {
     return m_bspTree->build(m_sectors);

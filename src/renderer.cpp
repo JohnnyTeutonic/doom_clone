@@ -81,7 +81,7 @@ bool Renderer::init(int screenWidth, int screenHeight, bool fullscreen, bool vsy
     // Create framebuffer texture
     m_frameBuffer = SDL_CreateTexture(
         m_renderer,
-        SDL_PIXELFORMAT_RGBA8888,
+        SDL_PIXELFORMAT_ARGB8888,
         SDL_TEXTUREACCESS_STREAMING,
         m_screenWidth,
         m_screenHeight
@@ -167,8 +167,8 @@ void Renderer::endFrame()
 
 void Renderer::clear(const Color& color)
 {
-    // Clear pixel buffer
-    uint32_t colorValue = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+    // Clear pixel buffer with the same format as setPixel
+    uint32_t colorValue = (color.a << 24) | (color.r << 16) | (color.g << 8) | color.b;
     for (int i = 0; i < m_screenWidth * m_screenHeight; ++i) {
         m_pixelBuffer[i] = colorValue;
     }
@@ -195,8 +195,11 @@ void Renderer::renderMap(Map* map, Camera* camera)
     processVisibleWalls(map, camera, visibleWalls);
     
     // Render all spans (back to front)
-    drawWallSpans();
+    // Draw floors/ceilings first (they're typically furthest)
     drawFloorCeilingSpans();
+    // Then draw walls (they cover the floor/ceiling)
+    drawWallSpans();
+    // Finally draw sprites
     drawSpriteSpans();
 }
 
@@ -207,8 +210,9 @@ void Renderer::setPixel(int x, int y, const Color& color)
         return;
     }
     
-    // Set pixel in buffer
-    uint32_t colorValue = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+    // Set pixel in buffer - use BGRA format for SDL (common on Windows platforms)
+    // This is equivalent to ARGB in memory due to byte order
+    uint32_t colorValue = (color.a << 24) | (color.r << 16) | (color.g << 8) | color.b;
     m_pixelBuffer[y * m_screenWidth + x] = colorValue;
 }
 
@@ -285,9 +289,9 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
         
         // Skip walls behind the camera
         if (rotStartX < 0.1 && rotEndX < 0.1) {
-            continue;
-        }
-        
+                continue;
+            }
+            
         // Clip walls that are partially behind the camera
         if (rotStartX < 0.1) {
             // Interpolate to find the intersection with the near plane
@@ -454,10 +458,9 @@ void Renderer::drawWallSpans()
         
         // Draw the vertical strip
         for (int y = y1; y <= y2; y++) {
-            // Check Z-buffer before drawing
-            double z = span.z1 + (span.z2 - span.z1) * (y - span.y1) / (span.y2 - span.y1);
             int index = y * m_screenWidth + span.x;
             
+            // Only draw if in front of what's already in the Z-buffer
             if (index >= 0 && index < m_screenWidth * m_screenHeight && span.distance < m_zBuffer[index]) {
                 m_zBuffer[index] = span.distance;
                 setPixel(span.x, y, finalColor);
@@ -468,18 +471,41 @@ void Renderer::drawWallSpans()
 
 void Renderer::drawFloorCeilingSpans() 
 {
-    // Draw a simple checkerboard floor and ceiling
-    for (int y = m_screenHeight / 2; y < m_screenHeight; y++) {
-        // Calculate floor color - checkerboard pattern
+    int horizonY = m_screenHeight / 2; // Middle of the screen is the horizon
+
+    // Draw floor (bottom half)
+    for (int y = horizonY; y < m_screenHeight; y++) {
+        // Calculate floor color - darker farther away, lighter closer
+        double t = 1.0 - (static_cast<double>(y - horizonY) / horizonY);
+        Color baseFloorColor = Color::lerp(
+            Color(20, 20, 20),  // Darker farther away
+            Color(60, 60, 60),  // Lighter closer to player
+            t
+        );
+
+        // Calculate approximate distance for the Z-buffer
+        // This is a simple approximation: pixels further down the screen are closer
+        double distance = m_renderDistance * (1.0 - t);
+
+        // Create checker pattern
         int checkerSize = 20;
         for (int x = 0; x < m_screenWidth; x++) {
-            // Create checker pattern
             int checkerX = x / checkerSize;
             int checkerY = y / checkerSize;
             bool isEven = (checkerX + checkerY) % 2 == 0;
             
-            // Floor color
-            Color floorColor = isEven ? Color(50, 50, 50) : Color(70, 70, 70);
+            // Floor color with checker pattern
+            Color floorColor = isEven ? baseFloorColor : Color(
+                std::min(255, baseFloorColor.r + 20),
+                std::min(255, baseFloorColor.g + 20),
+                std::min(255, baseFloorColor.b + 20)
+            );
+            
+            // Set in the Z-buffer with a very large distance so walls can draw over it
+            int index = y * m_screenWidth + x;
+            m_zBuffer[index] = distance;
+            
+            // Draw the floor pixel
             setPixel(x, y, floorColor);
         }
     }
@@ -603,7 +629,7 @@ void Renderer::renderDebugRect(const Rect& rect, const Color& color, bool filled
                 setPixel(px, py, color);
             }
         }
-    } else {
+        } else {
         // Draw rectangle outline
         for (int px = x; px < x + w; px++) {
             setPixel(px, y, color);
