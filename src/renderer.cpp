@@ -5,6 +5,12 @@
 #include <iostream>
 #include <limits>
 
+// Forward declarations for texture functions
+Color getDoomFloorColor(int x, int y, int floorTileSize);
+Color getDoomCeilingColor(int x, int y, int tileSize);
+Vec2 pentagramPoint(int pointIndex, double centerX, double centerY, double radius);
+bool isInsidePentagram(double x, double y, double centerX, double centerY, double radius, double lineWidth);
+
 Renderer::Renderer() :
     m_window(nullptr),
     m_renderer(nullptr),
@@ -241,19 +247,40 @@ void Renderer::renderSprites(Map* map, Camera* camera)
 
 void Renderer::renderSkybox(Camera* camera) 
 {
-    // Simple gradient skybox
-    for (int y = 0; y < m_screenHeight / 2; y++) {
-        // Calculate sky color - gradient from dark blue to light blue
-        double t = static_cast<double>(y) / (m_screenHeight / 2);
+    // Create a hellish DOOM-like skybox
+    for (int y = 0; y < m_screenHeight / 4; y++) {
+        // Calculate sky color - gradient from dark red to orange-red
+        double t = static_cast<double>(y) / (m_screenHeight / 4);
         Color skyColor = Color::lerp(
-            Color(100, 150, 200), // Light blue at horizon
-            Color(20, 40, 120),   // Dark blue at zenith
-            1.0 - t
+            Color(50, 10, 5),   // Dark blood red at top
+            Color(120, 30, 10), // Fiery orange-red at horizon
+            t
         );
         
         // Draw skybox line
         for (int x = 0; x < m_screenWidth; x++) {
-            setPixel(x, y, skyColor);
+            // Add some variation/clouds to the sky
+            double cloudNoise = 0.0;
+            
+            // Simple procedural "cloud" effect
+            int cloudX = x / 20;
+            int cloudY = y / 10;
+            int noise = ((cloudX * 7) + (cloudY * 19)) % 10;
+            
+            if (noise > 6) { // Darker spots in the sky
+                cloudNoise = -10.0;
+            } else if (noise < 3) { // Lighter spots
+                cloudNoise = 10.0;
+            }
+            
+            // Adjust color with noise
+            Color finalColor = Color(
+                std::min(255, std::max(0, static_cast<int>(skyColor.r + cloudNoise))),
+                std::min(255, std::max(0, static_cast<int>(skyColor.g + cloudNoise * 0.5))),
+                std::min(255, std::max(0, static_cast<int>(skyColor.b + cloudNoise * 0.2)))
+            );
+            
+            setPixel(x, y, finalColor);
         }
     }
 }
@@ -485,34 +512,77 @@ void Renderer::drawFloorCeilingSpans()
 {
     int horizonY = m_screenHeight / 2; // Middle of the screen is the horizon
 
+    // Draw ceiling (top half, below skybox)
+    for (int y = horizonY - 1; y >= horizonY / 2; y--) {
+        // Calculate ceiling distance factor - darker closer to horizon, lighter at top
+        double t = 1.0 - (static_cast<double>(horizonY - y) / (horizonY / 2.0));
+        
+        // Calculate distance for the Z-buffer
+        double distanceMultiplier = 1.5;
+        double distance = m_renderDistance * distanceMultiplier;
+        
+        // Get ceiling tile size (perspective effect)
+        int perspectiveCeilingTileSize = static_cast<int>(40 + 20 * t);
+        
+        for (int x = 0; x < m_screenWidth; x++) {
+            // Direction from center of screen
+            double dirX = (x - m_screenWidth / 2.0) / (m_screenWidth / 2.0);
+            
+            // Adjust coordinates based on perspective
+            int ceilingX = static_cast<int>(x + dirX * (1.0 - t) * m_screenWidth * 0.8);
+            int ceilingY = static_cast<int>(y - (1.0 - t) * m_screenHeight * 0.4);
+            
+            // Get the DOOM-like ceiling color
+            Color ceilingColor = getDoomCeilingColor(ceilingX, ceilingY, perspectiveCeilingTileSize);
+            
+            // Apply distance fog effect
+            double fogFactor = t * 0.8 + 0.2;
+            ceilingColor = Color::lerp(Color(5, 2, 0), ceilingColor, fogFactor);
+            
+            // Set in the Z-buffer
+            int index = y * m_screenWidth + x;
+            
+            // Only draw the ceiling if no wall spans have been drawn here
+            if (index >= 0 && index < m_screenWidth * m_screenHeight) {
+                if (m_zBuffer[index] == std::numeric_limits<double>::max()) {
+                    m_zBuffer[index] = distance;
+                    setPixel(x, y, ceilingColor);
+                }
+            }
+        }
+    }
+
     // Draw floor (bottom half)
     for (int y = horizonY; y < m_screenHeight; y++) {
-        // Calculate floor color - darker farther away, lighter closer
+        // Calculate floor distance factor - darker farther away, lighter closer
         double t = 1.0 - (static_cast<double>(y - horizonY) / horizonY);
-        Color baseFloorColor = Color::lerp(
-            Color(20, 20, 20),  // Darker farther away
-            Color(60, 60, 60),  // Lighter closer to player
-            t
-        );
-
+        
         // Calculate distance for the Z-buffer
         // Fixed distance for floor to ensure it's always behind walls
         double distanceMultiplier = 1.5; // Ensure floor is further than walls
         double distance = m_renderDistance * distanceMultiplier;
-
-        // Create checker pattern
-        int checkerSize = 20;
+        
+        // Get floor tile size (larger tiles in the distance, smaller when close)
+        // This creates the perspective effect for the floor texture
+        int perspectiveFloorTileSize = static_cast<int>(40 + 20 * t); // Tile size changes with distance
+        
         for (int x = 0; x < m_screenWidth; x++) {
-            int checkerX = x / checkerSize;
-            int checkerY = y / checkerSize;
-            bool isEven = (checkerX + checkerY) % 2 == 0;
+            // Calculate floor coordinates with perspective correction
+            // This creates the 3D floor effect as if looking down at floor tiles
             
-            // Floor color with checker pattern
-            Color floorColor = isEven ? baseFloorColor : Color(
-                std::min(255, baseFloorColor.r + 20),
-                std::min(255, baseFloorColor.g + 20),
-                std::min(255, baseFloorColor.b + 20)
-            );
+            // Direction from center of screen
+            double dirX = (x - m_screenWidth / 2.0) / (m_screenWidth / 2.0);
+            
+            // Adjust coordinates based on perspective (closer to horizon = further away)
+            int floorX = static_cast<int>(x + dirX * (1.0 - t) * m_screenWidth * 0.8);
+            int floorY = static_cast<int>(y + (1.0 - t) * m_screenHeight * 0.4);
+            
+            // Get the DOOM-like floor color with pentagram pattern
+            Color floorColor = getDoomFloorColor(floorX, floorY, perspectiveFloorTileSize);
+            
+            // Apply distance fog effect
+            double fogFactor = t * 0.8 + 0.2; // Prevent complete darkness
+            floorColor = Color::lerp(Color(10, 5, 5), floorColor, fogFactor);
             
             // Set in the Z-buffer
             int index = y * m_screenWidth + x;
@@ -705,4 +775,149 @@ bool Renderer::takeScreenshot(const std::string& filename)
 { 
     // Not implemented in this basic version
     return false;
+}
+
+// Calculate a point on a pentagram
+Vec2 pentagramPoint(int pointIndex, double centerX, double centerY, double radius) {
+    const double angle = (2 * PI * pointIndex / 5) - PI / 2; // Start from the top
+    return Vec2(centerX + radius * cos(angle), centerY + radius * sin(angle));
+}
+
+// Function to determine if a point is inside a pentagram
+bool isInsidePentagram(double x, double y, double centerX, double centerY, double radius, double lineWidth) {
+    // Calculate the five points of the pentagram
+    std::vector<Vec2> points;
+    for (int i = 0; i < 5; i++) {
+        points.push_back(pentagramPoint(i, centerX, centerY, radius));
+    }
+    
+    // Draw the star pattern
+    for (int i = 0; i < 5; i++) {
+        // Connect to points that are 2 steps away (0->2, 1->3, etc.)
+        int j = (i + 2) % 5;
+        
+        // Check if point is near this line
+        Vec2 a = points[i];
+        Vec2 b = points[j];
+        
+        // Calculate distance from point to line segment
+        double lineLength = sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2));
+        if (lineLength == 0) continue;
+        
+        // Calculate the projection of the point onto the line
+        double t = ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / (lineLength * lineLength);
+        
+        // If t is outside [0,1], the closest point is one of the endpoints
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        
+        // Calculate the closest point on the line
+        double closestX = a.x + t * (b.x - a.x);
+        double closestY = a.y + t * (b.y - a.y);
+        
+        // Calculate distance to the line
+        double distance = sqrt(pow(x - closestX, 2) + pow(y - closestY, 2));
+        
+        // If distance is less than line width, point is inside pentagram
+        if (distance < lineWidth) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Generate a DOOM-like floor texture (pentagrams)
+Color getDoomFloorColor(int x, int y, int floorTileSize) {
+    // Default floor and pentagram colors (dark reddish tones)
+    Color baseFloorColor(40, 20, 20);     // Dark brown-red
+    Color floorBorderColor(60, 30, 30);   // Slightly lighter
+    Color pentagramColor(120, 0, 0);      // Blood red
+
+    // Calculate tile coordinates
+    int tileX = x / floorTileSize;
+    int tileY = y / floorTileSize;
+    
+    // Local coordinates within the tile (centered)
+    double localX = (x % floorTileSize) / static_cast<double>(floorTileSize);
+    double localY = (y % floorTileSize) / static_cast<double>(floorTileSize);
+    
+    // Add a border around each tile
+    double borderWidth = 0.03;
+    if (localX < borderWidth || localX > 1 - borderWidth || 
+        localY < borderWidth || localY > 1 - borderWidth) {
+        return floorBorderColor;
+    }
+    
+    // Check if we're in an "odd" tile (checkerboard pattern)
+    bool isOddTile = (tileX + tileY) % 2 == 1;
+    
+    // Every odd tile gets a pentagram
+    if (isOddTile) {
+        // Coordinates relative to center of tile
+        double relX = localX - 0.5;
+        double relY = localY - 0.5;
+        
+        // Check if point is inside the pentagram
+        double pentagramRadius = 0.35; // Size of pentagram
+        double lineWidth = 0.05;      // Width of pentagram lines
+        
+        if (isInsidePentagram(relX, relY, 0, 0, pentagramRadius, lineWidth)) {
+            return pentagramColor;
+        }
+    }
+    
+    // Return the base floor color with slight variation
+    int variation = (x % 7) - (y % 5); // Subtle texture variation
+    return Color(
+        std::min(255, std::max(0, static_cast<int>(baseFloorColor.r) + variation)),
+        std::min(255, std::max(0, static_cast<int>(baseFloorColor.g) + variation / 2)),
+        std::min(255, std::max(0, static_cast<int>(baseFloorColor.b) + variation / 2))
+    );
+}
+
+// Generate a DOOM-like ceiling texture
+Color getDoomCeilingColor(int x, int y, int tileSize) {
+    // Default ceiling colors (dark red-orange)
+    Color baseCeilingColor(30, 10, 5);      // Dark red-brown
+    Color ceilingPatternColor(50, 20, 10);  // Lighter brown
+    Color glowingCrackColor(80, 30, 5);     // Orange-red "cracks"
+    
+    // Calculate tile coordinates
+    int tileX = x / tileSize;
+    int tileY = y / tileSize;
+    
+    // Local coordinates within the tile (0 to 1)
+    double localX = (x % tileSize) / static_cast<double>(tileSize);
+    double localY = (y % tileSize) / static_cast<double>(tileSize);
+    
+    // Create a grid pattern with "cracks"
+    double gridLineWidth = 0.05;
+    
+    // Main grid pattern
+    if (localX < gridLineWidth || localX > 1.0 - gridLineWidth ||
+        localY < gridLineWidth || localY > 1.0 - gridLineWidth) {
+        return ceilingPatternColor;
+    }
+    
+    // Create random cracks (using deterministic variation based on position)
+    int seed = (tileX * 12345 + tileY * 67890) % 100;
+    if (seed < 30) {  // 30% of tiles have cracks
+        // Calculate crack pattern (diagonal cracks)
+        double diag1 = fabs(localX - localY);
+        double diag2 = fabs(localX - (1.0 - localY));
+        
+        // If near diagonal and seed-dependent pattern matches
+        if ((diag1 < 0.05 || diag2 < 0.05) && (seed % 3 == (x * y) % 3)) {
+            return glowingCrackColor;
+        }
+    }
+    
+    // Add subtle variation to base color
+    int variation = ((x + y) % 5) - 2;
+    return Color(
+        std::min(255, std::max(0, static_cast<int>(baseCeilingColor.r) + variation)),
+        std::min(255, std::max(0, static_cast<int>(baseCeilingColor.g) + variation / 2)),
+        std::min(255, std::max(0, static_cast<int>(baseCeilingColor.b)))
+    );
 } 
