@@ -185,6 +185,11 @@ void Renderer::renderMap(Map* map, Camera* camera)
         return;
     }
     
+    // Reset Z-buffer for the new frame
+    for (int i = 0; i < m_screenWidth * m_screenHeight; ++i) {
+        m_zBuffer[i] = std::numeric_limits<double>::max();
+    }
+    
     // Render skybox first (furthest away)
     renderSkybox(camera);
     
@@ -194,12 +199,14 @@ void Renderer::renderMap(Map* map, Camera* camera)
     // Process visible walls to generate spans
     processVisibleWalls(map, camera, visibleWalls);
     
-    // Render all spans (back to front)
-    // Draw floors/ceilings first (they're typically furthest)
+    // Render all spans in the correct order:
+    // 1. Draw floor first (which checks z-buffer to avoid overwriting walls)
     drawFloorCeilingSpans();
-    // Then draw walls (they cover the floor/ceiling)
+    
+    // 2. Draw walls (sorted back to front)
     drawWallSpans();
-    // Finally draw sprites
+    
+    // 3. Finally draw sprites
     drawSpriteSpans();
 }
 
@@ -376,6 +383,10 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
             double screenBottomY = lerp(startScreenBottomY, endScreenBottomY, t);
             double screenTopY = lerp(startScreenTopY, endScreenTopY, t);
             
+            // Ensure screenBottomY is properly floored to avoid gaps between walls and floor
+            // This addresses the issue with the wall-to-floor transition
+            screenBottomY = std::ceil(screenBottomY);
+            
             // Interpolate distance for Z-buffer
             double distance = lerp(startDist, endDist, t);
             
@@ -460,8 +471,9 @@ void Renderer::drawWallSpans()
         for (int y = y1; y <= y2; y++) {
             int index = y * m_screenWidth + span.x;
             
-            // Only draw if in front of what's already in the Z-buffer
-            if (index >= 0 && index < m_screenWidth * m_screenHeight && span.distance < m_zBuffer[index]) {
+            // Always draw walls, they should override the floor
+            // as we've already sorted them by distance
+            if (index >= 0 && index < m_screenWidth * m_screenHeight) {
                 m_zBuffer[index] = span.distance;
                 setPixel(span.x, y, finalColor);
             }
@@ -483,9 +495,10 @@ void Renderer::drawFloorCeilingSpans()
             t
         );
 
-        // Calculate approximate distance for the Z-buffer
-        // This is a simple approximation: pixels further down the screen are closer
-        double distance = m_renderDistance * (1.0 - t);
+        // Calculate distance for the Z-buffer
+        // Fixed distance for floor to ensure it's always behind walls
+        double distanceMultiplier = 1.5; // Ensure floor is further than walls
+        double distance = m_renderDistance * distanceMultiplier;
 
         // Create checker pattern
         int checkerSize = 20;
@@ -501,12 +514,17 @@ void Renderer::drawFloorCeilingSpans()
                 std::min(255, baseFloorColor.b + 20)
             );
             
-            // Set in the Z-buffer with a very large distance so walls can draw over it
+            // Set in the Z-buffer
             int index = y * m_screenWidth + x;
-            m_zBuffer[index] = distance;
             
-            // Draw the floor pixel
-            setPixel(x, y, floorColor);
+            // Only draw the floor if no wall spans have been drawn here
+            // This ensures walls always appear on top of the floor
+            if (index >= 0 && index < m_screenWidth * m_screenHeight) {
+                if (m_zBuffer[index] == std::numeric_limits<double>::max()) {
+                    m_zBuffer[index] = distance;
+                    setPixel(x, y, floorColor);
+                }
+            }
         }
     }
 }
