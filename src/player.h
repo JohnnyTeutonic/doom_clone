@@ -2,203 +2,206 @@
 #define PLAYER_H
 
 #include "utils.h"
-#include "map.h"
+#include <memory>
+#include <vector>
 
 // Forward declarations
-class ProjectileManager;
-class SpriteManager;
+class Map;
+class Sector;
+class Engine;
 
-// Different types of weapons
-enum class WeaponType {
-    Pistol,
-    MachineGun,     // Added machine gun
-    Shotgun,
-    RocketLauncher,
-    PlasmaGun,
-    GrenadeLauncher,
-    Chainsaw,       // New melee weapon
-    SuperShotgun,   // Double-barreled shotgun
-    BFG9000         // Ultimate area weapon
+// Structure to define player movement settings
+struct PlayerSettings {
+    double moveSpeed;              // Movement speed (units per second)
+    double rotateSpeed;            // Rotation speed (radians per second)
+    double jumpHeight;             // Jump height
+    double crouchHeight;           // Height when crouching
+    double eyeHeight;              // Eye height above floor
+    double maxStepHeight;          // Maximum step height (for stairs)
+    double radius;                 // Player collision radius
+    double gravity;                // Gravity strength
+    double maxFallSpeed;           // Maximum falling speed
+    double maxHeadroom;            // Minimum ceiling clearance
+    double viewBobAmount;          // Amount of view bobbing
+    double viewBobSpeed;           // Speed of view bobbing
+    double maxMouseSensitivity;    // Maximum mouse sensitivity
+    
+    PlayerSettings() :
+        moveSpeed(7.0),
+        rotateSpeed(PI),
+        jumpHeight(1.0),
+        crouchHeight(0.5),
+        eyeHeight(1.75),
+        maxStepHeight(0.5),
+        radius(0.5),
+        gravity(20.0),
+        maxFallSpeed(20.0),
+        maxHeadroom(0.2),
+        viewBobAmount(0.05),
+        viewBobSpeed(10.0),
+        maxMouseSensitivity(0.002)
+    {}
 };
 
-// Power-up types
-enum class PowerUpType {
-    None,
-    Berserk,        // Increases melee damage and turns screen red
-    Invulnerability, // Makes player invulnerable for a short time
-    RadiationSuit,   // Protects from damaging floors
-    Invisibility,    // Makes player partially invisible to enemies
-    ComputerMap,     // Reveals the entire map
-    LightAmp,        // Increases brightness (night vision)
-    MegaSphere       // Full health and armor
-};
-
+// Player class representing the game player
 class Player {
-private:
-    Vec2 m_position;      // Player position
-    Vec2 m_direction;     // Player view direction (normalized)
-    Vec2 m_plane;         // Camera plane (perpendicular to direction)
-    double m_moveSpeed;   // Movement speed
-    double m_rotSpeed;    // Rotation speed
-    double m_health;      // Player health
-    int m_ammo;           // Ammo count
-    
-    // Vertical look properties
-    double m_verticalAngle;      // Look up/down angle (in radians)
-    double m_lookAngle;          // For mouse look only
-    double m_verticalLookSpeed;  // Speed of looking up/down
-    double m_maxVerticalAngle;   // Maximum up/down look angle (in radians)
-    
-    // Weapon system
-    WeaponType m_currentWeapon;
-    double m_weaponDamage;
-    double m_weaponCooldown;
-    double m_timeSinceLastShot;
-    std::vector<class Weapon*> m_weapons;  // Vector to store weapons
-    
-    // Grenade properties
-    int m_grenades;       // Grenade count
-    double m_throwPower;  // How hard grenades are thrown
-    
-    // Reference to managers (not owned)
-    ProjectileManager* m_projectileManager;
-    SpriteManager* m_spriteManager;
-    
-    // Armor system
-    double m_armor;       // Current armor value
-    double m_maxArmor;    // Maximum armor value
-    
-    // Power-up system
-    PowerUpType m_activePowerUp;
-    double m_powerUpTimer;
-    double m_powerUpDuration;
-    
-    // Jumping properties
-    bool m_isJumping;
-    double m_verticalVelocity;
-    double m_jumpForce;
-    double m_gravity;
-    double m_groundLevel;
-    double m_jumpHeight;     // Current height of jump (separate from look angle)
-    double m_stepHeight;     // Current stair step height (for smooth stair climbing)
-    bool m_isMoving;         // Flag indicating if player is currently moving
-    double m_weaponBobX;     // Horizontal weapon bobbing effect
-    double m_weaponBobY;     // Vertical weapon bobbing effect
-    
 public:
     Player();
+    ~Player();
     
-    // Initialize player in specific position and direction
-    void init(double x, double y, double dirX, double dirY);
+    // Initialize the player
+    void init(const Vec2& position, double angle, Map* map);
     
     // Update player state
-    void update(double deltaTime, const Map& map);
+    void update(double deltaTime);
     
-    // Movement methods
-    void moveForward(double deltaTime, const Map& map);
-    void moveBackward(double deltaTime, const Map& map);
-    void strafeLeft(double deltaTime, const Map& map);
-    void strafeRight(double deltaTime, const Map& map);
-    
-    // Rotation methods
-    void rotateLeft(double deltaTime);
-    void rotateRight(double deltaTime);
-    
-    // Look up/down methods
-    void lookUp(double deltaTime);
-    void lookDown(double deltaTime);
-    double getVerticalAngle() const { return m_verticalAngle; }
-    
-    // Weapon methods
-    bool fire();
-    bool throwGrenade();  // New method for throwing grenades
-    void reload();
-    void takeDamage(double amount);
-    double getWeaponDamage() const { return m_weaponDamage; }
-    WeaponType getCurrentWeapon() const { return m_currentWeapon; }
-    void setCurrentWeapon(WeaponType weapon);
-    
-    // Grenade methods
-    int getGrenades() const { return m_grenades; }
-    void setGrenades(int count) { m_grenades = count; }
-    void addGrenades(int count) { m_grenades += count; }
-    double getThrowPower() const { return m_throwPower; }
-    void setThrowPower(double power) { m_throwPower = power; }
+    // Process input
+    void processInput(bool moveForward, bool moveBackward, bool moveLeft, bool moveRight,
+                     bool rotateLeft, bool rotateRight, bool jump, bool crouch,
+                     double mouseX, double mouseY, bool mouseLook);
     
     // Getters
-    const Vec2& getPosition() const { return m_position; }
-    double getX() const { return m_position.x; }
-    double getY() const { return m_position.y; }
+    Vec2 getPosition() const { return m_position; }
+    double getAngle() const { return m_angle; }
+    double getEyeHeight() const { return m_eyeHeight; }
     const Vec2& getDirection() const { return m_direction; }
-    double getDirX() const { return m_direction.x; }
-    double getDirY() const { return m_direction.y; }
-    const Vec2& getPlane() const { return m_plane; }
-    double getPlaneX() const { return m_plane.x; }
-    double getPlaneY() const { return m_plane.y; }
-    double getHealth() const { return m_health; }
-    int getAmmo() const { return m_ammo; }
-    double getJumpHeight() const { return m_jumpHeight; }
-    double getStepHeight() const { return m_stepHeight; }
+    const Vec2& getRight() const { return m_right; }
+    double getVerticalAngle() const { return m_verticalAngle; }
+    bool isOnGround() const { return m_isOnGround; }
+    bool isCrouching() const { return m_isCrouching; }
+    double getVerticalVelocity() const { return m_verticalVelocity; }
+    std::shared_ptr<Sector> getCurrentSector() const { return m_currentSector; }
+    const PlayerSettings& getSettings() const { return m_settings; }
+    int getHealth() const { return m_health; }
+    int getArmor() const { return m_armor; }
+    
+    // Setters
+    void setPosition(const Vec2& position);
+    void setAngle(double angle);
+    void setDirection(const Vec2& direction);
+    void setVerticalAngle(double angle);
+    void setSettings(const PlayerSettings& settings) { m_settings = settings; }
+    void setMap(Map* map) { m_map = map; }
+    void setEngine(Engine* engine) { m_engine = engine; }
+    
+    // Try to move player to a new position, handling collisions
+    bool tryMove(const Vec2& newPosition);
+    
+    // Apply damage to player
+    void takeDamage(int amount);
+    
+    // Check if player is dead
+    bool isDead() const { return m_health <= 0; }
+    
+    // Get player field of view
+    double getFOV() const { return m_fov; }
+    
+    // Set player field of view
+    void setFOV(double fov) { m_fov = clamp(fov, 60.0 * DEG_TO_RAD, 120.0 * DEG_TO_RAD); }
+    
+    // Handle player entering a new sector
+    void enterSector(std::shared_ptr<Sector> sector);
+    
+    // Reset player state
+    void reset();
+    
+private:
+    Vec2 m_position;                        // Player position
+    double m_angle;                         // Player angle (horizontal)
+    double m_verticalAngle;                 // Player angle (vertical)
+    Vec2 m_direction;                       // Direction vector (normalized)
+    Vec2 m_right;                           // Right vector (perpendicular to direction)
+    double m_eyeHeight;                     // Current eye height
+    double m_walkTimer;                     // Timer for walk cycle
+    double m_verticalVelocity;              // Vertical velocity
+    bool m_isOnGround;                      // Whether player is on the ground
+    bool m_isCrouching;                     // Whether player is crouching
+    bool m_isJumping;                       // Whether player is jumping
+    int m_health;                           // Player health
+    int m_armor;                            // Player armor
+    double m_fov;                           // Field of view (in radians)
+    PlayerSettings m_settings;              // Player settings
+    std::shared_ptr<Sector> m_currentSector; // Current sector
+    Map* m_map;                             // Reference to the map
+    Engine* m_engine;                       // Reference to the engine
+    
+    // Update player direction vectors
+    void updateDirectionVectors();
+    
+    // Handle vertical movement (jumping, falling, etc.)
+    void updateVerticalMovement(double deltaTime);
+    
+    // Check if player can stand up from crouch
+    bool canStandUp() const;
+    
+    // Apply view bobbing
+    void applyViewBob(double deltaTime);
+    
+    // Check for collisions with walls
+    bool checkWallCollisions(const Vec2& newPosition);
+    
+    // Try to climb a step
+    bool tryClimbStep(const Vec2& newPosition, double stepHeight);
+    
+    // Find the sector containing the player
+    std::shared_ptr<Sector> findContainingSector() const;
+};
+
+// Camera class representing the player's view
+class Camera {
+public:
+    Camera();
+    ~Camera();
+    
+    // Initialize the camera
+    void init(Player* player);
+    
+    // Update camera state
+    void update(double deltaTime);
+    
+    // Getters
+    Vec2 getPosition() const { return m_position; }
+    double getAngle() const { return m_angle; }
+    double getVerticalAngle() const { return m_verticalAngle; }
+    const Vec2& getDirection() const { return m_direction; }
+    const Vec2& getRight() const { return m_right; }
+    double getFOV() const { return m_fov; }
     
     // Setters
     void setPosition(const Vec2& position) { m_position = position; }
-    void setDirection(const Vec2& direction) { m_direction = direction.normalized(); }
-    void setMoveSpeed(double speed) { m_moveSpeed = speed; }
-    void setRotSpeed(double speed) { m_rotSpeed = speed; }
-    void setHealth(double health) { m_health = health; }
-    void setAmmo(int ammo) { m_ammo = ammo; }
-    void setVerticalLookSpeed(double speed) { m_verticalLookSpeed = speed; }
-    void setPlane(const Vec2& plane) { m_plane = plane; }
-    void setProjectileManager(ProjectileManager* manager) { m_projectileManager = manager; }
-    void setSpriteManager(SpriteManager* manager) { m_spriteManager = manager; }
+    void setAngle(double angle);
+    void setVerticalAngle(double angle);
+    void setFOV(double fov) { m_fov = clamp(fov, 60.0 * DEG_TO_RAD, 120.0 * DEG_TO_RAD); }
     
-    // Teleport player to a new position
-    void teleport(double x, double y);
+    // Get view matrix
+    void getViewMatrix(double& eyeX, double& eyeY, double& eyeZ,
+                     double& dirX, double& dirY, double& dirZ) const;
     
-    // Armor methods
-    double getArmor() const { return m_armor; }
-    double getMaxArmor() const { return m_maxArmor; }
-    void setArmor(double armor) { m_armor = std::min(armor, m_maxArmor); }
-    void addArmor(double amount) { m_armor = std::min(m_armor + amount, m_maxArmor); }
+    // Apply camera effects (shaking, tilting, etc.)
+    void applyEffect(const std::string& effect, double amount, double duration);
     
-    // Power-up methods
-    PowerUpType getActivePowerUp() const { return m_activePowerUp; }
-    double getPowerUpTimeRemaining() const { return m_powerUpTimer; }
-    void activatePowerUp(PowerUpType type, double duration);
-    void updatePowerUps(double deltaTime);
-    bool hasPowerUp(PowerUpType type) const { return m_activePowerUp == type && m_powerUpTimer > 0; }
+private:
+    Vec2 m_position;                // Camera position
+    double m_height;                // Camera height
+    double m_angle;                 // Camera angle (horizontal)
+    double m_verticalAngle;         // Camera angle (vertical)
+    Vec2 m_direction;               // Direction vector (normalized)
+    Vec2 m_right;                   // Right vector (perpendicular to direction)
+    double m_fov;                   // Field of view (in radians)
     
-    // Jump methods
-    void jump();
-    void updateJump(double deltaTime);
-    bool isOnGround() const;
-
-    // Projectile management
-    void updateProjectiles(double deltaTime);
-
-    // Add getter for combined vertical offset
-    double getVerticalOffset() const { 
-        return m_verticalAngle + m_lookAngle + m_jumpHeight; 
-    }
-
-    // Update vertical angle setter to only affect look angle
-    void setVerticalAngle(double angle) {
-        // Scale for mouse sensitivity and clamp
-        double scaledAngle = angle * m_verticalLookSpeed * 0.001;
-        // Manual clamping implementation
-        if (scaledAngle < -m_maxVerticalAngle) scaledAngle = -m_maxVerticalAngle;
-        if (scaledAngle > m_maxVerticalAngle) scaledAngle = m_maxVerticalAngle;
-        m_lookAngle = scaledAngle;
-    }
-
-    // Static method to get the total shots fired counter
-    static int& getTotalShotsFired();
+    // Camera effects
+    double m_shakeMagnitude;        // Current shake magnitude
+    double m_shakeTimer;            // Shake timer
+    double m_tiltAngle;             // Current tilt angle
+    double m_tiltTimer;             // Tilt timer
     
-    // Static method to reset the total shots fired counter
-    static void resetTotalShotsFired();
+    Player* m_player;               // Reference to the player
     
-    // Method to check and pick up nearby items
-    void checkNearbyItems();
+    // Update camera direction vectors
+    void updateDirectionVectors();
+    
+    // Update camera effects
+    void updateEffects(double deltaTime);
 };
 
 #endif // PLAYER_H 

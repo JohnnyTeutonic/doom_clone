@@ -1,171 +1,348 @@
 #ifndef MAP_H
 #define MAP_H
 
+#include "utils.h"
 #include <vector>
 #include <string>
-#include "utils.h"
+#include <memory>
+#include <functional>
+#include <unordered_map>
+#include <utility>
+#include <optional>
 
-// Forward declaration to avoid circular dependency
+// Forward declarations
+class BSPNode;
+class Renderer;
 class Engine;
+class BSPTree;
+class Sector;
+class Wall;
+class TextureManager;
 
-// Map cell types
-enum class CellType {
-    Empty = 0,
-    Wall = 1,
-    Door = 2,
-    Item = 3,
-    Enemy = 4,
-    Stairs = 5,        // Stairs entry point
-    ElevatedWall = 6,  // Wall on the elevated level
-    StairStep1 = 7,    // First step of stairs (25% elevation)
-    StairStep2 = 8,    // Second step of stairs (50% elevation)
-    StairStep3 = 9,     // Third step of stairs (75% elevation)
-    Floor = 10,
-    ElevatedFloor = 11,
-    SecretWall = 12,    // Wall that can be opened to reveal a secret area
-    TeleportPad = 13    // Teleports player to another location
+// Vertex - a point in 2D space
+struct Vertex {
+    double x, y;
+    
+    Vertex() : x(0), y(0) {}
+    Vertex(double _x, double _y) : x(_x), y(_y) {}
+    
+    // Convert to Vec2
+    Vec2 toVec2() const { return Vec2(x, y); }
+    
+    // Create from Vec2
+    static Vertex fromVec2(const Vec2& vec) { return Vertex(vec.x, vec.y); }
 };
 
-// Door states
-enum class DoorState {
-    Closed,
-    Opening,
-    Open,
-    Closing
+// Define missing types
+struct Thing {
+    double x, y;        // Position
+    double angle;       // Direction angle in radians
+    int type;           // Type of thing
+    uint32_t flags;     // BitFlags
+    int id;             // Unique ID
+    
+    Thing() : x(0), y(0), angle(0), type(0), flags(0), id(0) {}
+    Thing(double _x, double _y, double _angle, int _type) 
+        : x(_x), y(_y), angle(_angle), type(_type), flags(0), id(0) {}
 };
 
-// Sector structure for visibility culling
-struct Sector {
-    int id;                     // Unique sector ID
-    std::vector<Vec2> vertices; // Vertices defining the sector boundary
-    std::vector<int> neighbors; // IDs of neighboring sectors
-    bool isVisible;             // Visibility flag for culling
+struct SubSector {
+    int sectorId;               // The sector this subsector belongs to
+    std::vector<int> lineIds;   // Indices of lines in this subsector
 };
 
-class Map {
-private:
-    int m_width;
-    int m_height;
-    std::vector<std::vector<CellType>> m_cells;
-    std::vector<std::vector<int>> m_wallTextures;  // texture ID for each wall cell
-    std::vector<std::vector<int>> m_elevations; // Elevation level for each cell (0=ground, 1=elevated)
-    std::vector<std::vector<float>> m_stepHeights;  // Fractional height for stairs (0.0-1.0)
-    
-    // Door properties
-    std::vector<std::vector<DoorState>> m_doorStates;
-    std::vector<std::vector<float>> m_doorOpenAmount;
-    std::vector<std::vector<std::pair<int, int>>> m_teleportTargets;   // Target cell coordinates for teleport pads
-    
-    // Secret wall properties
-    std::vector<std::vector<bool>> m_secretFound;  // Whether a secret wall has been found
+// LineDefFlags - special properties for line segments
+enum class LineDefFlags : uint32_t {
+    NONE = 0,
+    BLOCKS_PLAYER = 1 << 0,
+    BLOCKS_MONSTERS = 1 << 1,
+    TWO_SIDED = 1 << 2,
+    UPPER_UNPEGGED = 1 << 3,
+    LOWER_UNPEGGED = 1 << 4,
+    SECRET = 1 << 5,
+    BLOCKS_SOUND = 1 << 6,
+    NEVER_AUTOMAP = 1 << 7,
+    ALWAYS_AUTOMAP = 1 << 8
+};
 
-    // Sector-based culling
-    std::vector<Sector> m_sectors;
-    std::vector<std::vector<int>> m_cellToSector;  // Maps each cell to its sector ID
-    int m_playerSector;  // Current sector the player is in
-    std::vector<int> m_visibleSectors;  // List of currently visible sectors
+// LineDef - a line segment with properties
+struct LineDef {
+    int startVertex; // Index into vertex array
+    int endVertex;   // Index into vertex array
+    int frontSector; // Index to sector on front side (-1 if none)
+    int backSector;  // Index to sector on back side (-1 if none)
     
-    // Reference to the engine
-    Engine* m_engine;
+    // Textured surfaces on this line
+    int frontUpperTexture;
+    int frontMiddleTexture; // For single-sided walls
+    int frontLowerTexture;
     
+    int backUpperTexture;
+    int backMiddleTexture;
+    int backLowerTexture;
+    
+    uint32_t flags;  // BitFlags for line properties
+    int specialType; // Special action type
+    
+    LineDef() : 
+        startVertex(-1), 
+        endVertex(-1), 
+        frontSector(-1), 
+        backSector(-1),
+        frontUpperTexture(-1),
+        frontMiddleTexture(-1),
+        frontLowerTexture(-1),
+        backUpperTexture(-1),
+        backMiddleTexture(-1),
+        backLowerTexture(-1),
+        flags(0),
+        specialType(0) {}
+    
+    // Check if line is two-sided (portal between sectors)
+    bool isTwoSided() const { 
+        return frontSector != -1 && backSector != -1; 
+    }
+    
+    // Check if line blocks movement
+    bool blocksMovement() const {
+        return (flags & static_cast<uint32_t>(LineDefFlags::BLOCKS_PLAYER)) != 0;
+    }
+    
+    // Add a flag
+    void addFlag(LineDefFlags flag) {
+        flags |= static_cast<uint32_t>(flag);
+    }
+    
+    // Check if line has a specific flag
+    bool hasFlag(LineDefFlags flag) const {
+        return (flags & static_cast<uint32_t>(flag)) != 0;
+    }
+};
+
+// Enums
+enum class WallType {
+    NORMAL,         // Standard wall
+    PORTAL,         // Portal to another sector (door, window)
+    TRANSPARENT,    // Transparent wall (glass)
+    ANIMATED        // Animated wall
+};
+
+enum class SectorType {
+    NORMAL,         // Standard sector
+    DOOR,           // Door sector
+    ELEVATOR,       // Elevator sector
+    DAMAGE,         // Damage sector (lava, etc.)
+    SECRET          // Secret sector
+};
+
+enum class FloorCeilingType {
+    NORMAL,         // Standard floor/ceiling
+    ANIMATED,       // Animated texture
+    SKY,            // Sky texture (ceiling only)
+    WATER,          // Water surface
+    TRANSPARENT     // Transparent (can see through to other sectors)
+};
+
+// Wall represents a line segment in the map
+class Wall {
 public:
-    Map(int width = 20, int height = 20);
+    Wall(const Vec2& start, const Vec2& end, int textureId = -1, WallType type = WallType::NORMAL);
+    
+    // Getters
+    const Vec2& getStart() const { return m_start; }
+    const Vec2& getEnd() const { return m_end; }
+    Vec2 getDirection() const { return m_end - m_start; }
+    Vec2 getNormal() const;
+    double getLength() const { return (m_end - m_start).length(); }
+    int getTextureId() const { return m_textureId; }
+    WallType getType() const { return m_type; }
+    double getHeight() const { return m_height; }
+    double getBottomOffset() const { return m_bottomOffset; }
+    Sector* getAdjoiningSector() const { return m_adjoiningSector; }
+    bool isPortal() const { return m_type == WallType::PORTAL; }
+    bool isTransparent() const { return m_type == WallType::TRANSPARENT || isPortal(); }
+    
+    // Setters
+    void setTextureId(int id) { m_textureId = id; }
+    void setType(WallType type) { m_type = type; }
+    void setHeight(double height) { m_height = height; }
+    void setBottomOffset(double offset) { m_bottomOffset = offset; }
+    void setAdjoiningSector(Sector* sector) { m_adjoiningSector = sector; }
+    
+    // Check if point is on the wall
+    bool containsPoint(const Vec2& point, double tolerance = EPSILON) const;
+    
+    // Check which side of the wall a point is on
+    // Returns > 0 for front side, < 0 for back side, 0 for on the wall
+    double pointSide(const Vec2& point) const;
+    
+    // Check if a line segment intersects with this wall
+    bool intersects(const LineSegment& line, Vec2& intersection) const;
+    
+private:
+    Vec2 m_start;                   // Start point
+    Vec2 m_end;                     // End point
+    int m_textureId;                // Texture ID
+    WallType m_type;                // Wall type
+    double m_height;                // Wall height (if different from sector)
+    double m_bottomOffset;          // Bottom offset from sector floor
+    Sector* m_adjoiningSector;      // Adjoining sector (for portals)
+};
+
+// Sector represents a convex or concave polygon in the map
+class Sector {
+public:
+    Sector(SectorType type = SectorType::NORMAL);
+    
+    // Add a wall to the sector
+    void addWall(std::shared_ptr<Wall> wall);
+    
+    // Getters
+    const std::vector<std::shared_ptr<Wall>>& getWalls() const { return m_walls; }
+    double getFloorHeight() const { return m_floorHeight; }
+    double getCeilingHeight() const { return m_ceilingHeight; }
+    int getFloorTextureId() const { return m_floorTextureId; }
+    int getCeilingTextureId() const { return m_ceilingTextureId; }
+    SectorType getType() const { return m_type; }
+    FloorCeilingType getFloorType() const { return m_floorType; }
+    FloorCeilingType getCeilingType() const { return m_ceilingType; }
+    double getLightLevel() const { return m_lightLevel; }
+    int getId() const { return m_id; }
+    
+    // Setters
+    void setFloorHeight(double height) { m_floorHeight = height; }
+    void setCeilingHeight(double height) { m_ceilingHeight = height; }
+    void setFloorTextureId(int id) { m_floorTextureId = id; }
+    void setCeilingTextureId(int id) { m_ceilingTextureId = id; }
+    void setType(SectorType type) { m_type = type; }
+    void setFloorType(FloorCeilingType type) { m_floorType = type; }
+    void setCeilingType(FloorCeilingType type) { m_ceilingType = type; }
+    void setLightLevel(double level) { m_lightLevel = clamp(level, 0.0, 1.0); }
+    
+    // Check if point is inside the sector
+    bool containsPoint(const Vec2& point) const;
+    
+    // Get sector bounds
+    Rect getBounds() const;
+    
+private:
+    std::vector<std::shared_ptr<Wall>> m_walls;     // Walls defining the sector
+    double m_floorHeight;                           // Floor height
+    double m_ceilingHeight;                         // Ceiling height
+    int m_floorTextureId;                           // Floor texture ID
+    int m_ceilingTextureId;                         // Ceiling texture ID
+    SectorType m_type;                              // Sector type
+    FloorCeilingType m_floorType;                   // Floor type
+    FloorCeilingType m_ceilingType;                 // Ceiling type
+    double m_lightLevel;                            // Light level (0.0 - 1.0)
+    int m_id;                                       // Unique sector ID
+    
+    static int s_nextId;                            // Next available sector ID
+};
+
+// BSP Node for the BSP tree
+class BSPNode {
+public:
+    BSPNode();
+    ~BSPNode();
+    
+    // Build node from a list of walls
+    bool build(const std::vector<std::shared_ptr<Wall>>& walls);
+    
+    // Check which side of the splitting plane a point is on
+    // Returns > 0 for front side, < 0 for back side, 0 for on the plane
+    double pointSide(const Vec2& point) const;
+    
+    // Traverse the BSP tree and collect visible walls
+    void traverse(const Vec2& viewpoint, std::vector<std::shared_ptr<Wall>>& visibleWalls) const;
+    
+private:
+    std::shared_ptr<Wall> m_splitter;                // Wall used as splitter
+    std::unique_ptr<BSPNode> m_frontChild;           // Front child node
+    std::unique_ptr<BSPNode> m_backChild;            // Back child node
+    std::vector<std::shared_ptr<Wall>> m_coplanarWalls; // Walls coplanar with the splitter
+    
+    // Helper function to split a wall against the splitter
+    std::pair<std::shared_ptr<Wall>, std::shared_ptr<Wall>> splitWall(
+        const std::shared_ptr<Wall>& wall) const;
+    
+    // Helper function to choose a good splitter
+    std::shared_ptr<Wall> chooseSplitter(const std::vector<std::shared_ptr<Wall>>& walls) const;
+};
+
+// BSP Tree for efficient rendering and collision detection
+class BSPTree {
+public:
+    BSPTree();
+    
+    // Build the BSP tree from a list of sectors
+    bool build(const std::vector<std::shared_ptr<Sector>>& sectors);
+    
+    // Get visible walls from a viewpoint
+    std::vector<std::shared_ptr<Wall>> getVisibleWalls(const Vec2& viewpoint) const;
+    
+    // Find the sector containing a point
+    std::shared_ptr<Sector> findSectorContainingPoint(const Vec2& point) const;
+    
+private:
+    std::unique_ptr<BSPNode> m_root;                  // Root node
+    std::vector<std::shared_ptr<Sector>> m_sectors;   // All sectors in the map
+    
+    // Helper function to extract all walls from sectors
+    std::vector<std::shared_ptr<Wall>> extractWalls(
+        const std::vector<std::shared_ptr<Sector>>& sectors) const;
+};
+
+// Map represents the entire game map
+class Map {
+public:
+    Map();
     ~Map();
     
-    // Map loading/saving
-    bool loadFromString(const std::string& mapStr);
+    // Load map from file
     bool loadFromFile(const std::string& filename);
+    
+    // Save map to file
     bool saveToFile(const std::string& filename) const;
     
-    // Basic getters
-    int getWidth() const { return m_width; }
-    int getHeight() const { return m_height; }
+    // Add a sector to the map
+    void addSector(std::shared_ptr<Sector> sector);
     
-    // Cell access
-    CellType getCell(int x, int y) const;
-    void setCell(int x, int y, CellType type);
+    // Get all sectors
+    const std::vector<std::shared_ptr<Sector>>& getSectors() const { return m_sectors; }
     
-    // Position validation
-    bool isValidPosition(double x, double y) const;
+    // Build the BSP tree
+    bool buildBSPTree();
     
-    // Wall texture access
-    int getWallTexture(int x, int y) const;
-    void setWallTexture(int x, int y, int textureId);
+    // Get visible walls from a viewpoint
+    std::vector<std::shared_ptr<Wall>> getVisibleWalls(const Vec2& viewpoint) const;
     
-    // Get a random empty position in the map
-    Vec2 getRandomEmptyPosition() const;
+    // Find the sector containing a point
+    std::shared_ptr<Sector> findSectorContainingPoint(const Vec2& point) const;
     
-    // Cast a ray from start to direction and find the first wall it hits
-    // Returns the distance to the wall and sets outHitX and outHitY
-    double castRay(double startX, double startY, double dirX, double dirY, 
-                   double& outHitX, double& outHitY, int& outHitTexture) const;
+    // Set texture manager
+    void setTextureManager(TextureManager* textureManager) { m_textureManager = textureManager; }
     
-    // Door management
-    bool isDoor(int x, int y) const;
-    DoorState getDoorState(int x, int y) const;
-    float getDoorOpenAmount(int x, int y) const;
-    void setDoorState(int x, int y, DoorState state);
-    void setDoorOpenAmount(int x, int y, float amount);
-    void updateDoors(double deltaTime);
-    void toggleDoor(int x, int y);
-    bool activateDoor(int x, int y);  // Returns true if door was activated
+    // Get texture manager
+    TextureManager* getTextureManager() const { return m_textureManager; }
     
-    // Elevation management
-    int getCellElevation(int x, int y) const;
-    void setCellElevation(int x, int y, int elevation);
+    // Get map name
+    const std::string& getName() const { return m_name; }
     
-    // Step height management (for stairs)
-    float getStepHeight(int x, int y) const;
-    void setStepHeight(int x, int y, float height);
+    // Set map name
+    void setName(const std::string& name) { m_name = name; }
     
-    // Stairs detection
-    bool isStairs(int x, int y) const;
-    bool isStairStep(int x, int y) const;
+    // Get map bounds
+    Rect getBounds() const;
     
-    // Solid (wall, door) detection
-    bool isSolid(int x, int y) const;
+private:
+    std::string m_name;                               // Map name
+    std::vector<std::shared_ptr<Sector>> m_sectors;   // All sectors in the map
+    std::unique_ptr<BSPTree> m_bspTree;               // BSP tree for rendering
+    TextureManager* m_textureManager;                 // Texture manager
     
-    // Secret wall management
-    bool isSecretWall(int x, int y) const;
-    bool isSecretFound(int x, int y) const;
-    void setSecretFound(int x, int y, bool found);
-    bool activateSecret(int x, int y);  // Returns true if secret was activated
-    
-    // Teleportation management
-    bool isTeleportPad(int x, int y) const;
-    std::pair<int, int> getTeleportTarget(int x, int y) const;
-    void setTeleportTarget(int x, int y, int targetX, int targetY);
-    bool activateTeleport(int x, int y, Vec2& outDestination);  // Returns true if teleport was activated
-    
-    // Create sectors for visibility culling
-    void createSectors();
-    
-    // Update sector visibility based on player position
-    void updateVisibility(const Vec2& playerPos);
-    
-    // Check if a sector is visible
-    bool isSectorVisible(int sectorId) const;
-    
-    // Get the sector at a specific position
-    int getSectorAt(double x, double y) const;
-    
-    // Get the sector ID for a map cell
-    int getSectorId(int x, int y) const { return m_cellToSector[y][x]; }
-    
-    // Check if two positions are in the same sector
-    bool isInSameSector(double x1, double y1, double x2, double y2) const;
-    
-    // Get the current player sector
-    int getPlayerSector() const { return m_playerSector; }
-    void setPlayerSector(int sector) { m_playerSector = sector; }
-    
-    // Get the list of visible sectors
-    const std::vector<int>& getVisibleSectors() const { return m_visibleSectors; }
-    const std::vector<Sector>& getSectors() const { return m_sectors; }
-    
-    // Engine reference management
-    void setEngine(Engine* engine) { m_engine = engine; }
-    Engine* getEngine() const { return m_engine; }
+    // Helper functions for loading/saving
+    bool loadMapV1(std::ifstream& file);  // Load version 1 map format
 };
 
 #endif // MAP_H 

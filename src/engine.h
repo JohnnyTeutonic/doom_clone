@@ -1,218 +1,177 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
+#include "Common.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_mixer.h>
 #include <string>
 #include <memory>
 #include <vector>
 #include <unordered_map>
-#include "game_state.h"
+#include <functional>
 
 // Forward declarations
-class Renderer;
-class TextureManager;
-class SpriteManager;
-class ProjectileManager;
-class InputHandler;
 class Map;
 class Player;
+class Renderer;
+class TextureManager;
+class InputHandler;
 class AudioSystem;
-class CudaRenderer;
 
-#include "renderer.h"
-#include "map.h"
-#include "player.h"
-#include "texture.h"
-#include "sprite.h"
-#include "projectile.h"
-#include "input.h"
-#include "utils.h"
-#include "audio.h"
-#include "cuda_renderer.h"
+// Game states
+enum class GameState {
+    MAIN_MENU,
+    PLAYING,
+    PAUSED,
+    GAME_OVER,
+    QUITTING
+};
 
+// Input handling struct
+struct InputState {
+    bool keyDown[SDL_NUM_SCANCODES];
+    bool keyPressed[SDL_NUM_SCANCODES];
+    bool keyReleased[SDL_NUM_SCANCODES];
+    bool mouseButtonDown[5];
+    bool mouseButtonPressed[5];
+    bool mouseButtonReleased[5];
+    int mouseX, mouseY;
+    int mouseDeltaX, mouseDeltaY;
+    
+    InputState() {
+        std::memset(keyDown, 0, sizeof(keyDown));
+        std::memset(keyPressed, 0, sizeof(keyPressed));
+        std::memset(keyReleased, 0, sizeof(keyReleased));
+        std::memset(mouseButtonDown, 0, sizeof(mouseButtonDown));
+        std::memset(mouseButtonPressed, 0, sizeof(mouseButtonPressed));
+        std::memset(mouseButtonReleased, 0, sizeof(mouseButtonReleased));
+        mouseX = mouseY = mouseDeltaX = mouseDeltaY = 0;
+    }
+};
+
+// Engine configuration
+struct EngineConfig {
+    int screenWidth;
+    int screenHeight;
+    bool fullscreen;
+    int targetFPS;
+    bool vsync;
+    bool showFPS;
+    float mouseSensitivity;
+    float soundVolume;
+    float musicVolume;
+    
+    EngineConfig() : 
+        screenWidth(1024),
+        screenHeight(768),
+        fullscreen(false),
+        targetFPS(60),
+        vsync(true),
+        showFPS(true),
+        mouseSensitivity(1.0f),
+        soundVolume(0.8f),
+        musicVolume(0.5f) {}
+};
+
+// Main Engine class - manages game state and subsystems
 class Engine {
 public:
-    Engine(int screenWidth = 800, int screenHeight = 600);
+    Engine();
     ~Engine();
     
-    bool init(int screenWidth, int screenHeight, bool fullscreen, int targetFPS);
+    // Initialize the engine
+    bool init(const EngineConfig& config = EngineConfig());
+    
+    // Run the game loop
     void run();
+    
+    // Shutdown and cleanup
     void shutdown();
     
     // State management
     void setState(GameState state);
-    GameState getState() const { return m_gameState; }
+    GameState getState() const { return m_state; }
     
-    // Utility methods
+    // Quit the game
+    void quit() { m_running = false; }
+    
+    // Get FPS
+    int getFPS() const { return m_fps; }
+    
+    // Toggle fullscreen
     void toggleFullscreen();
-    void restartGame();
-    void quitGame() { m_running = false; }
     
-    // Getters for subsystems (for advanced usage)
-    Renderer& getRenderer() { return *m_renderer; }
-    TextureManager& getTextureManager() { return *m_textureManager; }
-    SpriteManager& getSpriteManager() { return *m_spriteManager; }
-    InputHandler& getInputHandler() { return m_inputHandler; }
-    const Map& getMap() const { return m_map; }
-    Map& getMap() { return m_map; }
-    Player& getPlayer() { return m_player; }
-    
-    // Getters for visual effects
-    double getWeaponRecoil() const { return m_weaponRecoil; }
-    double getFlashIntensity() const { return m_flashIntensity; }
-    
-    // Texture getters
-    int getWallTexture() const { return m_wallTexture; }
-    int getFloorTexture() const { return m_floorTexture; }
-    int getCeilingTexture() const { return m_ceilingTexture; }
-    int getEnemyTexture() const { return m_enemyTexture; }
-    const std::vector<int>& getEnemyTextureFrames() const { return m_enemyTextureFrames; }
-    int getImpTexture() const { return m_impTexture; }
-    const std::vector<int>& getImpTextureFrames() const { return m_impTextureFrames; }
-    int getWeaponTexture() const { return m_weaponTexture; }
-    
-    // Create sprites from map cells
-    void createSpritesFromMap();
+    // Accessors
+    Map* getMap() { return m_map.get(); }
+    Player* getPlayer() { return m_player.get(); }
+    Renderer* getRenderer() { return m_renderer.get(); }
+    TextureManager* getTextureManager() { return m_textureManager.get(); }
+    InputState* getInputState() { return &m_inputState; }
     
     // Audio control
-    void toggleMusic();
-    void setMusicVolume(int volume);
-    void setSfxVolume(int volume);
-    bool isMusicPlaying() const;
+    void playSound(const std::string& name, int channel = -1, float volume = 1.0f);
+    void playMusic(const std::string& name, bool loop = true);
+    void stopMusic();
+    void setMusicVolume(float volume);
+    void setSoundVolume(float volume);
     
-    // Enhanced MIDI quality in WSL
-    void enhanceMidiQuality();
-    
-    // Debug function to test sound playback
-    void testSoundEffects();
-    
-    // Test weapon firing
-    void testWeapons();
+    // Resource directory
+    std::string getResourcePath(const std::string& subDir = "") const;
     
     // Notification system
-    void showNotification(const std::string& text, double duration);
-    
-    // Player actions
-    void fireWeapon();
-    void switchWeapon();
-    void useItem();
-    
-    // Enemy and sprite creation
-    int createImpEnemy(double x, double y, double size = 0.7);
-    void addAdditionalImps();
-    void addRandomImps();
-    
-    // Create barrels at random locations
-    void createRandomBarrels(int count);
-    
-    // Audio
-    void playSound(const std::string& soundName);
+    void showNotification(const std::string& text, float duration = 3.0f);
     
 private:
-    void processInput();
-    void update();
-    void render();
-    bool loadAssets();
-    
-    // Input handling methods
-    void handlePlayingInput();
-    void handleMainMenuInput();
-    void handlePausedInput();
-    void handlePauseMenuInput();
-    
-    // Window and rendering
-    SDL_Window* m_window;
-    SDL_Renderer* m_sdlRenderer;
-    Renderer* m_renderer;
-    CudaRenderer* m_cudaRenderer;
-    
-    // Game objects
-    Map m_map;
-    Player m_player;
-    TextureManager* m_textureManager;
-    SpriteManager* m_spriteManager;
-    ProjectileManager* m_projectileManager;
-    InputHandler m_inputHandler;
-    AudioSystem* m_audioSystem;
-    
     // Game state
-    GameState m_gameState;
+    GameState m_state;
     bool m_running;
-    bool m_musicEnabled;  // Added flag for music enabled state
+    bool m_paused;
     
-    // Menu state
-    std::vector<std::string> m_menuItems;
-    int m_menuSelection;
+    // Performance metrics
+    int m_fps;
+    double m_frameTime;
     
-    // Timing
-    int m_screenWidth;
-    int m_screenHeight;
-    Uint32 m_lastFrameTime;
-    double m_deltaTime;
-    
-    // Visual effects
-    double m_weaponRecoil;
-    double m_flashIntensity;
-    double m_weaponRecoilRecovery;
-    double m_flashDecay;
+    // Input state
+    InputState m_inputState;
     
     // Configuration
-    bool m_fullscreen;
-    int m_targetFPS;
-    double m_frameTime;
-    bool m_useCuda;  // Added CUDA usage flag
+    EngineConfig m_config;
     
-    // Timing
-    Timer m_frameTimer;
+    // SDL components
+    SDL_Window* m_window;
     
-    // Texture IDs
-    int m_wallTexture;
-    int m_floorTexture;
-    int m_ceilingTexture;
-    int m_bulletTexture;
-    int m_enemyTexture;
-    int m_impTexture;
-    int m_weaponTexture;
-    int m_machineGunTexture;
-    int m_rocketLauncherTexture;
-    int m_currentWeaponTexture;
-    int m_rocketTexture;
-    int m_explosionTexture;
-    int m_plasmaTexture;  // New texture for plasma projectiles
-    int m_itemTexture;  // Add item texture ID
-    int m_ammoBoxTexture; // Texture ID for ammo box
-    int m_barrelTexture; // Texture ID for barrel
-    
-    // Animation frames
-    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
-    std::vector<int> m_impTextureFrames;    // Animation frames for Imp
-    std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
+    // Subsystems
+    std::unique_ptr<Map> m_map;
+    std::unique_ptr<Player> m_player;
+    std::unique_ptr<Renderer> m_renderer;
+    std::unique_ptr<TextureManager> m_textureManager;
+    std::unique_ptr<AudioSystem> m_audioSystem;
     
     // Notification system
-    std::string m_notificationText;
-    double m_notificationDuration;
-    double m_notificationTimer;
-    SDL_Texture* m_notificationTexture;
-    SDL_Rect m_notificationRect;
+    struct Notification {
+        std::string text;
+        float timeRemaining;
+    };
+    std::vector<Notification> m_notifications;
     
-    // Font handling
-    TTF_Font* m_font;
+    // Internal methods
+    void processInput();
+    void update(double deltaTime);
+    void render();
     
-    // Mouse state tracking
-    bool m_prevMouseLeftDown;
+    // Input handling
+    void resetInputState();
+    void updateInputState(SDL_Event& event);
     
-    // Keyboard state tracking for WSL2 compatibility
-    std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
+    // Game initialization
+    bool initSDL();
+    bool initSubsystems();
+    bool loadResources();
     
-    // Private methods
-    void setupMap();
-    void setupPlayer();
-    void setupInput();
-    void renderNotification();
-    void renderMainMenu();
-    void renderPauseOverlay();
+    // Test map for development
+    void createTestMap();
 };
 
 #endif // ENGINE_H 

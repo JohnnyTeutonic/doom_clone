@@ -1,227 +1,212 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 
-#include <SDL2/SDL.h>
+#include "utils.h"
+#include <memory>
 #include <vector>
 #include <string>
-#include <cmath>
-#include <algorithm>
-#include <limits>
-#include <iostream>
-#include "utils.h"
-#include "map.h"
-#include "player.h"
-#include "texture.h"
-#include "sprite.h"
-#include "projectile.h"
-#include "lighting.h"
+#include <unordered_map>
+#include <functional>
 
-// Forward declare Engine to avoid circular dependency
-class Engine;
-
-// Performance settings enumeration
-enum class PerformanceLevel {
-    Low,      // Minimal lighting, maximum performance
-    Medium,   // Balanced lighting and performance
-    High      // Full lighting effects (may impact performance)
-};
+// Platform-specific includes for SDL
+#ifdef _WIN32
+#include <SDL.h>
+#include <SDL_image.h>
+#else
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#endif
 
 // Forward declarations
-class SpriteManager;
-class ProjectileManager;
+class Map;
+class Player;
+class Camera;
+class Wall;
+class Sector;
+#include "sprite.h" // Include sprite.h instead of forward declaration
+class TextureManager;
+class Engine;
 
-// Renderer class for raycasting
+// Structure for vertical rendering spans
+struct WallSpan {
+    int x;                  // Screen x-coordinate
+    int y1, y2;             // Top and bottom y-coordinates
+    double z1, z2;          // Top and bottom z-coordinates (world space)
+    double u;               // Texture u-coordinate (horizontal)
+    double distance;        // Distance to wall
+    int textureId;          // Wall texture ID
+    bool isPortal;          // Whether this span is a portal
+    bool isFlipped;         // Whether the texture should be horizontally flipped
+    double lightLevel;      // Light level for this span
+    Sector* sector;         // Parent sector
+    Wall* wall;             // Parent wall
+    
+    WallSpan() : 
+        x(0), y1(0), y2(0), z1(0), z2(0), u(0), 
+        distance(0), textureId(-1), isPortal(false), 
+        isFlipped(false), lightLevel(1.0), sector(nullptr), wall(nullptr) {}
+};
+
+struct FloorCeilingSpan {
+    int x;                  // Screen x-coordinate
+    int y;                  // Screen y-coordinate
+    double z;               // World z-coordinate
+    double u, v;            // Texture coordinates
+    double distance;        // Distance to point
+    int textureId;          // Texture ID
+    bool isFloor;           // Whether this is a floor (true) or ceiling (false)
+    double lightLevel;      // Light level for this span
+    Sector* sector;         // Parent sector
+    
+    FloorCeilingSpan() : 
+        x(0), y(0), z(0), u(0), v(0), 
+        distance(0), textureId(-1), isFloor(true), 
+        lightLevel(1.0), sector(nullptr) {}
+};
+
+struct SpriteSpan {
+    int x;                  // Screen x-coordinate
+    int y1, y2;             // Top and bottom y-coordinates
+    double u, v;            // Texture coordinates
+    double distance;        // Distance to sprite
+    int textureId;          // Sprite texture ID
+    Sprite* sprite;         // Parent sprite
+    double lightLevel;      // Light level for this span
+    
+    SpriteSpan() : 
+        x(0), y1(0), y2(0), u(0), v(0), 
+        distance(0), textureId(-1), sprite(nullptr), lightLevel(1.0) {}
+};
+
+// Renderer class
 class Renderer {
-private:
-    SDL_Window* m_window;
-    SDL_Renderer* m_renderer;
-    int m_screenWidth;
-    int m_screenHeight;
-    bool m_fullscreen;
-    
-    // Rendering buffers
-    std::vector<double> m_zBuffer;  // Depth buffer for sprite rendering
-    const float* m_externalZBuffer; // New pointer to store Z-buffer from CUDA renderer
-    bool m_usingExternalZBuffer;    // Flag to indicate if we're using external Z-buffer
-    
-    // Managers and references
-    TextureManager* m_textureManager;
-    SpriteManager* m_spriteManager;
-    ProjectileManager* m_projectileManager;
-    const Engine* m_engine;  // Reference to the engine for texture frames
-    LightingSystem m_lightingSystem;  // New lighting system
-    
-    // Rendering options
-    bool m_showFPS;
-    bool m_showMinimap;
-    bool m_showWeapon;
-    bool m_showCeilings;  // Toggle for ceiling rendering
-    
-    // Performance settings
-    PerformanceLevel m_performanceLevel;
-    bool m_lightingEnabled;
-    bool m_muzzleFlashEnabled;  // Flag to enable/disable muzzle flash
-    
-    // FPS counter
-    int m_frameCount;
-    double m_fpsTimer;
-    double m_fps;
-
-    // Pre-calculated normals for faster lighting calculation
-    const Vec2 m_normalLeft{-1.0, 0.0};
-    const Vec2 m_normalRight{1.0, 0.0};
-    const Vec2 m_normalUp{0.0, -1.0};
-    const Vec2 m_normalDown{0.0, 1.0};
-    
-    // Wall texture variations for different wall types
-    std::vector<int> m_wallTextureVariations;
-    
-    // Calculate surface normal for lighting - optimized to use pre-calculated normals
-    Vec2 calculateSurfaceNormal(bool side, const Vec2& rayDir) const {
-        if (side) {
-            return rayDir.y > 0 ? m_normalLeft : m_normalRight;  // Hit vertical wall
-        } else {
-            return rayDir.x > 0 ? m_normalUp : m_normalDown;  // Hit horizontal wall
-        }
-    }
-    
-    // Private helper methods
-    void DrawArrow(const SDL_Rect& rect, int direction); // 0=N, 1=E, 2=S, 3=W
-    
 public:
     Renderer();
     ~Renderer();
     
     // Initialize the renderer
-    bool init(int width, int height, bool fullscreen);
+    bool init(int screenWidth, int screenHeight, bool fullscreen, bool vsync);
     
     // Clean up resources
-    void cleanup();
+    void shutdown();
     
-    // Set SDL renderer
-    void setSDLRenderer(SDL_Renderer* renderer);
+    // Start a new frame
+    void beginFrame();
     
-    // Set texture and sprite managers
+    // End current frame and present
+    void endFrame();
+    
+    // Clear the screen
+    void clear(const Color& color = Colors::BLACK);
+    
+    // Render the current map and view
+    void renderMap(Map* map, Camera* camera);
+    
+    // Get screen dimensions
+    int getScreenWidth() const { return m_screenWidth; }
+    int getScreenHeight() const { return m_screenHeight; }
+    
+    // Set references
     void setTextureManager(TextureManager* textureManager) { m_textureManager = textureManager; }
-    void setSpriteManager(SpriteManager* spriteManager) { m_spriteManager = spriteManager; }
-    void setProjectileManager(ProjectileManager* projectileManager) { m_projectileManager = projectileManager; }
-    void setEngine(const Engine* engine) { m_engine = engine; }
+    void setEngine(Engine* engine) { m_engine = engine; }
     
-    // Get managers
-    TextureManager* getTextureManager() const { return m_textureManager; }
-    SpriteManager* getSpriteManager() const { return m_spriteManager; }
-    ProjectileManager* getProjectileManager() const { return m_projectileManager; }
-    LightingSystem& getLightingSystem() { return m_lightingSystem; }
+    // Set rendering options
+    void setRenderDistance(double distance) { m_renderDistance = distance; }
+    void setFogEnabled(bool enabled) { m_fogEnabled = enabled; }
+    void setFogColor(const Color& color) { m_fogColor = color; }
+    void setFogDistance(double distance) { m_fogDistance = distance; }
+    void setFogDensity(double density) { m_fogDensity = density; }
+    void setLightingEnabled(bool enabled) { m_lightingEnabled = enabled; }
+    void setGammaCorrectionEnabled(bool enabled) { m_gammaCorrectionEnabled = enabled; }
+    void setTextureFiltering(bool enabled) { m_textureFiltering = enabled; }
     
-    // Add wall texture variations
-    void addWallTextureVariation(int textureId) { m_wallTextureVariations.push_back(textureId); }
-    void clearWallTextureVariations() { m_wallTextureVariations.clear(); }
-    const std::vector<int>& getWallTextureVariations() const { return m_wallTextureVariations; }
+    // Screenshot functions
+    bool takeScreenshot(const std::string& filename);
     
-    // Render a frame
-    void render(const Map& map, const Player& player, double deltaTime, double recoil = 0.0, double flashIntensity = 0.0);
+    // Debug rendering
+    void renderDebugInfo(const std::string& text, int x, int y, const Color& color = Colors::WHITE);
+    void renderDebugLine(const Vec2& start, const Vec2& end, const Color& color = Colors::WHITE);
+    void renderDebugRect(const Rect& rect, const Color& color = Colors::WHITE, bool filled = false);
+    void renderDebugCircle(const Vec2& center, double radius, const Color& color = Colors::WHITE, bool filled = false);
+    void toggleDebugMode() { m_debugMode = !m_debugMode; }
+    bool isDebugModeEnabled() const { return m_debugMode; }
     
-    // Render the 3D view
-    void renderView(const Map& map, const Player& player);
+    // HUD rendering
+    void renderHUD(Player* player);
     
-    // Render sprites
-    void renderSprites(const Player& player);
-    
-    // Render sprites with map for sector culling
-    void renderSprites(const Map& map, const Player& player);
-    
-    // Render UI elements
-    void renderUI(const Player& player);
-    
-    // Render projectiles
-    void renderProjectiles(const Player& player);
-    
-    // Render the minimap
-    void renderMinimap(const Map& map, const Player& player, ProjectileManager& projectileManager);
-    
-    // Overload for backward compatibility
-    void renderMinimap(const Map& map, const Player& player) {
-        if (m_projectileManager) {
-            renderMinimap(map, player, *m_projectileManager);
-        }
-    }
-    
-    // Render the HUD (health, ammo, etc.)
-    void renderHUD(const Player& player);
-    
-    // Render the weapon
-    void renderWeapon(const Player& player, double recoil = 0.0, double flashIntensity = 0.0, int weaponTextureId = 5);
-    
-    // Render muzzle flash
-    void renderMuzzleFlash(double intensity, double recoil = 0.0);
-    
-    // Render text
-    void renderText(const std::string& text, int x, int y, const Color& color);
-    
-    // Toggle display options
-    void toggleFPS() { m_showFPS = !m_showFPS; }
-    void toggleMinimap() { m_showMinimap = !m_showMinimap; }
-    void toggleWeapon() { m_showWeapon = !m_showWeapon; }
-    void toggleCeilings() { m_showCeilings = !m_showCeilings; }
-    void toggleLighting() { 
-        m_lightingEnabled = !m_lightingEnabled; 
-        m_lightingSystem.setEnabled(m_lightingEnabled);
-    }
-    
-    void toggleMuzzleFlash() { m_muzzleFlashEnabled = !m_muzzleFlashEnabled; }
-    
-    // Getters for display options
-    bool isShowingFPS() const { return m_showFPS; }
-    bool isShowingMinimap() const { return m_showMinimap; }
-    bool isShowingWeapon() const { return m_showWeapon; }
-    bool isShowingCeilings() const { return m_showCeilings; }
-    bool isLightingEnabled() const { return m_lightingEnabled; }
-    
-    // Performance settings
-    void setPerformanceLevel(PerformanceLevel level) {
-        m_performanceLevel = level;
-        
-        // Configure lighting system based on performance level
-        switch (level) {
-            case PerformanceLevel::Low:
-                m_lightingSystem.setCullingEnabled(true);
-                m_lightingSystem.setCullDistance(8.0);  // Shorter cull distance
-                m_lightingSystem.setUpdateFrequency(5); // Update lighting less frequently
-                break;
-                
-            case PerformanceLevel::Medium:
-                m_lightingSystem.setCullingEnabled(true);
-                m_lightingSystem.setCullDistance(15.0); // Default cull distance
-                m_lightingSystem.setUpdateFrequency(3); // Normal update frequency
-                break;
-                
-            case PerformanceLevel::High:
-                m_lightingSystem.setCullingEnabled(true);
-                m_lightingSystem.setCullDistance(25.0); // Longer cull distance
-                m_lightingSystem.setUpdateFrequency(1); // Update every frame
-                break;
-        }
-    }
-    
-    PerformanceLevel getPerformanceLevel() const { return m_performanceLevel; }
-    
-    // Get the SDL renderer
+    // Get SDL renderer
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }
     
-    // Clear the Z-buffer
-    void clearZBuffer();
+    // Set background color
+    void setBackgroundColor(const Color& color) { m_backgroundColor = color; }
     
-    // Set an external Z-buffer (from CUDA renderer)
-    void setExternalZBuffer(const float* zBuffer) {
-        m_externalZBuffer = zBuffer;
-        m_usingExternalZBuffer = (zBuffer != nullptr);
-    }
+private:
+    SDL_Window* m_window;             // SDL window
+    SDL_Renderer* m_renderer;         // SDL renderer
+    SDL_Texture* m_frameBuffer;       // Framebuffer texture
+    uint32_t* m_pixelBuffer;          // Pixel buffer
+    int m_screenWidth;                // Screen width
+    int m_screenHeight;               // Screen height
+    double* m_zBuffer;                // Z-buffer for depth testing
     
-    // Clear the external Z-buffer reference
-    void clearExternalZBuffer() {
-        m_externalZBuffer = nullptr;
-        m_usingExternalZBuffer = false;
-    }
+    // Rendering options
+    double m_renderDistance;          // Maximum render distance
+    bool m_fogEnabled;                // Whether fog is enabled
+    Color m_fogColor;                 // Fog color
+    double m_fogDistance;             // Distance at which fog starts
+    double m_fogDensity;              // Fog density
+    bool m_lightingEnabled;           // Whether lighting is enabled
+    bool m_gammaCorrectionEnabled;    // Whether gamma correction is enabled
+    bool m_textureFiltering;          // Whether texture filtering is enabled
+    bool m_debugMode;                 // Whether debug mode is enabled
+    Color m_backgroundColor;          // Background color
+    
+    // References
+    TextureManager* m_textureManager; // Texture manager
+    Engine* m_engine;                 // Engine reference
+    
+    // Rendering spans
+    std::vector<WallSpan> m_wallSpans;
+    std::vector<FloorCeilingSpan> m_floorCeilingSpans;
+    std::vector<SpriteSpan> m_spriteSpans;
+    
+    // Internal rendering functions
+    void renderWalls(Map* map, Camera* camera);
+    void renderFloorsCeilings(Map* map, Camera* camera);
+    void renderSprites(Map* map, Camera* camera);
+    void renderSkybox(Camera* camera);
+    
+    // Process visible walls from BSP tree
+    void processVisibleWalls(Map* map, Camera* camera, 
+                             const std::vector<std::shared_ptr<Wall>>& visibleWalls);
+    
+    // Calculate wall spans
+    void calculateWallSpans(Wall* wall, Camera* camera, Sector* sector);
+    
+    // Calculate floor/ceiling spans
+    void calculateFloorCeilingSpans(Sector* sector, Camera* camera);
+    
+    // Calculate sprite spans
+    void calculateSpriteSpans(Sprite* sprite, Camera* camera);
+    
+    // Draw spans
+    void drawWallSpans();
+    void drawFloorCeilingSpans();
+    void drawSpriteSpans();
+    
+    // Utility functions
+    Color applyLighting(const Color& color, double lightLevel);
+    Color applyFog(const Color& color, double distance);
+    double calculateLightLevel(Sector* sector, const Vec2& position, double height);
+    
+    // Set pixel in framebuffer
+    void setPixel(int x, int y, const Color& color);
+    
+    // Get pixel from texture at uv coordinates
+    Color sampleTexture(int textureId, double u, double v, bool filter = false);
+    
+    // Draw text
+    void drawText(const std::string& text, int x, int y, const Color& color);
 };
 
 #endif // RENDERER_H 

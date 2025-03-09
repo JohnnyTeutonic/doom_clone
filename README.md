@@ -1,105 +1,134 @@
-# Doom Clone
+# DOOM Clone - Sector-Based BSP Renderer
 
-A simple 3D first-person shooter game built using raycasting techniques similar to the original Doom and Wolfenstein 3D.
+A modern DOOM-style game engine using sector-based rendering with Binary Space Partitioning (BSP).
 
 ## Features
 
-- 3D raycasting engine
-- Texture-mapped walls, floor, and ceiling
-- Sprite-based enemies and items
-- Minimap for navigation
-- Weapon system with ammo management
-- Simple collision detection
+- Sector-based world representation
+- Binary Space Partitioning (BSP) for efficient rendering
+- Support for curved walls
+- Portal rendering for windows and doors
+- Dynamic lighting
+- SDL2-based rendering with hardware acceleration
 
-## Dependencies
+## Building the Project
 
-This project requires the following libraries:
-- SDL2
-- SDL2_image
-- SDL2_ttf
-- SDL2_mixer (optional, for sound)
-- PulseAudio
+### Prerequisites
 
-## Building on WSL2 (Windows Subsystem for Linux)
+- CMake 3.10+
+- C++ Compiler with C++17 support (GCC, Clang, or MSVC)
+- SDL2 and related libraries:
+  - SDL2
+  - SDL2_image
+  - SDL2_ttf
+  - SDL2_mixer
 
-### Quick setup
+#### Windows (Visual Studio / MSVC)
 
-I've provided a setup script for WSL2 users:
+1. Install SDL2 development libraries for Visual C++
+   - Download the development libraries from https://www.libsdl.org/
+   - Extract to a directory (e.g., `C:\SDL2`)
+   - Do the same for SDL2_image, SDL2_ttf, and SDL2_mixer
 
-```bash
-# Make the script executable
-chmod +x setup_wsl2.sh
+2. Build with CMake:
+   ```
+   mkdir build
+   cd build
+   cmake -G "Visual Studio 17 2022" -A x64 -DSDL2_DIR=C:/SDL2/cmake ..
+   cmake --build . --config Release
+   ```
 
-# Run the setup script
-./setup_wsl2.sh
+3. Copy SDL2.dll and other DLLs to the same directory as the executable.
+
+#### Windows (MinGW)
+
+1. Install SDL2 development libraries for MinGW
+   - Download the development libraries from https://www.libsdl.org/
+   - Extract to a directory (e.g., `C:\SDL2-MinGW`)
+
+2. Build with CMake:
+   ```
+   mkdir build
+   cd build
+   cmake -G "MinGW Makefiles" -DSDL2_DIR=C:/SDL2-MinGW/cmake ..
+   cmake --build .
+   ```
+
+3. Copy SDL2.dll and other DLLs to the same directory as the executable.
+
+#### Linux (Debian/Ubuntu)
+
+1. Install required packages:
+   ```
+   sudo apt update
+   sudo apt install build-essential cmake libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
+   ```
+
+2. Build with CMake:
+   ```
+   mkdir build
+   cd build
+   cmake ..
+   cmake --build .
+   ```
+
+#### macOS
+
+1. Install required packages with Homebrew:
+   ```
+   brew install cmake sdl2 sdl2_image sdl2_ttf sdl2_mixer
+   ```
+
+2. Build with CMake:
+   ```
+   mkdir build
+   cd build
+   cmake ..
+   cmake --build .
+   ```
+
+## Running the Engine
+
+After building, run the executable from the build directory:
+
+```
+./doom_clone
 ```
 
-### Manual setup
+### Command-line Options
 
-If you prefer to install dependencies manually:
-
-```bash
-# Update package repositories
-sudo apt update
-
-# Install required packages
-sudo apt install -y build-essential cmake libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev pkg-config pulseaudio libsdl2-mixer-2.0-0 libsdl2-mixer-dev
-```
-
-### Building the game
-
-```bash
-# Create build directory
-mkdir -p build
-cd build
-
-# Configure with CMake
-cmake ..
-
-# Build
-make
-
-# Run the game
-./bin/doom_clone
-```
-
-## Building on Windows
-
-1. Install CMake (https://cmake.org/download/)
-2. Install SDL2, SDL2_image, and SDL2_ttf development libraries for Windows
-3. Configure your project with the appropriate paths to the SDL libraries
-
-```bash
-# Create build directory
-mkdir build
-cd build
-
-# Configure with CMake (adjust paths as needed)
-cmake -DSDL2_DIR=path/to/SDL2/cmake -DSDL2_IMAGE_DIR=path/to/SDL2_image/cmake -DSDL2_TTF_DIR=path/to/SDL2_ttf/cmake ..
-
-# Build (using your preferred IDE or build system)
-```
-Alternatively, building (and running) in powershell can be done:
-```
-powershell -ExecutionPolicy Bypass -File build_and_run.ps1
-```
+- `--fullscreen`: Run in fullscreen mode
+- `--windowed`: Run in windowed mode
+- `--width N`: Set window width to N pixels
+- `--height N`: Set window height to N pixels
+- `--fps N`: Set target FPS to N
+- `--no-vsync`: Disable vertical sync
+- `--no-fps`: Hide FPS counter
+- `--help`: Show help message
 
 ## Controls
 
-- WASD or Arrow keys: Move and turn
-- Up/Down: Look around
-- Space: Fire weapon
-- R: Reload
-- ESC: Quit or pause game
-- F1: Toggle FPS display
-- F2: Toggle minimap
-- F3: Toggle weapon display
+- WASD: Move
+- Mouse: Look around
+- Space: Jump
+- Ctrl: Crouch
+- Left Mouse Button: Shoot
+- Right Mouse Button: Alternate fire
+- E: Use/Interact
+- 1-9: Select weapon
+- Escape: Open menu/Exit
+
+## Project Structure
+
+- `src/`: Source code
+  - `utils.h/cpp`: Common utilities
+  - `map.h/cpp`: Map structures and BSP implementation
+  - `player.h/cpp`: Player mechanics
+  - `renderer.h/cpp`: Rendering system
+  - `main.cpp`: Application entry point
+- `assets/`: Game assets (textures, sounds, etc.)
+- `CMakeLists.txt`: CMake build script
 
 ## License
 
-This project is open source and available under the MIT License.
-
-## Credits
-
-- Raycasting techniques inspired by [Lode's Computer Graphics Tutorial](https://lodev.org/cgtutor/raycasting.html)
-- Textures from [OpenGameArt.org](https://opengameart.org) 
+This project is released under the MIT License. See the LICENSE file for details. 

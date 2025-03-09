@@ -129,126 +129,6 @@ doom_clone/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/build
 .PHONY : doom_clone/fast
 
-src/audio.o: src/audio.cpp.o
-.PHONY : src/audio.o
-
-# target to build an object file
-src/audio.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.o
-.PHONY : src/audio.cpp.o
-
-src/audio.i: src/audio.cpp.i
-.PHONY : src/audio.i
-
-# target to preprocess a source file
-src/audio.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.i
-.PHONY : src/audio.cpp.i
-
-src/audio.s: src/audio.cpp.s
-.PHONY : src/audio.s
-
-# target to generate assembly for a file
-src/audio.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.s
-.PHONY : src/audio.cpp.s
-
-src/cuda_renderer.o: src/cuda_renderer.cpp.o
-.PHONY : src/cuda_renderer.o
-
-# target to build an object file
-src/cuda_renderer.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.o
-.PHONY : src/cuda_renderer.cpp.o
-
-src/cuda_renderer.i: src/cuda_renderer.cpp.i
-.PHONY : src/cuda_renderer.i
-
-# target to preprocess a source file
-src/cuda_renderer.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.i
-.PHONY : src/cuda_renderer.cpp.i
-
-src/cuda_renderer.s: src/cuda_renderer.cpp.s
-.PHONY : src/cuda_renderer.s
-
-# target to generate assembly for a file
-src/cuda_renderer.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.s
-.PHONY : src/cuda_renderer.cpp.s
-
-src/cuda_renderer.o: src/cuda_renderer.cu.o
-.PHONY : src/cuda_renderer.o
-
-# target to build an object file
-src/cuda_renderer.cu.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.o
-.PHONY : src/cuda_renderer.cu.o
-
-src/cuda_renderer.i: src/cuda_renderer.cu.i
-.PHONY : src/cuda_renderer.i
-
-# target to preprocess a source file
-src/cuda_renderer.cu.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.i
-.PHONY : src/cuda_renderer.cu.i
-
-src/cuda_renderer.s: src/cuda_renderer.cu.s
-.PHONY : src/cuda_renderer.s
-
-# target to generate assembly for a file
-src/cuda_renderer.cu.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.s
-.PHONY : src/cuda_renderer.cu.s
-
-src/engine.o: src/engine.cpp.o
-.PHONY : src/engine.o
-
-# target to build an object file
-src/engine.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/engine.cpp.o
-.PHONY : src/engine.cpp.o
-
-src/engine.i: src/engine.cpp.i
-.PHONY : src/engine.i
-
-# target to preprocess a source file
-src/engine.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/engine.cpp.i
-.PHONY : src/engine.cpp.i
-
-src/engine.s: src/engine.cpp.s
-.PHONY : src/engine.s
-
-# target to generate assembly for a file
-src/engine.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/engine.cpp.s
-.PHONY : src/engine.cpp.s
-
-src/input.o: src/input.cpp.o
-.PHONY : src/input.o
-
-# target to build an object file
-src/input.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/input.cpp.o
-.PHONY : src/input.cpp.o
-
-src/input.i: src/input.cpp.i
-.PHONY : src/input.i
-
-# target to preprocess a source file
-src/input.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/input.cpp.i
-.PHONY : src/input.cpp.i
-
-src/input.s: src/input.cpp.s
-.PHONY : src/input.s
-
-# target to generate assembly for a file
-src/input.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/input.cpp.s
-.PHONY : src/input.cpp.s
-
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -321,30 +201,6 @@ src/player.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/player.cpp.s
 .PHONY : src/player.cpp.s
 
-src/projectile.o: src/projectile.cpp.o
-.PHONY : src/projectile.o
-
-# target to build an object file
-src/projectile.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/projectile.cpp.o
-.PHONY : src/projectile.cpp.o
-
-src/projectile.i: src/projectile.cpp.i
-.PHONY : src/projectile.i
-
-# target to preprocess a source file
-src/projectile.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/projectile.cpp.i
-.PHONY : src/projectile.cpp.i
-
-src/projectile.s: src/projectile.cpp.s
-.PHONY : src/projectile.s
-
-# target to generate assembly for a file
-src/projectile.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/projectile.cpp.s
-.PHONY : src/projectile.cpp.s
-
 src/renderer.o: src/renderer.cpp.o
 .PHONY : src/renderer.o
 
@@ -393,78 +249,6 @@ src/sprite.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/sprite.cpp.s
 .PHONY : src/sprite.cpp.s
 
-src/texture.o: src/texture.cpp.o
-.PHONY : src/texture.o
-
-# target to build an object file
-src/texture.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/texture.cpp.o
-.PHONY : src/texture.cpp.o
-
-src/texture.i: src/texture.cpp.i
-.PHONY : src/texture.i
-
-# target to preprocess a source file
-src/texture.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/texture.cpp.i
-.PHONY : src/texture.cpp.i
-
-src/texture.s: src/texture.cpp.s
-.PHONY : src/texture.s
-
-# target to generate assembly for a file
-src/texture.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/texture.cpp.s
-.PHONY : src/texture.cpp.s
-
-src/utils.o: src/utils.cpp.o
-.PHONY : src/utils.o
-
-# target to build an object file
-src/utils.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/utils.cpp.o
-.PHONY : src/utils.cpp.o
-
-src/utils.i: src/utils.cpp.i
-.PHONY : src/utils.i
-
-# target to preprocess a source file
-src/utils.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/utils.cpp.i
-.PHONY : src/utils.cpp.i
-
-src/utils.s: src/utils.cpp.s
-.PHONY : src/utils.s
-
-# target to generate assembly for a file
-src/utils.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/utils.cpp.s
-.PHONY : src/utils.cpp.s
-
-src/webp_loader.o: src/webp_loader.cpp.o
-.PHONY : src/webp_loader.o
-
-# target to build an object file
-src/webp_loader.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.o
-.PHONY : src/webp_loader.cpp.o
-
-src/webp_loader.i: src/webp_loader.cpp.i
-.PHONY : src/webp_loader.i
-
-# target to preprocess a source file
-src/webp_loader.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.i
-.PHONY : src/webp_loader.cpp.i
-
-src/webp_loader.s: src/webp_loader.cpp.s
-.PHONY : src/webp_loader.s
-
-# target to generate assembly for a file
-src/webp_loader.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.s
-.PHONY : src/webp_loader.cpp.s
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -474,21 +258,6 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... doom_clone"
-	@echo "... src/audio.o"
-	@echo "... src/audio.i"
-	@echo "... src/audio.s"
-	@echo "... src/cuda_renderer.o"
-	@echo "... src/cuda_renderer.i"
-	@echo "... src/cuda_renderer.s"
-	@echo "... src/cuda_renderer.o"
-	@echo "... src/cuda_renderer.i"
-	@echo "... src/cuda_renderer.s"
-	@echo "... src/engine.o"
-	@echo "... src/engine.i"
-	@echo "... src/engine.s"
-	@echo "... src/input.o"
-	@echo "... src/input.i"
-	@echo "... src/input.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
@@ -498,24 +267,12 @@ help:
 	@echo "... src/player.o"
 	@echo "... src/player.i"
 	@echo "... src/player.s"
-	@echo "... src/projectile.o"
-	@echo "... src/projectile.i"
-	@echo "... src/projectile.s"
 	@echo "... src/renderer.o"
 	@echo "... src/renderer.i"
 	@echo "... src/renderer.s"
 	@echo "... src/sprite.o"
 	@echo "... src/sprite.i"
 	@echo "... src/sprite.s"
-	@echo "... src/texture.o"
-	@echo "... src/texture.i"
-	@echo "... src/texture.s"
-	@echo "... src/utils.o"
-	@echo "... src/utils.i"
-	@echo "... src/utils.s"
-	@echo "... src/webp_loader.o"
-	@echo "... src/webp_loader.i"
-	@echo "... src/webp_loader.s"
 .PHONY : help
 
 

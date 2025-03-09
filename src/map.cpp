@@ -1,830 +1,574 @@
 #include "map.h"
+#include "utils.h"  // Make sure we include utils.h for LineSegment, EPSILON, etc.
 #include <fstream>
-#include <random>
+#include <iostream>
 #include <algorithm>
-#include <queue>
+#include <cmath>
 
-Map::Map(int width, int height) : 
-    m_width(width), 
-    m_height(height),
-    m_cells(height, std::vector<CellType>(width, CellType::Empty)),
-    m_wallTextures(height, std::vector<int>(width, 0)),
-    m_elevations(height, std::vector<int>(width, 0)),
-    m_stepHeights(height, std::vector<float>(width, 0.0f)),
-    m_doorStates(height, std::vector<DoorState>(width, DoorState::Closed)),
-    m_doorOpenAmount(height, std::vector<float>(width, 0.0f)),
-    m_teleportTargets(height, std::vector<std::pair<int, int>>(width, {0, 0})),
-    m_secretFound(height, std::vector<bool>(width, false)),
-    m_playerSector(0),
-    m_engine(nullptr)
+// Initialize static member
+int Sector::s_nextId = 0;
+
+// Wall implementation
+Wall::Wall(const Vec2& start, const Vec2& end, int textureId, WallType type) :
+    m_start(start),
+    m_end(end),
+    m_textureId(textureId),
+    m_type(type),
+    m_height(0.0),
+    m_bottomOffset(0.0),
+    m_adjoiningSector(nullptr)
 {
-    // Initially create a simple sector covering the whole map
-    Sector initialSector;
-    initialSector.id = 0;
-    initialSector.vertices = {
-        Vec2(0, 0),
-        Vec2(width, 0),
-        Vec2(width, height),
-        Vec2(0, height)
-    };
-    initialSector.isVisible = true;
-    m_sectors.push_back(initialSector);
-    
-    m_cellToSector.resize(height, std::vector<int>(width, 0));
 }
 
-bool Map::loadFromString(const std::string& mapStr) {
-    // Find the width of the map (length until first newline)
-    size_t firstNewline = mapStr.find('\n');
-    if (firstNewline == std::string::npos) {
-        // Single line map
-        m_width = mapStr.length();
-        m_height = 1;
-    } else {
-        m_width = firstNewline;
+Vec2 Wall::getNormal() const
+{
+    Vec2 dir = getDirection();
+    // Rotate 90 degrees counterclockwise for normal pointing outward
+    return Vec2(-dir.y, dir.x).normalized();
+}
+
+bool Wall::containsPoint(const Vec2& point, double tolerance) const
+{
+    LineSegment segment(m_start, m_end);
+    return segment.containsPoint(point, tolerance);
+}
+
+double Wall::pointSide(const Vec2& point) const
+{
+    // Cross product to determine which side of the wall the point is on
+    return (m_end.x - m_start.x) * (point.y - m_start.y) - 
+           (m_end.y - m_start.y) * (point.x - m_start.x);
+}
+
+bool Wall::intersects(const LineSegment& line, Vec2& intersection) const
+{
+    LineSegment wallSegment(m_start, m_end);
+    return lineSegmentIntersection(wallSegment, line, intersection);
+}
+
+// Sector implementation
+Sector::Sector(SectorType type) :
+    m_floorHeight(0.0),
+    m_ceilingHeight(4.0),  // Default ceiling height
+    m_floorTextureId(-1),
+    m_ceilingTextureId(-1),
+    m_type(type),
+    m_floorType(FloorCeilingType::NORMAL),
+    m_ceilingType(FloorCeilingType::NORMAL),
+    m_lightLevel(1.0),     // Full brightness by default
+    m_id(s_nextId++)       // Assign unique ID
+{
+}
+
+void Sector::addWall(std::shared_ptr<Wall> wall)
+{
+    if (wall) {
+        m_walls.push_back(wall);
+    }
+}
+
+bool Sector::containsPoint(const Vec2& point) const
+{
+    // Implementation of point-in-polygon algorithm
+    bool inside = false;
+    
+    // Loop through all walls
+    for (size_t i = 0, j = m_walls.size() - 1; i < m_walls.size(); j = i++) {
+        const Vec2& vi = m_walls[i]->getStart();
+        const Vec2& vj = m_walls[j]->getStart();
         
-        // Count the number of lines
-        m_height = 1; // First line
-        for (size_t i = 0; i < mapStr.length(); ++i) {
-            if (mapStr[i] == '\n') {
-                m_height++;
-            }
+        // Check if point is inside the polygon using ray casting
+        if (((vi.y > point.y) != (vj.y > point.y)) &&
+            (point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y) + vi.x))
+        {
+            inside = !inside;
         }
     }
     
-    // Resize the cells vector
-    m_cells.resize(m_height, std::vector<CellType>(m_width, CellType::Empty));
-    m_wallTextures.resize(m_height, std::vector<int>(m_width, 0));
+    return inside;
+}
+
+Rect Sector::getBounds() const
+{
+    if (m_walls.empty()) {
+        return Rect();
+    }
     
-    // Parse the map string
-    int x = 0, y = 0;
-    for (char c : mapStr) {
-        if (c == '\n') {
-            y++;
-            x = 0;
+    // Find min/max coordinates
+    double minX = m_walls[0]->getStart().x;
+    double minY = m_walls[0]->getStart().y;
+    double maxX = minX;
+    double maxY = minY;
+    
+    for (const auto& wall : m_walls) {
+        const Vec2& start = wall->getStart();
+        const Vec2& end = wall->getEnd();
+        
+        minX = std::min(minX, std::min(start.x, end.x));
+        minY = std::min(minY, std::min(start.y, end.y));
+        maxX = std::max(maxX, std::max(start.x, end.x));
+        maxY = std::max(maxY, std::max(start.y, end.y));
+    }
+    
+    return Rect(minX, minY, maxX - minX, maxY - minY);
+}
+
+// BSP Node implementation
+BSPNode::BSPNode() :
+    m_splitter(nullptr),
+    m_frontChild(nullptr),
+    m_backChild(nullptr)
+{
+}
+
+BSPNode::~BSPNode()
+{
+    // Children are deleted by unique_ptr automatically
+}
+
+bool BSPNode::build(const std::vector<std::shared_ptr<Wall>>& walls)
+{
+    // If no walls, this is a leaf node
+    if (walls.empty()) {
+        return true;
+    }
+    
+    // Choose a wall as splitter
+    m_splitter = chooseSplitter(walls);
+    if (!m_splitter) {
+        // If we can't choose a good splitter, store all walls as coplanar
+        m_coplanarWalls = walls;
+        return true;
+    }
+    
+    // Partition walls into front, back, and coplanar sets
+    std::vector<std::shared_ptr<Wall>> frontWalls;
+    std::vector<std::shared_ptr<Wall>> backWalls;
+    
+    for (const auto& wall : walls) {
+        // Skip the splitter itself
+        if (wall == m_splitter) {
             continue;
         }
         
-        if (x < m_width && y < m_height) {
-            // Set cell type based on character
-            switch (c) {
-                case '#':
-                    m_cells[y][x] = CellType::Wall;
-                    // Choose wall texture based on position (for variety)
-                    m_wallTextures[y][x] = (x + y) % 4;
-                    break;
-                case '.':
-                    m_cells[y][x] = CellType::Empty;
-                    break;
-                case 'D':
-                    m_cells[y][x] = CellType::Door;
-                    break;
-                case 'I':
-                    m_cells[y][x] = CellType::Item;
-                    break;
-                case 'E':
-                    m_cells[y][x] = CellType::Enemy;
-                    break;
-                default:
-                    m_cells[y][x] = CellType::Empty;
-                    break;
+        // Check if wall is coplanar with the splitter
+        Vec2 normalSplitter = m_splitter->getNormal();
+        Vec2 normalWall = wall->getNormal();
+        Vec2 dirSplitter = m_splitter->getDirection().normalized();
+        Vec2 dirWall = wall->getDirection().normalized();
+        
+        if (approxEqual(std::abs(dirSplitter.dot(dirWall)), 1.0)) {
+            // Walls are coplanar, check if they face the same direction
+            if (dirSplitter.dot(dirWall) > 0) {
+                // Same direction, add to coplanar
+                m_coplanarWalls.push_back(wall);
+            } else {
+                // Opposite direction, add to coplanar
+                m_coplanarWalls.push_back(wall);
             }
+            continue;
         }
         
-        x++;
-    }
-    
-    return true;
-}
-
-bool Map::loadFromFile(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        return false;
-    }
-    
-    std::string content;
-    std::string line;
-    
-    while (std::getline(file, line)) {
-        content += line + '\n';
-    }
-    
-    file.close();
-    
-    return loadFromString(content);
-}
-
-bool Map::saveToFile(const std::string& filename) const {
-    std::ofstream file(filename);
-    if (!file.is_open()) {
-        return false;
-    }
-    
-    for (int y = 0; y < m_height; ++y) {
-        for (int x = 0; x < m_width; ++x) {
-            CellType cell = getCell(x, y);
-            
-            switch (cell) {
-                case CellType::Wall:
-                    file << '#';
-                    break;
-                case CellType::Empty:
-                    file << '.';
-                    break;
-                case CellType::Door:
-                    file << 'D';
-                    break;
-                case CellType::Item:
-                    file << 'I';
-                    break;
-                case CellType::Enemy:
-                    file << 'E';
-                    break;
-                default:
-                    file << ' ';
-                    break;
-            }
-        }
-        file << '\n';
-    }
-    
-    file.close();
-    return true;
-}
-
-CellType Map::getCell(int x, int y) const {
-    // Check bounds
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return CellType::Wall;  // Out of bounds is considered a wall
-    }
-    
-    return m_cells[y][x];
-}
-
-void Map::setCell(int x, int y, CellType type) {
-    if (x >= 0 && x < m_width && y >= 0 && y < m_height) {
-        m_cells[y][x] = type;
-    }
-}
-
-bool Map::isValidPosition(double x, double y) const {
-    // Convert to integer cell coordinates
-    int cellX = static_cast<int>(x);
-    int cellY = static_cast<int>(y);
-    
-    // Check bounds
-    if (cellX < 0 || cellX >= m_width || cellY < 0 || cellY >= m_height) {
-        return false;
-    }
-    
-    // Get the cell type
-    CellType cellType = m_cells[cellY][cellX];
-    
-    // Always allow movement into empty spaces, stairs, or stair steps
-    bool isPassable = cellType == CellType::Empty || 
-                     cellType == CellType::Stairs || 
-                     cellType == CellType::StairStep1 || 
-                     cellType == CellType::StairStep2 || 
-                     cellType == CellType::StairStep3;
-    
-    // Special handling for room boundaries - check if adjacent cells have different elevations
-    if (!isPassable) {
-        // Additional checks for rooms with different elevations
-        // If this is a room boundary (elevation changes around this cell), consider allowing passage
-        int currentElevation = getCellElevation(cellX, cellY);
+        // Find which side each vertex of the wall is on
+        double startSide = m_splitter->pointSide(wall->getStart());
+        double endSide = m_splitter->pointSide(wall->getEnd());
         
-        // Check neighboring cells for elevation changes (potential room boundaries)
-        bool hasElevationChange = false;
-        
-        // Check in all 4 directions
-        const int dx[] = {0, 1, 0, -1};
-        const int dy[] = {-1, 0, 1, 0};
-        
-        for (int i = 0; i < 4; i++) {
-            int nx = cellX + dx[i];
-            int ny = cellY + dy[i];
-            
-            // Skip if out of bounds
-            if (nx < 0 || nx >= m_width || ny < 0 || ny >= m_height) continue;
-            
-            // If there's an elevation difference and the cell is traversable, consider it a room boundary
-            if (getCellElevation(nx, ny) != currentElevation && 
-                (m_cells[ny][nx] == CellType::Empty || isStairs(nx, ny) || isStairStep(nx, ny))) {
-                hasElevationChange = true;
-                std::cout << "Detected room boundary at (" << cellX << "," << cellY << ") - allowing passage" << std::endl;
-                break;
-            }
-        }
-        
-        // If this is a room boundary, allow passage
-        if (hasElevationChange) {
-            return true;
-        }
-    }
-    
-    return isPassable;
-}
-
-int Map::getWallTexture(int x, int y) const {
-    if (x >= 0 && x < m_width && y >= 0 && y < m_height) {
-        if (m_cells[y][x] == CellType::Wall) {
-            return m_wallTextures[y][x];
-        }
-    }
-    return 0;
-}
-
-void Map::setWallTexture(int x, int y, int textureId) {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return; // Out of bounds, do nothing
-    }
-    
-    m_wallTextures[y][x] = textureId;
-}
-
-Vec2 Map::getRandomEmptyPosition() const {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distribX(0, m_width - 1);
-    std::uniform_int_distribution<> distribY(0, m_height - 1);
-    
-    // Try to find an empty cell (max 100 attempts)
-    for (int i = 0; i < 100; ++i) {
-        int x = distribX(gen);
-        int y = distribY(gen);
-        
-        if (getCell(x, y) == CellType::Empty) {
-            // Add 0.5 to position the entity in the middle of the cell
-            return Vec2(x + 0.5, y + 0.5);
-        }
-    }
-    
-    // Fallback if no empty cell is found (shouldn't happen in normal maps)
-    return Vec2(1.5, 1.5);
-}
-
-double Map::castRay(double startX, double startY, double dirX, double dirY, 
-                   double& outHitX, double& outHitY, int& outHitTexture) const {
-    // Implementation of Digital Differential Analysis (DDA) algorithm for raycasting
-    // Based on the approach used in Wolfenstein 3D / Doom
-    
-    // Calculate cell position
-    int mapX = static_cast<int>(startX);
-    int mapY = static_cast<int>(startY);
-    
-    // Length of ray from current position to next x or y-side
-    double sideDistX, sideDistY;
-    
-    // Length of ray from one x or y-side to next x or y-side
-    double deltaDistX = std::abs(1.0 / dirX);
-    double deltaDistY = std::abs(1.0 / dirY);
-    
-    // Direction to step in x or y direction (either +1 or -1)
-    int stepX, stepY;
-    
-    // Calculate step and initial sideDist
-    if (dirX < 0) {
-        stepX = -1;
-        sideDistX = (startX - mapX) * deltaDistX;
-    } else {
-        stepX = 1;
-        sideDistX = (mapX + 1.0 - startX) * deltaDistX;
-    }
-    
-    if (dirY < 0) {
-        stepY = -1;
-        sideDistY = (startY - mapY) * deltaDistY;
-    } else {
-        stepY = 1;
-        sideDistY = (mapY + 1.0 - startY) * deltaDistY;
-    }
-    
-    // Perform DDA
-    bool hit = false;
-    bool hitSideX = false; // Was a NS or a EW wall hit?
-    
-    while (!hit) {
-        // Jump to next map square, either in x-direction, or in y-direction
-        if (sideDistX < sideDistY) {
-            sideDistX += deltaDistX;
-            mapX += stepX;
-            hitSideX = true;
+        if (startSide >= 0 && endSide >= 0) {
+            // Wall is entirely on the front side
+            frontWalls.push_back(wall);
+        } else if (startSide <= 0 && endSide <= 0) {
+            // Wall is entirely on the back side
+            backWalls.push_back(wall);
         } else {
-            sideDistY += deltaDistY;
-            mapY += stepY;
-            hitSideX = false;
-        }
-        
-        // Check if ray has hit a wall
-        if (getCell(mapX, mapY) == CellType::Wall) {
-            hit = true;
-        }
-        
-        // Safety check to prevent infinite loops
-        if (mapX < 0 || mapX >= m_width || mapY < 0 || mapY >= m_height) {
-            hit = true;
+            // Wall spans the splitter, split it
+            auto [frontPart, backPart] = splitWall(wall);
+            if (frontPart) {
+                frontWalls.push_back(frontPart);
+            }
+            if (backPart) {
+                backWalls.push_back(backPart);
+            }
         }
     }
     
-    // Calculate distance projected on camera direction
-    double perpWallDist;
-    if (hitSideX) {
-        perpWallDist = (mapX - startX + (1 - stepX) / 2) / dirX;
+    // Build the child nodes recursively
+    if (!frontWalls.empty()) {
+        m_frontChild = std::make_unique<BSPNode>();
+        if (!m_frontChild->build(frontWalls)) {
+            return false;
+        }
+    }
+    
+    if (!backWalls.empty()) {
+        m_backChild = std::make_unique<BSPNode>();
+        if (!m_backChild->build(backWalls)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+double BSPNode::pointSide(const Vec2& point) const
+{
+    if (!m_splitter) {
+        return 0;
+    }
+    
+    return m_splitter->pointSide(point);
+}
+
+void BSPNode::traverse(const Vec2& viewpoint, std::vector<std::shared_ptr<Wall>>& visibleWalls) const
+{
+    if (!m_splitter) {
+        // Leaf node, add coplanar walls
+        visibleWalls.insert(visibleWalls.end(), m_coplanarWalls.begin(), m_coplanarWalls.end());
+        return;
+    }
+    
+    // Determine which side of the splitter the viewpoint is on
+    double side = pointSide(viewpoint);
+    
+    if (side > 0) {
+        // Viewpoint is on the front side
+        // First draw the back side (farther)
+        if (m_backChild) {
+            m_backChild->traverse(viewpoint, visibleWalls);
+        }
+        
+        // Then draw the splitter
+        visibleWalls.push_back(m_splitter);
+        
+        // Add other coplanar walls
+        visibleWalls.insert(visibleWalls.end(), m_coplanarWalls.begin(), m_coplanarWalls.end());
+        
+        // Finally draw the front side (closer)
+        if (m_frontChild) {
+            m_frontChild->traverse(viewpoint, visibleWalls);
+        }
     } else {
-        perpWallDist = (mapY - startY + (1 - stepY) / 2) / dirY;
-    }
-    
-    // Calculate the exact hit position
-    if (hitSideX) {
-        outHitX = startX + perpWallDist * dirX;
-        outHitY = startY + perpWallDist * dirY;
-    } else {
-        outHitX = startX + perpWallDist * dirX;
-        outHitY = startY + perpWallDist * dirY;
-    }
-    
-    // Get the texture ID for the hit wall
-    outHitTexture = getWallTexture(mapX, mapY);
-    
-    // Return the distance to the wall
-    return perpWallDist;
-}
-
-int Map::getCellElevation(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return 0; // Default elevation for out of bounds
-    }
-    
-    return m_elevations[y][x];
-}
-
-void Map::setCellElevation(int x, int y, int elevation) {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return; // Out of bounds, do nothing
-    }
-    
-    m_elevations[y][x] = elevation;
-}
-
-float Map::getStepHeight(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return 0.0f; // Default step height for out of bounds
-    }
-    
-    return m_stepHeights[y][x];
-}
-
-void Map::setStepHeight(int x, int y, float height) {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return; // Out of bounds, do nothing
-    }
-    
-    m_stepHeights[y][x] = height;
-}
-
-bool Map::isStairs(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false;
-    }
-    
-    return m_cells[y][x] == CellType::Stairs;
-}
-
-bool Map::isStairStep(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false;
-    }
-    
-    CellType cell = m_cells[y][x];
-    return cell == CellType::StairStep1 || cell == CellType::StairStep2 || cell == CellType::StairStep3;
-}
-
-bool Map::isSolid(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return true;  // Out of bounds is considered solid
-    }
-    
-    CellType cellType = m_cells[y][x];
-    return cellType == CellType::Wall || 
-           cellType == CellType::ElevatedWall ||
-           cellType == CellType::SecretWall || 
-           (cellType == CellType::Door && m_doorStates[y][x] != DoorState::Open);
-}
-
-// Door methods
-bool Map::isDoor(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false;
-    }
-    return m_cells[y][x] == CellType::Door;
-}
-
-DoorState Map::getDoorState(int x, int y) const {
-    if (!isDoor(x, y)) {
-        return DoorState::Closed;
-    }
-    return m_doorStates[y][x];
-}
-
-float Map::getDoorOpenAmount(int x, int y) const {
-    if (!isDoor(x, y)) {
-        return 0.0f;
-    }
-    return m_doorOpenAmount[y][x];
-}
-
-void Map::setDoorState(int x, int y, DoorState state) {
-    if (!isDoor(x, y)) {
-        return;
-    }
-    m_doorStates[y][x] = state;
-}
-
-void Map::setDoorOpenAmount(int x, int y, float amount) {
-    if (!isDoor(x, y)) {
-        return;
-    }
-    m_doorOpenAmount[y][x] = amount;
-}
-
-void Map::updateDoors(double deltaTime) {
-    for (int y = 0; y < m_height; y++) {
-        for (int x = 0; x < m_width; x++) {
-            if (!isDoor(x, y)) {
-                continue;
-            }
-            
-            // Update door open amount based on state
-            switch (m_doorStates[y][x]) {
-                case DoorState::Opening:
-                    m_doorOpenAmount[y][x] += deltaTime;
-                    if (m_doorOpenAmount[y][x] >= 1.0f) {
-                        m_doorOpenAmount[y][x] = 1.0f;
-                        m_doorStates[y][x] = DoorState::Open;
-                    }
-                    break;
-                    
-                case DoorState::Closing:
-                    m_doorOpenAmount[y][x] -= deltaTime;
-                    if (m_doorOpenAmount[y][x] <= 0.0f) {
-                        m_doorOpenAmount[y][x] = 0.0f;
-                        m_doorStates[y][x] = DoorState::Closed;
-                    }
-                    break;
-                    
-                case DoorState::Closed:
-                    m_doorOpenAmount[y][x] = 0.0f;
-                    break;
-                    
-                case DoorState::Open:
-                    m_doorOpenAmount[y][x] = 1.0f;
-                    break;
-            }
-        }
-    }
-}
-
-void Map::toggleDoor(int x, int y) {
-    if (!isDoor(x, y)) {
-        return;
-    }
-    
-    DoorState currentState = m_doorStates[y][x];
-    switch (currentState) {
-        case DoorState::Closed:
-        case DoorState::Closing:
-            m_doorStates[y][x] = DoorState::Opening;
-            break;
-            
-        case DoorState::Open:
-        case DoorState::Opening:
-            m_doorStates[y][x] = DoorState::Closing;
-            break;
-    }
-}
-
-bool Map::activateDoor(int x, int y) {
-    if (!isDoor(x, y)) {
-        return false;
-    }
-    
-    toggleDoor(x, y);
-    return true;
-}
-
-// Secret wall methods
-bool Map::isSecretWall(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false;
-    }
-    return m_cells[y][x] == CellType::SecretWall;
-}
-
-bool Map::isSecretFound(int x, int y) const {
-    if (!isSecretWall(x, y)) {
-        return false;
-    }
-    return m_secretFound[y][x];
-}
-
-void Map::setSecretFound(int x, int y, bool found) {
-    if (!isSecretWall(x, y)) {
-        return;
-    }
-    m_secretFound[y][x] = found;
-}
-
-bool Map::activateSecret(int x, int y) {
-    if (!isSecretWall(x, y)) {
-        return false;
-    }
-    
-    setSecretFound(x, y, true);
-    return true;
-}
-
-// Teleport methods
-bool Map::isTeleportPad(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false;
-    }
-    return m_cells[y][x] == CellType::TeleportPad;
-}
-
-std::pair<int, int> Map::getTeleportTarget(int x, int y) const {
-    if (!isTeleportPad(x, y)) {
-        return {-1, -1};
-    }
-    return m_teleportTargets[y][x];
-}
-
-void Map::setTeleportTarget(int x, int y, int targetX, int targetY) {
-    if (!isTeleportPad(x, y)) {
-        return;
-    }
-    m_teleportTargets[y][x] = {targetX, targetY};
-}
-
-bool Map::activateTeleport(int x, int y, Vec2& outDestination) {
-    if (!isTeleportPad(x, y)) {
-        return false;
-    }
-    
-    std::pair<int, int> target = getTeleportTarget(x, y);
-    if (target.first < 0 || target.first >= m_width || target.second < 0 || target.second >= m_height) {
-        return false;
-    }
-    
-    // Set the destination to the center of the target cell
-    outDestination.x = target.first + 0.5;
-    outDestination.y = target.second + 0.5;
-    return true;
-}
-
-// Create sectors based on the map layout
-void Map::createSectors() {
-    m_sectors.clear();
-    m_playerSector = 0;
-    m_visibleSectors.clear();
-    
-    // Initialize the cell to sector mapping
-    m_cellToSector.resize(m_height, std::vector<int>(m_width, -1));
-    
-    // For a simple implementation, we'll create sectors based on room layouts
-    // This is a simplified approach - a more advanced implementation would use
-    // flood fill or other algorithms to detect enclosed spaces
-    
-    // First, identify enclosed rooms by looking for walls
-    std::vector<std::vector<bool>> visited(m_width, std::vector<bool>(m_height, false));
-    int sectorId = 0;
-    
-    for (int x = 0; x < m_width; x++) {
-        for (int y = 0; y < m_height; y++) {
-            // Skip walls and already visited cells
-            if (getCell(x, y) == CellType::Wall || visited[x][y]) {
-                continue;
-            }
-            
-            // Found a new potential sector
-            Sector sector;
-            sector.id = sectorId++;
-            sector.isVisible = false;
-            
-            // Use flood fill to find all cells in this sector
-            std::queue<std::pair<int, int>> queue;
-            queue.push({x, y});
-            visited[x][y] = true;
-            
-            std::vector<std::pair<int, int>> sectorCells;
-            
-            while (!queue.empty()) {
-                auto [cx, cy] = queue.front();
-                queue.pop();
-                
-                sectorCells.push_back({cx, cy});
-                
-                // Map this cell to the current sector
-                m_cellToSector[cy][cx] = sector.id;
-                
-                // Check adjacent cells
-                const int dx[] = {0, 1, 0, -1};
-                const int dy[] = {-1, 0, 1, 0};
-                
-                for (int i = 0; i < 4; i++) {
-                    int nx = cx + dx[i];
-                    int ny = cy + dy[i];
-                    
-                    // Check bounds
-                    if (nx < 0 || nx >= m_width || ny < 0 || ny >= m_height) {
-                        continue;
-                    }
-                    
-                    // Skip walls and visited cells
-                    if (getCell(nx, ny) == CellType::Wall || visited[nx][ny]) {
-                        continue;
-                    }
-                    
-                    queue.push({nx, ny});
-                    visited[nx][ny] = true;
-                }
-            }
-            
-            // Create a simplified boundary for the sector
-            // For now, we'll just use the min/max coordinates to create a rectangle
-            int minX = m_width, minY = m_height, maxX = 0, maxY = 0;
-            
-            for (const auto& cell : sectorCells) {
-                minX = std::min(minX, cell.first);
-                minY = std::min(minY, cell.second);
-                maxX = std::max(maxX, cell.first);
-                maxY = std::max(maxY, cell.second);
-            }
-            
-            // Create vertices for the sector boundary (clockwise order)
-            sector.vertices.push_back(Vec2(minX, minY));
-            sector.vertices.push_back(Vec2(maxX, minY));
-            sector.vertices.push_back(Vec2(maxX, maxY));
-            sector.vertices.push_back(Vec2(minX, maxY));
-            
-            m_sectors.push_back(sector);
-        }
-    }
-    
-    // Find neighboring sectors
-    for (auto& sector : m_sectors) {
-        for (auto& otherSector : m_sectors) {
-            if (sector.id == otherSector.id) {
-                continue;
-            }
-            
-            // Check if sectors share a boundary
-            // This is a simplified approach - a more accurate approach would check
-            // if any edges of the sectors are adjacent
-            bool isNeighbor = false;
-            
-            for (const auto& v1 : sector.vertices) {
-                for (const auto& v2 : otherSector.vertices) {
-                    double dist = (v1 - v2).length();
-                    if (dist < 2.0) {  // If vertices are close, consider them neighbors
-                        isNeighbor = true;
-                        break;
-                    }
-                }
-                if (isNeighbor) break;
-            }
-            
-            if (isNeighbor) {
-                sector.neighbors.push_back(otherSector.id);
-            }
-        }
-    }
-    
-    std::cout << "Created " << m_sectors.size() << " sectors for visibility culling" << std::endl;
-}
-
-// Update sector visibility based on player position
-void Map::updateVisibility(const Vec2& playerPos) {
-    // Reset visibility
-    for (auto& sector : m_sectors) {
-        sector.isVisible = false;
-    }
-    
-    // Clear the visible sectors list
-    m_visibleSectors.clear();
-    
-    // Find the sector containing the player
-    m_playerSector = getSectorAt(playerPos.x, playerPos.y);
-    
-    if (m_playerSector < 0 || m_playerSector >= static_cast<int>(m_sectors.size())) {
-        // Player is not in any sector, make all sectors visible
-        for (size_t i = 0; i < m_sectors.size(); i++) {
-            m_sectors[i].isVisible = true;
-            m_visibleSectors.push_back(i);
-        }
-        return;
-    }
-    
-    // Mark the player's sector as visible
-    m_sectors[m_playerSector].isVisible = true;
-    m_visibleSectors.push_back(m_playerSector);
-    
-    // Mark neighboring sectors as visible
-    std::queue<int> queue;
-    std::vector<bool> visited(m_sectors.size(), false);
-    
-    queue.push(m_playerSector);
-    visited[m_playerSector] = true;
-    
-    // Only consider sectors up to a certain distance from the player
-    const int MAX_SECTOR_DISTANCE = 2;
-    int distance = 0;
-    
-    while (!queue.empty() && distance < MAX_SECTOR_DISTANCE) {
-        int size = queue.size();
-        
-        for (int i = 0; i < size; i++) {
-            int currentSector = queue.front();
-            queue.pop();
-            
-            // Mark as visible
-            m_sectors[currentSector].isVisible = true;
-            
-            // Add to visible sectors list if not already added
-            if (std::find(m_visibleSectors.begin(), m_visibleSectors.end(), currentSector) == m_visibleSectors.end()) {
-                m_visibleSectors.push_back(currentSector);
-            }
-            
-            // Add neighbors to queue
-            for (int neighborId : m_sectors[currentSector].neighbors) {
-                if (!visited[neighborId]) {
-                    queue.push(neighborId);
-                    visited[neighborId] = true;
-                }
-            }
+        // Viewpoint is on the back side
+        // First draw the front side (farther)
+        if (m_frontChild) {
+            m_frontChild->traverse(viewpoint, visibleWalls);
         }
         
-        distance++;
-    }
-}
-
-// Check if a sector is visible
-bool Map::isSectorVisible(int sectorId) const {
-    if (sectorId < 0 || sectorId >= static_cast<int>(m_sectors.size())) {
-        return true;  // If sector ID is invalid, assume it's visible
-    }
-    
-    return m_sectors[sectorId].isVisible;
-}
-
-// Get the sector at a specific position
-int Map::getSectorAt(double x, double y) const {
-    int cellX = static_cast<int>(x);
-    int cellY = static_cast<int>(y);
-    
-    // Check bounds
-    if (cellX < 0 || cellX >= m_width || cellY < 0 || cellY >= m_height) {
-        return -1;
-    }
-    
-    // Check if position is a wall
-    if (getCell(cellX, cellY) == CellType::Wall) {
-        return -1;
-    }
-    
-    // Find the sector containing this position
-    for (size_t i = 0; i < m_sectors.size(); i++) {
-        const auto& sector = m_sectors[i];
+        // Then draw the splitter
+        visibleWalls.push_back(m_splitter);
         
-        // Check if point is inside the sector boundary
-        // Using a simple point-in-polygon test for rectangular sectors
-        if (sector.vertices.size() >= 4) {
-            double minX = std::min(sector.vertices[0].x, std::min(sector.vertices[1].x, 
-                          std::min(sector.vertices[2].x, sector.vertices[3].x)));
-            double maxX = std::max(sector.vertices[0].x, std::max(sector.vertices[1].x, 
-                          std::max(sector.vertices[2].x, sector.vertices[3].x)));
-            double minY = std::min(sector.vertices[0].y, std::min(sector.vertices[1].y, 
-                          std::min(sector.vertices[2].y, sector.vertices[3].y)));
-            double maxY = std::max(sector.vertices[0].y, std::max(sector.vertices[1].y, 
-                          std::max(sector.vertices[2].y, sector.vertices[3].y)));
-            
-            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-                return i;
-            }
+        // Add other coplanar walls
+        visibleWalls.insert(visibleWalls.end(), m_coplanarWalls.begin(), m_coplanarWalls.end());
+        
+        // Finally draw the back side (closer)
+        if (m_backChild) {
+            m_backChild->traverse(viewpoint, visibleWalls);
+        }
+    }
+}
+
+std::pair<std::shared_ptr<Wall>, std::shared_ptr<Wall>> BSPNode::splitWall(
+    const std::shared_ptr<Wall>& wall) const
+{
+    // Default result (no split)
+    std::pair<std::shared_ptr<Wall>, std::shared_ptr<Wall>> result = {nullptr, nullptr};
+    
+    // If no splitter, return the wall unchanged
+    if (!m_splitter || !wall) {
+        result.first = wall;
+        return result;
+    }
+    
+    // Get wall and splitter info
+    Vec2 wallStart = wall->getStart();
+    Vec2 wallEnd = wall->getEnd();
+    Vec2 splitStart = m_splitter->getStart();
+    Vec2 splitDir = m_splitter->getDirection();
+    
+    // Calculate intersection point
+    double num = (wallStart.y - splitStart.y) * splitDir.x - (wallStart.x - splitStart.x) * splitDir.y;
+    double den = (wallEnd.x - wallStart.x) * splitDir.y - (wallEnd.y - wallStart.y) * splitDir.x;
+    
+    // Check if walls are parallel
+    if (std::abs(den) < EPSILON) {
+        result.first = wall;
+        return result;
+    }
+    
+    // Calculate intersection parameter
+    double t = num / den;
+    
+    // Check if intersection is within the wall segment
+    if (t <= EPSILON || t >= 1.0 - EPSILON) {
+        // No meaningful intersection, return the wall on the appropriate side
+        double side = m_splitter->pointSide(wallStart) + m_splitter->pointSide(wallEnd);
+        if (side > 0) {
+            result.first = wall;
+        } else {
+            result.second = wall;
+        }
+        return result;
+    }
+    
+    // Calculate intersection point
+    Vec2 intersection = Vec2(
+        wallStart.x + t * (wallEnd.x - wallStart.x),
+        wallStart.y + t * (wallEnd.y - wallStart.y)
+    );
+    
+    // Create two new walls
+    result.first = std::make_shared<Wall>(
+        wallStart, intersection, wall->getTextureId(), wall->getType()
+    );
+    result.second = std::make_shared<Wall>(
+        intersection, wallEnd, wall->getTextureId(), wall->getType()
+    );
+    
+    // Copy properties
+    result.first->setHeight(wall->getHeight());
+    result.first->setBottomOffset(wall->getBottomOffset());
+    result.first->setAdjoiningSector(wall->getAdjoiningSector());
+    
+    result.second->setHeight(wall->getHeight());
+    result.second->setBottomOffset(wall->getBottomOffset());
+    result.second->setAdjoiningSector(wall->getAdjoiningSector());
+    
+    return result;
+}
+
+std::shared_ptr<Wall> BSPNode::chooseSplitter(const std::vector<std::shared_ptr<Wall>>& walls) const
+{
+    if (walls.empty()) {
+        return nullptr;
+    }
+    
+    // Simple heuristic: just pick the first wall
+    // In a real BSP builder, you'd use a more sophisticated heuristic
+    return walls[0];
+}
+
+// BSP Tree implementation
+BSPTree::BSPTree() :
+    m_root(nullptr)
+{
+}
+
+bool BSPTree::build(const std::vector<std::shared_ptr<Sector>>& sectors)
+{
+    m_sectors = sectors;
+    
+    // Extract all walls from all sectors
+    std::vector<std::shared_ptr<Wall>> walls = extractWalls(sectors);
+    
+    // Build the BSP tree
+    m_root = std::make_unique<BSPNode>();
+    return m_root->build(walls);
+}
+
+std::vector<std::shared_ptr<Wall>> BSPTree::getVisibleWalls(const Vec2& viewpoint) const
+{
+    std::vector<std::shared_ptr<Wall>> visibleWalls;
+    
+    if (m_root) {
+        m_root->traverse(viewpoint, visibleWalls);
+    }
+    
+    return visibleWalls;
+}
+
+std::shared_ptr<Sector> BSPTree::findSectorContainingPoint(const Vec2& point) const
+{
+    // Simple linear search through all sectors
+    for (const auto& sector : m_sectors) {
+        if (sector->containsPoint(point)) {
+            return sector;
         }
     }
     
-    return -1;
+    return nullptr;
 }
 
-// Check if two positions are in the same sector
-bool Map::isInSameSector(double x1, double y1, double x2, double y2) const {
-    int sector1 = getSectorAt(x1, y1);
-    int sector2 = getSectorAt(x2, y2);
+std::vector<std::shared_ptr<Wall>> BSPTree::extractWalls(
+    const std::vector<std::shared_ptr<Sector>>& sectors) const
+{
+    std::vector<std::shared_ptr<Wall>> walls;
     
-    return (sector1 >= 0 && sector1 == sector2);
+    for (const auto& sector : sectors) {
+        const auto& sectorWalls = sector->getWalls();
+        walls.insert(walls.end(), sectorWalls.begin(), sectorWalls.end());
+    }
+    
+    return walls;
 }
 
-Map::~Map() {
-    // No dynamic memory to clean up
+// Map implementation
+Map::Map() :
+    m_bspTree(std::make_unique<BSPTree>()),
+    m_textureManager(nullptr)
+{
+}
+
+Map::~Map()
+{
+    // Clean up resources
+}
+
+bool Map::loadFromFile(const std::string& filename)
+{
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open map file: " << filename << std::endl;
+        return false;
+    }
+    
+    // Check file format
+    char header[4];
+    file.read(header, 4);
+    
+    if (header[0] == 'M' && header[1] == 'A' && header[2] == 'P') {
+        // Version 1 format
+        int version = header[3] - '0';
+        if (version == 1) {
+            return loadMapV1(file);
+        }
+    }
+    
+    std::cerr << "Unknown map format" << std::endl;
+    return false;
+}
+
+bool Map::saveToFile(const std::string& filename) const
+{
+    // Implement map saving (placeholder)
+    return false;
+}
+
+void Map::addSector(std::shared_ptr<Sector> sector)
+{
+    if (sector) {
+        m_sectors.push_back(sector);
+    }
+}
+
+bool Map::buildBSPTree()
+{
+    return m_bspTree->build(m_sectors);
+}
+
+std::vector<std::shared_ptr<Wall>> Map::getVisibleWalls(const Vec2& viewpoint) const
+{
+    return m_bspTree->getVisibleWalls(viewpoint);
+}
+
+std::shared_ptr<Sector> Map::findSectorContainingPoint(const Vec2& point) const
+{
+    return m_bspTree->findSectorContainingPoint(point);
+}
+
+Rect Map::getBounds() const
+{
+    if (m_sectors.empty()) {
+        return Rect();
+    }
+    
+    // Get bounds of first sector
+    Rect bounds = m_sectors[0]->getBounds();
+    
+    // Expand bounds to include all sectors
+    for (size_t i = 1; i < m_sectors.size(); ++i) {
+        Rect sectorBounds = m_sectors[i]->getBounds();
+        
+        // Update bounds
+        double minX = std::min(bounds.x, sectorBounds.x);
+        double minY = std::min(bounds.y, sectorBounds.y);
+        double maxX = std::max(bounds.x + bounds.width, sectorBounds.x + sectorBounds.width);
+        double maxY = std::max(bounds.y + bounds.height, sectorBounds.y + sectorBounds.height);
+        
+        bounds = Rect(minX, minY, maxX - minX, maxY - minY);
+    }
+    
+    return bounds;
+}
+
+bool Map::loadMapV1(std::ifstream& file)
+{
+    // Read map name
+    uint8_t nameLength;
+    file.read(reinterpret_cast<char*>(&nameLength), sizeof(nameLength));
+    
+    if (nameLength > 0) {
+        std::vector<char> nameBuffer(nameLength + 1, 0);
+        file.read(nameBuffer.data(), nameLength);
+        m_name = nameBuffer.data();
+    }
+    
+    // Read sector count
+    uint32_t sectorCount;
+    file.read(reinterpret_cast<char*>(&sectorCount), sizeof(sectorCount));
+    
+    // Read sectors
+    for (uint32_t i = 0; i < sectorCount; ++i) {
+        auto sector = std::make_shared<Sector>();
+        
+        // Read sector properties
+        uint32_t type;
+        double floorHeight, ceilingHeight;
+        uint32_t floorTexture, ceilingTexture;
+        double lightLevel;
+        
+        file.read(reinterpret_cast<char*>(&type), sizeof(type));
+        file.read(reinterpret_cast<char*>(&floorHeight), sizeof(floorHeight));
+        file.read(reinterpret_cast<char*>(&ceilingHeight), sizeof(ceilingHeight));
+        file.read(reinterpret_cast<char*>(&floorTexture), sizeof(floorTexture));
+        file.read(reinterpret_cast<char*>(&ceilingTexture), sizeof(ceilingTexture));
+        file.read(reinterpret_cast<char*>(&lightLevel), sizeof(lightLevel));
+        
+        sector->setType(static_cast<SectorType>(type));
+        sector->setFloorHeight(floorHeight);
+        sector->setCeilingHeight(ceilingHeight);
+        sector->setFloorTextureId(floorTexture);
+        sector->setCeilingTextureId(ceilingTexture);
+        sector->setLightLevel(lightLevel);
+        
+        // Read wall count
+        uint32_t wallCount;
+        file.read(reinterpret_cast<char*>(&wallCount), sizeof(wallCount));
+        
+        // Read walls
+        for (uint32_t j = 0; j < wallCount; ++j) {
+            double startX, startY, endX, endY;
+            uint32_t textureId, type;
+            
+            file.read(reinterpret_cast<char*>(&startX), sizeof(startX));
+            file.read(reinterpret_cast<char*>(&startY), sizeof(startY));
+            file.read(reinterpret_cast<char*>(&endX), sizeof(endX));
+            file.read(reinterpret_cast<char*>(&endY), sizeof(endY));
+            file.read(reinterpret_cast<char*>(&textureId), sizeof(textureId));
+            file.read(reinterpret_cast<char*>(&type), sizeof(type));
+            
+            auto wall = std::make_shared<Wall>(
+                Vec2(startX, startY),
+                Vec2(endX, endY),
+                textureId,
+                static_cast<WallType>(type)
+            );
+            
+            // Read optional properties
+            if (wall->getType() == WallType::PORTAL) {
+                uint32_t adjoiningSectorIndex;
+                file.read(reinterpret_cast<char*>(&adjoiningSectorIndex), sizeof(adjoiningSectorIndex));
+                
+                // Store adjoining sector index to resolve later
+                // In a real implementation, we'd need to resolve these after loading all sectors
+            }
+            
+            sector->addWall(wall);
+        }
+        
+        addSector(sector);
+    }
+    
+    // Build BSP tree
+    buildBSPTree();
+    
+    return true;
 } 

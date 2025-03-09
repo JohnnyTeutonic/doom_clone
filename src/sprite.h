@@ -2,240 +2,108 @@
 #define SPRITE_H
 
 #include "utils.h"
-#include "map.h"
+#include <memory>
 #include <string>
-#include <vector>
 
 // Forward declarations
-class TextureManager;
-class Player;  // Add forward declaration for Player
+class Sector;
+class Engine;
 
-// Different types of sprites
+// Sprite types
 enum class SpriteType {
-    Enemy,
-    Item,
-    Decoration,
-    Projectile,
-    ImpEnemy  // New Imp enemy type from Doom
+    STATIC,         // Static decoration
+    ENEMY,          // Enemy character
+    PICKUP,         // Item pickup
+    PROJECTILE,     // Projectile (bullet, rocket, etc.)
+    PARTICLE,       // Visual effect particle
+    EXPLOSION,      // Explosion effect
+    PLAYER_WEAPON   // Player's visible weapon
 };
 
-// Different types of items
-enum class ItemType {
-    None,
-    HealthSmall,     // +10 health (Health Bonus)
-    HealthMedium,    // +25 health (Medikit)
-    HealthLarge,     // +100 health (Soulsphere)
-    ArmorSmall,      // +5 armor (Armor Bonus)
-    ArmorMedium,     // +100 armor (Green Armor)
-    ArmorLarge,      // +200 armor (Blue Armor)
-    AmmoSmall,       // +5 ammo
-    AmmoMedium,      // +20 ammo
-    AmmoLarge,       // +100 ammo
-    WeaponShotgun,   // Shotgun pickup
-    WeaponChainsaw,  // Chainsaw pickup
-    WeaponRocket,    // Rocket Launcher pickup
-    WeaponPlasma,    // Plasma Gun pickup
-    PowerupBerserk,  // Berserk powerup
-    PowerupInvulnerability // Invulnerability powerup
+// Animation states
+enum class AnimationState {
+    IDLE,           // Standing still
+    MOVING,         // Moving
+    ATTACKING,      // Attacking
+    PAIN,           // Taking damage
+    DYING,          // Death animation
+    DEAD            // Dead (finished death animation)
 };
 
-// Different movement types for the Imp enemy
-enum class ImpMovementType {
-    Zigzag,    // Moves in a zigzag pattern
-    Teleport,  // Occasionally teleports short distances
-    Charge     // Charges directly at the player when in range
-};
-
+// Sprite class for entities in the game world
 class Sprite {
-private:
-    Vec2 m_position;       // Position in the world
-    Vec2 m_direction;      // Movement direction
-    double m_size;         // Size of the sprite
-    int m_textureId;       // Texture ID
-    SpriteType m_type;     // Type of sprite
-    bool m_isVisible;      // Is the sprite visible
-    bool m_isActive;       // Is the sprite active/alive
-    
-    // Health and damage
-    double m_health;       // Current health
-    double m_maxHealth;    // Maximum health
-    bool m_isDying;        // Is the sprite in death animation
-    double m_deathTimer;   // Timer for death animation
-    
-    // Movement properties
-    double m_moveSpeed;    // Movement speed
-    double m_turnSpeed;    // Turning speed
-    double m_moveTimer;    // Timer for movement changes
-    double m_moveDuration; // How long to move in current direction
-    
-    // For animated sprites
-    bool m_isAnimated;
-    int m_frameCount;
-    int m_currentFrame;
-    double m_animationSpeed;
-    double m_animationTimer;
-    
-    // Imp-specific properties
-    ImpMovementType m_impMovementType;  // Movement type for Imp enemies
-    double m_specialMoveTimer;          // Timer for special movement actions
-    double m_specialMoveCooldown;       // Cooldown between special moves
-    Vec2 m_lastPlayerPos;               // Last known player position for tracking
-    
-    // Item properties
-    ItemType m_itemType;   // Type of item (if this is an item)
-    
 public:
-    Sprite(double x, double y, double size, int textureId, SpriteType type);
+    Sprite(const Vec2& position, SpriteType type = SpriteType::STATIC);
+    virtual ~Sprite();
     
     // Update sprite state
-    void update(double deltaTime, const Map& map, const Vec2& playerPos);
-    
-    // Damage handling
-    void takeDamage(double damage);
-    bool isDead() const { return m_health <= 0 && !m_isDying; }
-    bool isDying() const { return m_isDying; }
-    double getHealth() const { return m_health; }
-    double getMaxHealth() const { return m_maxHealth; }
-
-
+    virtual void update(double deltaTime);
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
-    double getX() const { return m_position.x; }
-    double getY() const { return m_position.y; }
-    const Vec2& getDirection() const { return m_direction; }
-    double getSize() const { return m_size; }
-    int getWidth() const { return static_cast<int>(m_size * 64); }  // Assuming 64x64 texture
-    int getHeight() const { return static_cast<int>(m_size * 64); } // Assuming 64x64 texture
+    double getAngle() const { return m_angle; }
+    double getHeight() const { return m_height; }
+    double getWidth() const { return m_width; }
+    double getBottomZ() const { return m_bottomZ; }
+    double getTopZ() const { return m_bottomZ + m_height; }
     int getTextureId() const { return m_textureId; }
+    int getCurrentFrame() const { return m_currentFrame; }
     SpriteType getType() const { return m_type; }
-    bool isVisible() const { return m_isVisible; }
-    bool isActive() const { return m_isActive; }
+    bool isActive() const { return m_active; }
     
     // Setters
     void setPosition(const Vec2& position) { m_position = position; }
-    void setPosition(double x, double y) { m_position = Vec2(x, y); }
-    void setDirection(const Vec2& direction) { m_direction = direction; }
-    void setSize(double size) { m_size = size; }
-    void setTextureId(int textureId) { m_textureId = textureId; }
-    void setVisible(bool visible) { m_isVisible = visible; }
-    void setActive(bool active) { m_isActive = active; }
-    void setMoveSpeed(double speed) { m_moveSpeed = speed; }
-    void setTurnSpeed(double speed) { m_turnSpeed = speed; }
-    void setMoveDuration(double duration) { m_moveDuration = duration; }
-    void setHealth(double health) { 
-        m_health = health; 
-        // Update maxHealth if the new health is higher
-        if (health > m_maxHealth) {
-            m_maxHealth = health;
-        }
-    }
+    void setAngle(double angle) { m_angle = angle; }
+    void setHeight(double height) { m_height = height; }
+    void setWidth(double width) { m_width = width; }
+    void setBottomZ(double z) { m_bottomZ = z; }
+    void setTextureId(int id) { m_textureId = id; }
+    void setCurrentFrame(int frame) { m_currentFrame = frame; }
+    void setActive(bool active) { m_active = active; }
     
-    void setMaxHealth(double maxHealth) {
-        m_maxHealth = maxHealth;
-        // Cap current health to max health
-        if (m_health > m_maxHealth) {
-            m_health = m_maxHealth;
-        }
-    }
+    // Animation control
+    void setAnimated(bool animated, int frameCount = 1, double speed = 1.0);
+    void setAnimationState(AnimationState state);
+    AnimationState getAnimationState() const { return m_animState; }
     
-    // Animation methods
-    void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);
-    int getCurrentFrame() const { return m_currentFrame; }
+    // Set current sector - sprites need to know what sector they're in for collision and rendering
+    void setCurrentSector(Sector* sector) { m_currentSector = sector; }
+    Sector* getCurrentSector() const { return m_currentSector; }
     
-    // Imp-specific methods
-    void setImpMovementType(ImpMovementType type) { m_impMovementType = type; }
-    ImpMovementType getImpMovementType() const { return m_impMovementType; }
+    // Damage handling
+    virtual void takeDamage(int damage, const Vec2& source);
+    bool isDead() const { return m_health <= 0; }
+    int getHealth() const { return m_health; }
+    void setHealth(int health) { m_health = health; }
     
-    // Item methods
-    ItemType getItemType() const { return m_itemType; }
-    void setItemType(ItemType type) { m_itemType = type; }
+    // Set engine reference
+    void setEngine(Engine* engine) { m_engine = engine; }
     
-    // Apply item effect to player
-    void applyItemEffect(Player* player);
+protected:
+    Vec2 m_position;                // Position in world
+    double m_angle;                 // Facing angle
+    double m_height;                // Height of sprite
+    double m_width;                 // Width of sprite
+    double m_bottomZ;               // Z-coordinate of bottom of sprite
+    int m_textureId;                // Base texture ID
+    int m_currentFrame;             // Current animation frame
+    int m_frameCount;               // Total frames in animation
+    double m_animationTimer;        // Timer for animation
+    double m_animationSpeed;        // Speed of animation (frames per second)
+    bool m_isAnimated;              // Whether this sprite has animation
+    SpriteType m_type;              // Type of sprite
+    AnimationState m_animState;     // Current animation state
+    bool m_active;                  // Whether sprite is active
+    int m_health;                   // Health points
+    double m_deathTimer;            // Timer for death animation
+    Sector* m_currentSector;        // Current sector the sprite is in
+    Engine* m_engine;               // Reference to the engine
     
-private:
-    // AI methods
-    void updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
-    void updateImpBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
-    void changeDirection(const Map& map);
-    bool canMoveTo(const Vec2& newPos, const Map& map) const;
-    void updateDeathAnimation(double deltaTime);
+    // Update animation frames
+    virtual void updateAnimation(double deltaTime);
     
-    // Imp movement pattern implementations
-    void moveZigzag(double deltaTime, const Map& map, const Vec2& playerPos);
-    void moveTeleport(double deltaTime, const Map& map, const Vec2& playerPos);
-    void moveCharge(double deltaTime, const Map& map, const Vec2& playerPos);
-};
-
-class SpriteManager {
-private:
-    std::vector<Sprite> m_sprites;
-    const TextureManager* m_textureManager;
-    
-    // Singleton instance
-    static SpriteManager* s_instance;
-    
-    // Make constructor private for singleton pattern
-    explicit SpriteManager(const TextureManager* textureManager);
-    
-public:
-    // Delete copy constructor and assignment operator
-    SpriteManager(const SpriteManager&) = delete;
-    SpriteManager& operator=(const SpriteManager&) = delete;
-    
-    ~SpriteManager();
-    
-    // Singleton access - returns the instance or creates it if needed
-    static SpriteManager* getInstance() { 
-        return s_instance; 
-    }
-    
-    // Properly initialize the singleton - should be called once at startup
-    static SpriteManager* initInstance(const TextureManager* textureManager) {
-        if (!s_instance) {
-            s_instance = new SpriteManager(textureManager);
-        }
-        return s_instance;
-    }
-    
-    // Set instance method - use with caution, only for special circumstances
-    static void setInstance(SpriteManager* instance) { 
-        if (s_instance && s_instance != instance) {
-            delete s_instance; // Clean up old instance to prevent memory leaks
-        }
-        s_instance = instance; 
-    }
-    
-    // Add a new sprite and return its ID
-    int addSprite(double x, double y, double size, int textureId, SpriteType type);
-    
-    // Remove a sprite by ID
-    void removeSprite(int id);
-    
-    // Clear all sprites
-    void clearSprites() { m_sprites.clear(); }
-    
-    // Update all sprites
-    void update(double deltaTime, const Map& map, const Vec2& playerPos);
-    
-    // Get a sprite by ID
-    Sprite* getSprite(int id);
-    
-    // Get all sprites
-    std::vector<Sprite*> getSprites() const {
-        std::vector<Sprite*> spritePointers;
-        for (size_t i = 0; i < m_sprites.size(); ++i) {
-            spritePointers.push_back(const_cast<Sprite*>(&m_sprites[i]));
-        }
-        return spritePointers;
-    }
-    
-    // Get active sprites (for rendering optimization)
-    std::vector<Sprite*> getActiveSprites();
-    
-    // Sort sprites by distance to player (for rendering)
-    void sortSpritesByDistance(const Vec2& playerPos);
+    // Update death animation
+    virtual void updateDeathAnimation(double deltaTime);
 };
 
 #endif // SPRITE_H 
