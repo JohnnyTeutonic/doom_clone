@@ -571,4 +571,277 @@ bool Map::loadMapV1(std::ifstream& file)
     buildBSPTree();
     
     return true;
+}
+
+std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
+{
+    // Create a proper DOOM-like map layout
+    std::vector<Wall> walls;
+    
+    // Player starting position is the reference point
+    Vec2 pos = playerPosition;
+    
+    // Create a series of interconnected rooms with more complex architecture
+    
+    // ========================
+    // STARTING ROOM (Central)
+    // ========================
+    
+    // Define the central room where player starts - INCREASED SIZE
+    double roomSize = 12.0;  // Increased from 8.0
+    double wallHeight = 4.0;
+    
+    // Starting room walls (slightly offset from player start position)
+    // Use texture 1 (metal panels) for the starting room
+    walls.emplace_back(Vec2(pos.x - roomSize, pos.y - roomSize), Vec2(pos.x + roomSize, pos.y - roomSize), 1); // North wall
+    walls.emplace_back(Vec2(pos.x + roomSize, pos.y - roomSize), Vec2(pos.x + roomSize, pos.y + roomSize), 1); // East wall
+    walls.emplace_back(Vec2(pos.x + roomSize, pos.y + roomSize), Vec2(pos.x - roomSize, pos.y + roomSize), 1); // South wall
+    walls.emplace_back(Vec2(pos.x - roomSize, pos.y + roomSize), Vec2(pos.x - roomSize, pos.y - roomSize), 1); // West wall
+    
+    // ========================
+    // NORTH CORRIDOR & ROOMS
+    // ========================
+    
+    // North corridor - WIDENED
+    double corridorWidth = 5.0;  // Increased from 3.0
+    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y - roomSize), Vec2(pos.x - corridorWidth, pos.y - roomSize - 8), 0); // Left wall
+    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y - roomSize), Vec2(pos.x + corridorWidth, pos.y - roomSize - 8), 0); // Right wall
+    
+    // North room (stone texture with blood - texture 0)
+    double northRoomY = pos.y - roomSize - 16;  // Further away for better visibility
+    
+    // Create north room with a circular design (octagonal approximation)
+    double northRadius = roomSize + 4;  // Larger radius
+    int numSegments = 8;
+    Vec2 northCenter(pos.x, northRoomY);
+    
+    for (int i = 0; i < numSegments; i++) {
+        double angle1 = i * 2.0 * 3.14159265358979323846 / numSegments;
+        double angle2 = ((i + 1) % numSegments) * 2.0 * 3.14159265358979323846 / numSegments;
+        
+        Vec2 p1 = northCenter + Vec2(northRadius * cos(angle1), northRadius * sin(angle1));
+        Vec2 p2 = northCenter + Vec2(northRadius * cos(angle2), northRadius * sin(angle2));
+        
+        // Skip the segment where the corridor connects
+        if (!(i == 6 || i == 7)) {
+            walls.emplace_back(p1, p2, 0);
+        }
+    }
+    
+    // Connect corridor to the octagonal room
+    walls.emplace_back(
+        Vec2(pos.x - corridorWidth, pos.y - roomSize - 8),
+        Vec2(northCenter.x - northRadius * cos(7 * 2.0 * 3.14159265358979323846 / numSegments), 
+             northCenter.y - northRadius * sin(7 * 2.0 * 3.14159265358979323846 / numSegments)), 0);
+             
+    walls.emplace_back(
+        Vec2(pos.x + corridorWidth, pos.y - roomSize - 8),
+        Vec2(northCenter.x - northRadius * cos(6 * 2.0 * 3.14159265358979323846 / numSegments), 
+             northCenter.y - northRadius * sin(6 * 2.0 * 3.14159265358979323846 / numSegments)), 0);
+    
+    // Add pillars in north room (arranged in a circle) - MADE FEWER AND SMALLER
+    double pillarSize = 0.8;  // Smaller pillars
+    double pillarRadius = northRadius * 0.6;
+    int numPillars = 4;  // Fewer pillars
+    
+    for (int i = 0; i < numPillars; i++) {
+        double angle = i * 2.0 * 3.14159265358979323846 / numPillars;
+        Vec2 pillarCenter = northCenter + Vec2(pillarRadius * cos(angle), pillarRadius * sin(angle));
+        
+        walls.emplace_back(Vec2(pillarCenter.x - pillarSize, pillarCenter.y - pillarSize), 
+                            Vec2(pillarCenter.x + pillarSize, pillarCenter.y - pillarSize), 3);
+        walls.emplace_back(Vec2(pillarCenter.x + pillarSize, pillarCenter.y - pillarSize), 
+                            Vec2(pillarCenter.x + pillarSize, pillarCenter.y + pillarSize), 3);
+        walls.emplace_back(Vec2(pillarCenter.x + pillarSize, pillarCenter.y + pillarSize), 
+                            Vec2(pillarCenter.x - pillarSize, pillarCenter.y + pillarSize), 3);
+        walls.emplace_back(Vec2(pillarCenter.x - pillarSize, pillarCenter.y + pillarSize), 
+                            Vec2(pillarCenter.x - pillarSize, pillarCenter.y - pillarSize), 3);
+    }
+    
+    // ========================
+    // EAST CORRIDOR & ROOM
+    // ========================
+    
+    // East corridor - WIDENED
+    walls.emplace_back(Vec2(pos.x + roomSize, pos.y - corridorWidth), Vec2(pos.x + roomSize + 8, pos.y - corridorWidth), 2); // North wall
+    walls.emplace_back(Vec2(pos.x + roomSize, pos.y + corridorWidth), Vec2(pos.x + roomSize + 8, pos.y + corridorWidth), 2); // South wall
+    
+    // East room (flesh texture - texture 2) - maze-like structure with WIDER PATHS
+    double eastRoomX = pos.x + roomSize + 16;  // Further away for better visibility
+    double mazeSize = roomSize + 4;  // Larger maze
+    
+    // Main room boundaries
+    walls.emplace_back(Vec2(eastRoomX - mazeSize, pos.y - mazeSize), Vec2(eastRoomX + mazeSize, pos.y - mazeSize), 2); // North wall
+    walls.emplace_back(Vec2(eastRoomX + mazeSize, pos.y - mazeSize), Vec2(eastRoomX + mazeSize, pos.y + mazeSize), 2); // East wall
+    walls.emplace_back(Vec2(eastRoomX + mazeSize, pos.y + mazeSize), Vec2(eastRoomX - mazeSize, pos.y + mazeSize), 2); // South wall
+    walls.emplace_back(Vec2(eastRoomX - mazeSize, pos.y + mazeSize), Vec2(eastRoomX - mazeSize, pos.y + corridorWidth), 2); // West wall segment
+    walls.emplace_back(Vec2(eastRoomX - mazeSize, pos.y - corridorWidth), Vec2(eastRoomX - mazeSize, pos.y - mazeSize), 2); // West wall segment
+    
+    // Connect corridor to main room
+    walls.emplace_back(Vec2(pos.x + roomSize + 8, pos.y - corridorWidth), Vec2(eastRoomX - mazeSize, pos.y - corridorWidth), 2);
+    walls.emplace_back(Vec2(pos.x + roomSize + 8, pos.y + corridorWidth), Vec2(eastRoomX - mazeSize, pos.y + corridorWidth), 2);
+    
+    // Create a SIMPLIFIED maze-like structure with wider paths
+    double mazeUnit = mazeSize / 2.5;  // Wider units
+    
+    // Horizontal maze segments - FEWER WALLS
+    walls.emplace_back(Vec2(eastRoomX - mazeSize + mazeUnit, pos.y - mazeSize + mazeUnit), 
+                        Vec2(eastRoomX + mazeSize - mazeUnit, pos.y - mazeSize + mazeUnit), 2);
+                        
+    walls.emplace_back(Vec2(eastRoomX, pos.y), 
+                        Vec2(eastRoomX + mazeSize - mazeUnit, pos.y), 2);
+    
+    // Vertical maze segments - FEWER WALLS
+    walls.emplace_back(Vec2(eastRoomX - mazeSize + mazeUnit, pos.y - mazeSize), 
+                        Vec2(eastRoomX - mazeSize + mazeUnit, pos.y), 2);
+                        
+    walls.emplace_back(Vec2(eastRoomX + mazeSize - mazeUnit, pos.y - mazeSize), 
+                        Vec2(eastRoomX + mazeSize - mazeUnit, pos.y + mazeSize), 2);
+    
+    // ========================
+    // SOUTH CORRIDOR & ROOM
+    // ========================
+    
+    // South corridor - WIDENED
+    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y + roomSize), Vec2(pos.x - corridorWidth, pos.y + roomSize + 8), 3); // Left wall
+    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y + roomSize), Vec2(pos.x + corridorWidth, pos.y + roomSize + 8), 3); // Right wall
+    
+    // South room (hellish metal with runes - texture 3) - create a star chamber
+    double southRoomY = pos.y + roomSize + 16;  // Further away for better visibility
+    double starRadius = roomSize + 4;  // Larger radius
+    Vec2 southCenter(pos.x, southRoomY);
+    
+    // Create star-shaped room with 5 points
+    int numPoints = 5;
+    double innerRadius = starRadius * 0.6;  // Less dramatic star points for easier navigation
+    
+    std::vector<Vec2> starPoints;
+    for (int i = 0; i < numPoints * 2; i++) {
+        double angle = i * 3.14159265358979323846 / numPoints;
+        double radius = (i % 2 == 0) ? starRadius : innerRadius;
+        starPoints.push_back(southCenter + Vec2(radius * cos(angle), radius * sin(angle)));
+    }
+    
+    // Create star walls, but leave an opening for the corridor
+    for (int i = 0; i < numPoints * 2; i++) {
+        int nextIdx = (i + 1) % (numPoints * 2);
+        
+        // Skip the segment where the corridor connects (top of the star)
+        if (!(i == 9 && nextIdx == 0) && !(i == 0 && nextIdx == 1)) {
+            walls.emplace_back(starPoints[i], starPoints[nextIdx], 3);
+        }
+    }
+    
+    // Connect corridor to star room
+    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y + roomSize + 8), starPoints[9], 3);
+    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y + roomSize + 8), starPoints[0], 3);
+    
+    // Add a pentagram in the center of the south room
+    double pentRadius = starRadius * 0.4;  // Larger pentagram
+    for (int i = 0; i < 5; i++) {
+        double angle1 = i * 2.0 * 3.14159265358979323846 / 5.0;
+        double angle2 = ((i + 2) % 5) * 2.0 * 3.14159265358979323846 / 5.0;
+        
+        Vec2 p1(southCenter.x + pentRadius * cos(angle1), southCenter.y + pentRadius * sin(angle1));
+        Vec2 p2(southCenter.x + pentRadius * cos(angle2), southCenter.y + pentRadius * sin(angle2));
+        
+        walls.emplace_back(p1, p2, 3);
+    }
+    
+    // ========================
+    // WEST CORRIDOR & ROOM
+    // ========================
+    
+    // West corridor - WIDENED
+    walls.emplace_back(Vec2(pos.x - roomSize, pos.y - corridorWidth), Vec2(pos.x - roomSize - 8, pos.y - corridorWidth), 1); // North wall
+    walls.emplace_back(Vec2(pos.x - roomSize, pos.y + corridorWidth), Vec2(pos.x - roomSize - 8, pos.y + corridorWidth), 1); // South wall
+    
+    // West room (metal panels - texture 1) - create a room with columns but FEWER and SMALLER
+    double westRoomX = pos.x - roomSize - 16;  // Further away for better visibility
+    double westRoomSize = roomSize + 4;  // Larger room
+    
+    // Main room boundaries
+    walls.emplace_back(Vec2(westRoomX - westRoomSize, pos.y - westRoomSize), Vec2(westRoomX + westRoomSize, pos.y - westRoomSize), 1); // North wall
+    walls.emplace_back(Vec2(westRoomX + westRoomSize, pos.y - westRoomSize), Vec2(westRoomX + westRoomSize, pos.y - corridorWidth), 1); // East wall segment
+    walls.emplace_back(Vec2(westRoomX + westRoomSize, pos.y + corridorWidth), Vec2(westRoomX + westRoomSize, pos.y + westRoomSize), 1); // East wall segment
+    walls.emplace_back(Vec2(westRoomX + westRoomSize, pos.y + westRoomSize), Vec2(westRoomX - westRoomSize, pos.y + westRoomSize), 1); // South wall
+    walls.emplace_back(Vec2(westRoomX - westRoomSize, pos.y + westRoomSize), Vec2(westRoomX - westRoomSize, pos.y - westRoomSize), 1); // West wall
+    
+    // Connect corridor to main room
+    walls.emplace_back(Vec2(pos.x - roomSize - 8, pos.y - corridorWidth), Vec2(westRoomX + westRoomSize, pos.y - corridorWidth), 1);
+    walls.emplace_back(Vec2(pos.x - roomSize - 8, pos.y + corridorWidth), Vec2(westRoomX + westRoomSize, pos.y + corridorWidth), 1);
+    
+    // Create FEWER columns in a grid pattern
+    int numRows = 2;
+    int numCols = 2;
+    double columnSize = 0.8;  // Smaller columns
+    double spaceX = westRoomSize * 1.8 / (numCols + 1);
+    double spaceY = westRoomSize * 1.8 / (numRows + 1);
+    
+    for (int row = 0; row < numRows; row++) {
+        for (int col = 0; col < numCols; col++) {
+            // Calculate column center
+            Vec2 columnCenter(
+                westRoomX - westRoomSize + spaceX * (col + 1),
+                pos.y - westRoomSize + spaceY * (row + 1)
+            );
+            
+            // Draw column (4 walls making a square)
+            walls.emplace_back(Vec2(columnCenter.x - columnSize, columnCenter.y - columnSize), 
+                                Vec2(columnCenter.x + columnSize, columnCenter.y - columnSize), 1);
+            walls.emplace_back(Vec2(columnCenter.x + columnSize, columnCenter.y - columnSize), 
+                                Vec2(columnCenter.x + columnSize, columnCenter.y + columnSize), 1);
+            walls.emplace_back(Vec2(columnCenter.x + columnSize, columnCenter.y + columnSize), 
+                                Vec2(columnCenter.x - columnSize, columnCenter.y + columnSize), 1);
+            walls.emplace_back(Vec2(columnCenter.x - columnSize, columnCenter.y + columnSize), 
+                                Vec2(columnCenter.x - columnSize, columnCenter.y - columnSize), 1);
+        }
+    }
+    
+    // ========================
+    // ADDITIONAL DETAILS FOR CENTRAL ROOM - SIMPLIFIED FOR BETTER NAVIGATION
+    // ========================
+    
+    // Create a more visible central platform in the starting room
+    double platformSize = 3.0;  // Larger platform
+    Vec2 platCenter = pos;
+    
+    walls.emplace_back(Vec2(platCenter.x - platformSize, platCenter.y - platformSize), 
+                        Vec2(platCenter.x + platformSize, platCenter.y - platformSize), 0);
+    walls.emplace_back(Vec2(platCenter.x + platformSize, platCenter.y - platformSize), 
+                        Vec2(platCenter.x + platformSize, platCenter.y + platformSize), 0);
+    walls.emplace_back(Vec2(platCenter.x + platformSize, platCenter.y + platformSize), 
+                        Vec2(platCenter.x - platformSize, platCenter.y + platformSize), 0);
+    walls.emplace_back(Vec2(platCenter.x - platformSize, platCenter.y + platformSize), 
+                        Vec2(platCenter.x - platformSize, platCenter.y - platformSize), 0);
+    
+    // Add visible markers (simple short walls) pointing to each corridor
+    double markerSize = 2.0;
+    double markerDistance = roomSize * 0.6;
+    
+    // North marker (pointing to north corridor)
+    walls.emplace_back(Vec2(pos.x - markerSize, pos.y - markerDistance), 
+                       Vec2(pos.x, pos.y - markerDistance - markerSize), 2);
+    walls.emplace_back(Vec2(pos.x, pos.y - markerDistance - markerSize), 
+                       Vec2(pos.x + markerSize, pos.y - markerDistance), 2);
+    
+    // East marker (pointing to east corridor)
+    walls.emplace_back(Vec2(pos.x + markerDistance, pos.y - markerSize), 
+                       Vec2(pos.x + markerDistance + markerSize, pos.y), 2);
+    walls.emplace_back(Vec2(pos.x + markerDistance + markerSize, pos.y), 
+                       Vec2(pos.x + markerDistance, pos.y + markerSize), 2);
+    
+    // South marker (pointing to south corridor)
+    walls.emplace_back(Vec2(pos.x - markerSize, pos.y + markerDistance), 
+                       Vec2(pos.x, pos.y + markerDistance + markerSize), 2);
+    walls.emplace_back(Vec2(pos.x, pos.y + markerDistance + markerSize), 
+                       Vec2(pos.x + markerSize, pos.y + markerDistance), 2);
+    
+    // West marker (pointing to west corridor)
+    walls.emplace_back(Vec2(pos.x - markerDistance, pos.y - markerSize), 
+                       Vec2(pos.x - markerDistance - markerSize, pos.y), 2);
+    walls.emplace_back(Vec2(pos.x - markerDistance - markerSize, pos.y), 
+                       Vec2(pos.x - markerDistance, pos.y + markerSize), 2);
+    
+    return walls;
 } 

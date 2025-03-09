@@ -200,15 +200,16 @@ void Renderer::renderMap(Map* map, Camera* camera)
     // Render skybox first (furthest away)
     renderSkybox(camera);
     
-    // Get visible walls from BSP tree
+    // REVERTING TO BSP-BASED RENDERING:
+    // Get visible walls using BSP tree based on camera position
     std::vector<std::shared_ptr<Wall>> visibleWalls = map->getVisibleWalls(camera->getPosition());
     
     // DEBUG: Make sure we actually have walls
     static int frameCount = 0;
     frameCount++;
     
-    // Process visible walls to generate spans
-    processVisibleWalls(map, camera, visibleWalls);
+    // Process walls to generate spans
+    processVisibleWalls(visibleWalls, camera);
     
     // DEBUG: Verify spans are being created
     if (frameCount % 60 == 0) {  // Print only once per second
@@ -217,7 +218,7 @@ void Renderer::renderMap(Map* map, Camera* camera)
     
     // Render all spans in the correct order:
     // 1. Draw floor first (which checks z-buffer to avoid overwriting walls)
-    drawFloorCeilingSpans();
+    drawFloorCeilingSpans(camera);
     
     // 2. Draw walls (sorted back to front)
     drawWallSpans();
@@ -295,7 +296,7 @@ void Renderer::renderSkybox(Camera* camera)
     }
 }
 
-void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<std::shared_ptr<Wall>>& visibleWalls) 
+void Renderer::processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& walls, Camera* camera)
 {
     if (!camera) return;
     
@@ -308,9 +309,7 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
     double aspectRatio = static_cast<double>(m_screenWidth) / m_screenHeight;
     
     // Process each visible wall
-    for (const auto& wall : visibleWalls) {
-        if (!wall) continue;
-        
+    for (const auto& wall : walls) {
         // Get wall points in world space
         Vec2 start = wall->getStart();
         Vec2 end = wall->getEnd();
@@ -333,9 +332,9 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
         
         // Skip walls behind the camera
         if (rotStartX < 0.1 && rotEndX < 0.1) {
-                continue;
-            }
-            
+            continue;
+        }
+        
         // Clip walls that are partially behind the camera
         if (rotStartX < 0.1) {
             // Interpolate to find the intersection with the near plane
@@ -359,28 +358,14 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
             continue;
         }
         
-        // Determine which sector the wall belongs to
-        Sector* sector = wall->getAdjoiningSector();
-        // If it's not a portal wall or the adjoining sector is null, use current sector
-        if (!wall->isPortal() || !sector) {
-            // Try to find the containing sector
-            auto containingSector = map->findSectorContainingPoint((start + end) * 0.5);
-            if (containingSector) {
-                sector = containingSector.get();
-            }
-        }
+        // Use default sector values since we don't have sector information in our simple map
+        double floorHeight = 0.0;
+        double ceilingHeight = 4.0;
+        double lightLevel = 1.0;
         
-        if (!sector) continue; // Skip if we can't determine the sector
-        
-        // Get wall height information
-        double wallHeight = wall->getHeight();
-        if (wallHeight <= 0.0) {
-            // If wall doesn't have its own height, use sector ceiling height
-            wallHeight = sector->getCeilingHeight() - sector->getFloorHeight();
-        }
-        
-        // Calculate lower and upper bounds of wall
-        double bottomZ = sector->getFloorHeight() + wall->getBottomOffset();
+        // Calculate wall height (for now, all walls have the same height)
+        double wallHeight = 4.0;
+        double bottomZ = floorHeight;
         double topZ = bottomZ + wallHeight;
         
         // Calculate wall distances for perspective correction
@@ -407,7 +392,7 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
         screenEndX = std::min(m_screenWidth - 1, screenEndX);
         
         // Calculate texture mapping parameters
-        double wallLength = wall->getLength();
+        double wallLength = Vec2(end - start).length();
         double textureScaleX = 1.0 / wallLength;
         
         // Wall direction for texture mapping
@@ -447,12 +432,13 @@ void Renderer::processVisibleWalls(Map* map, Camera* camera, const std::vector<s
             span.z1 = topZ;
             span.z2 = bottomZ;
             span.u = u;
+            span.texU = u; // Set texU as well for newer implementations
             span.distance = distance;
             span.textureId = wall->getTextureId();
-            span.isPortal = wall->isPortal();
-            span.lightLevel = sector->getLightLevel();
-            span.sector = sector;
-            span.wall = wall.get();
+            span.isPortal = false; // Simple map doesn't have portals
+            span.lightLevel = lightLevel;
+            span.sector = nullptr; // No sector info in simple map
+            span.wall = nullptr; // No wall pointer needed
             
             // Add to wall spans for rendering
             m_wallSpans.push_back(span);
@@ -666,11 +652,7 @@ void Renderer::drawWallSpans()
             
             // Apply minimal shading to preserve texture visibility
             double fogFactor = std::max(0.7, 1.0 - span.distance / 30.0);
-            Color finalColor = Color(
-                static_cast<int>(wallColor.r * fogFactor),
-                static_cast<int>(wallColor.g * fogFactor),
-                static_cast<int>(wallColor.b * fogFactor)
-            );
+            Color finalColor = Color::lerp(wallColor, Color(0, 0, 0), static_cast<float>(1.0 - fogFactor));
             
             // Set in Z-buffer and draw
             int index = y * m_screenWidth + span.x;
@@ -685,92 +667,83 @@ void Renderer::drawWallSpans()
     }
 }
 
-void Renderer::drawFloorCeilingSpans() 
+void Renderer::drawFloorCeilingSpans(Camera* camera)
 {
-    int horizonY = m_screenHeight / 2; // Middle of the screen is the horizon
-
-    // Draw ceiling (top half, below skybox)
-    for (int y = horizonY - 1; y >= horizonY / 2; y--) {
-        // Calculate ceiling distance factor - darker closer to horizon, lighter at top
-        double t = 1.0 - (static_cast<double>(horizonY - y) / (horizonY / 2.0));
-        
-        // Calculate distance for the Z-buffer
-        double distanceMultiplier = 1.5;
-        double distance = m_renderDistance * distanceMultiplier;
-        
-        // Get ceiling tile size (perspective effect)
-        int perspectiveCeilingTileSize = static_cast<int>(40 + 20 * t);
-        
-        for (int x = 0; x < m_screenWidth; x++) {
-            // Direction from center of screen
-            double dirX = (x - m_screenWidth / 2.0) / (m_screenWidth / 2.0);
-            
-            // Adjust coordinates based on perspective
-            int ceilingX = static_cast<int>(x + dirX * (1.0 - t) * m_screenWidth * 0.8);
-            int ceilingY = static_cast<int>(y - (1.0 - t) * m_screenHeight * 0.4);
-            
-            // Get the DOOM-like ceiling color
-            Color ceilingColor = getDoomCeilingColor(ceilingX, ceilingY, perspectiveCeilingTileSize);
-            
-            // Apply distance fog effect
-            double fogFactor = t * 0.8 + 0.2;
-            ceilingColor = Color::lerp(Color(5, 2, 0), ceilingColor, fogFactor);
-            
-            // Set in the Z-buffer
-            int index = y * m_screenWidth + x;
-            
-            // Only draw the ceiling if no wall spans have been drawn here
-            if (index >= 0 && index < m_screenWidth * m_screenHeight) {
-                if (m_zBuffer[index] == std::numeric_limits<double>::max()) {
-                    m_zBuffer[index] = distance;
-                    setPixel(x, y, ceilingColor);
-                }
-            }
-        }
-    }
-
-    // Draw floor (bottom half)
+    // Render floor and ceiling with DOOM-style textures
+    const int tileSize = 32; // Size of floor tiles in world units
+    double cameraHeight = 0.6; // Camera height (eye level)
+    
+    // Calculate the horizon line (vertical center of the screen)
+    int horizonY = m_screenHeight / 2;
+    
+    // Render floor (bottom half of screen)
     for (int y = horizonY; y < m_screenHeight; y++) {
-        // Calculate floor distance factor - darker farther away, lighter closer
-        double t = 1.0 - (static_cast<double>(y - horizonY) / horizonY);
+        // Calculate position relative to horizon (0 at horizon, 1 at bottom of screen)
+        double relativeY = (y - horizonY) / static_cast<double>(m_screenHeight - horizonY);
         
-        // Calculate distance for the Z-buffer
-        // Fixed distance for floor to ensure it's always behind walls
-        double distanceMultiplier = 1.5; // Ensure floor is further than walls
-        double distance = m_renderDistance * distanceMultiplier;
+        // Apply DOOM-like perspective for floor
+        // This formula creates the classic DOOM floor perspective with correct depth
+        double rowDistance = cameraHeight / (2.0 * relativeY - 1.0 + 1e-5); // Add small epsilon to avoid division by zero
         
-        // Get floor tile size (larger tiles in the distance, smaller when close)
-        // This creates the perspective effect for the floor texture
-        int perspectiveFloorTileSize = static_cast<int>(40 + 20 * t); // Tile size changes with distance
+        // Distance factor for fog effect
+        double distFactor = std::min(1.0, rowDistance / 20.0);
         
         for (int x = 0; x < m_screenWidth; x++) {
-            // Calculate floor coordinates with perspective correction
-            // This creates the 3D floor effect as if looking down at floor tiles
+            // Skip if a wall has already been drawn here (check z-buffer)
+            if (m_zBuffer[y * m_screenWidth + x] < std::numeric_limits<double>::max()) {
+                continue;
+            }
             
-            // Direction from center of screen
-            double dirX = (x - m_screenWidth / 2.0) / (m_screenWidth / 2.0);
+            // Calculate ray direction for this pixel
+            double rayRatio = (2.0 * x / static_cast<double>(m_screenWidth) - 1.0); // -1 to 1 across screen width
+            Vec2 camDir = camera->getDirection();
+            Vec2 camRight = camera->getRight();
             
-            // Adjust coordinates based on perspective (closer to horizon = further away)
-            int floorX = static_cast<int>(x + dirX * (1.0 - t) * m_screenWidth * 0.8);
-            int floorY = static_cast<int>(y + (1.0 - t) * m_screenHeight * 0.4);
+            // Calculate ray direction using camera direction and right vectors
+            double rayDirX = camDir.x + camRight.x * rayRatio * 1.2; // Adjust FOV here to match walls
+            double rayDirY = camDir.y + camRight.y * rayRatio * 1.2;
+            double dirLen = sqrt(rayDirX * rayDirX + rayDirY * rayDirY);
+            rayDirX /= dirLen; // Normalize
+            rayDirY /= dirLen;
             
-            // Get the DOOM-like floor color with pentagram pattern
-            Color floorColor = getDoomFloorColor(floorX, floorY, perspectiveFloorTileSize);
+            // Calculate the real-world floor coordinate
+            double floorX = camera->getPosition().x + rowDistance * rayDirX;
+            double floorY = camera->getPosition().y + rowDistance * rayDirY;
             
-            // Apply distance fog effect
-            double fogFactor = t * 0.8 + 0.2; // Prevent complete darkness
-            floorColor = Color::lerp(Color(10, 5, 5), floorColor, fogFactor);
+            // Convert to integer coordinates for texture lookup
+            int texX = static_cast<int>(floorX * tileSize);
+            int texY = static_cast<int>(floorY * tileSize);
             
-            // Set in the Z-buffer
-            int index = y * m_screenWidth + x;
+            // Get the color for this floor position
+            Color floorColor = getDoomFloorColor(texX, texY, tileSize);
             
-            // Only draw the floor if no wall spans have been drawn here
-            // This ensures walls always appear on top of the floor
-            if (index >= 0 && index < m_screenWidth * m_screenHeight) {
-                if (m_zBuffer[index] == std::numeric_limits<double>::max()) {
-                    m_zBuffer[index] = distance;
-                    setPixel(x, y, floorColor);
-                }
+            // Apply fog effect
+            Color foggedFloorColor = Color::lerp(
+                floorColor,
+                Color(30, 30, 30), // Dark fog color
+                distFactor * 0.7
+            );
+            
+            // Set the pixel for the floor
+            setPixel(x, y, foggedFloorColor);
+            
+            // Calculate mirror position for ceiling
+            int ceilingY = m_screenHeight - y - 1;
+            
+            // Only draw ceiling if not already occupied by a wall
+            if (m_zBuffer[ceilingY * m_screenWidth + x] == std::numeric_limits<double>::max()) {
+                // Get ceiling color - darker variation of floor
+                Color ceilingColor = getDoomCeilingColor(texX, texY, tileSize);
+                
+                // Apply fog effect to ceiling
+                Color foggedCeilingColor = Color::lerp(
+                    ceilingColor,
+                    Color(20, 15, 15), // Darker fog for ceiling
+                    distFactor * 0.8
+                );
+                
+                // Set the pixel for the ceiling
+                setPixel(x, ceilingY, foggedCeilingColor);
             }
         }
     }
@@ -1382,5 +1355,5 @@ Color getDoomWallColor(int textureId, double u, double v, double distance) {
     
     // Apply distance-based darkening
     double fogFactor = 1.0 - std::min(1.0, distance / 20.0);
-    return Color::lerp(Color(0, 0, 0), baseColor, fogFactor);
+    return Color::lerp(Color(0, 0, 0), baseColor, static_cast<float>(1.0 - fogFactor));
 } 

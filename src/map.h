@@ -317,6 +317,9 @@ public:
     // Get visible walls from a viewpoint
     std::vector<std::shared_ptr<Wall>> getVisibleWalls(const Vec2& viewpoint) const;
     
+    // Generate a DOOM-style map layout for the renderer
+    std::vector<Wall> generateDoomMap(const Vec2& playerPosition) const;
+    
     // Find the sector containing a point
     std::shared_ptr<Sector> findSectorContainingPoint(const Vec2& point) const;
     

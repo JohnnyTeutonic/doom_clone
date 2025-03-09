@@ -17,59 +17,28 @@
 std::shared_ptr<Map> createTestMap() {
     auto map = std::make_shared<Map>();
     
-    // Create a simple room with 4 walls
-    auto sector = std::make_shared<Sector>();
-    sector->setFloorHeight(0.0);
-    sector->setCeilingHeight(3.0);
-    sector->setFloorTextureId(1);  // Placeholder texture ID
-    sector->setCeilingTextureId(2); // Placeholder texture ID
+    // Create a main sector for our complex map
+    auto mainSector = std::make_shared<Sector>();
+    mainSector->setFloorHeight(0.0);
+    mainSector->setCeilingHeight(3.0);
+    mainSector->setFloorTextureId(1);
+    mainSector->setCeilingTextureId(2);
     
-    // Room dimensions
-    const double roomWidth = 10.0;
-    const double roomHeight = 10.0;
+    // Generate walls for complex map layout
+    std::vector<Wall> doomWalls = map->generateDoomMap(Vec2(5.0, 5.0));
     
-    // Create walls - going counter-clockwise
-    auto wall1 = std::make_shared<Wall>(Vec2(0, 0), Vec2(roomWidth, 0));          // North wall
-    auto wall2 = std::make_shared<Wall>(Vec2(roomWidth, 0), Vec2(roomWidth, roomHeight));  // East wall
-    auto wall3 = std::make_shared<Wall>(Vec2(roomWidth, roomHeight), Vec2(0, roomHeight)); // South wall
-    auto wall4 = std::make_shared<Wall>(Vec2(0, roomHeight), Vec2(0, 0));          // West wall
+    // Convert the walls to shared pointers and add to the sector
+    for (const auto& wall : doomWalls) {
+        auto wallPtr = std::make_shared<Wall>(
+            wall.getStart(), 
+            wall.getEnd(), 
+            wall.getTextureId()
+        );
+        mainSector->addWall(wallPtr);
+    }
     
-    // Add walls to sector
-    sector->addWall(wall1);
-    sector->addWall(wall2);
-    sector->addWall(wall3);
-    sector->addWall(wall4);
-    
-    // Create a second room connected by a portal
-    auto sector2 = std::make_shared<Sector>();
-    sector2->setFloorHeight(0.0);
-    sector2->setCeilingHeight(3.0);
-    sector2->setFloorTextureId(3);  // Different floor texture
-    sector2->setCeilingTextureId(4); // Different ceiling texture
-    
-    // Second room is to the north of the first room
-    auto wall5 = std::make_shared<Wall>(Vec2(0, -roomHeight), Vec2(roomWidth, -roomHeight));   // North wall of second room
-    auto wall6 = std::make_shared<Wall>(Vec2(roomWidth, -roomHeight), Vec2(roomWidth, 0));     // East wall of second room
-    auto wall7 = std::make_shared<Wall>(Vec2(roomWidth, 0), Vec2(0, 0));           // South wall of second room (shared with first room)
-    auto wall8 = std::make_shared<Wall>(Vec2(0, 0), Vec2(0, -roomHeight));         // West wall of second room
-    
-    // Set wall7 as a portal to the first room
-    wall7->setType(WallType::PORTAL);
-    wall7->setAdjoiningSector(sector.get());
-    
-    // Also set wall1 as a portal to the second room for bidirectional visibility
-    wall1->setType(WallType::PORTAL);
-    wall1->setAdjoiningSector(sector2.get());
-    
-    // Add walls to second sector
-    sector2->addWall(wall5);
-    sector2->addWall(wall6);
-    sector2->addWall(wall7);
-    sector2->addWall(wall8);
-    
-    // Add sectors to map
-    map->addSector(sector);
-    map->addSector(sector2);
+    // Add the sector to the map
+    map->addSector(mainSector);
     
     // Build BSP tree for the map
     map->buildBSPTree();
@@ -146,7 +115,7 @@ int main(int argc, char* argv[])
     auto player = std::make_unique<Player>();
     auto camera = std::make_unique<Camera>();
     
-    // Initialize player in the center of the room
+    // Initialize player at the center of the new map (matching where we generated the walls)
     player->init(Vec2(5.0, 5.0), 0.0, map.get());
     
     // Initialize camera to follow player
@@ -178,6 +147,11 @@ int main(int argc, char* argv[])
     
     // Set up mouse for relative mode (capturing)
     SDL_SetRelativeMouseMode(SDL_TRUE);
+    
+    // Ensure the first frame doesn't have large mouse movements
+    SDL_GetRelativeMouseState(&mouseX, &mouseY);
+    mouseX = 0;
+    mouseY = 0;
     
     while (running) {
         // Reset one-time input flags
@@ -265,7 +239,14 @@ int main(int argc, char* argv[])
         // Cap delta time to prevent jumps after pauses/freezes
         deltaTime = std::min(deltaTime, 0.1);
         
-        // Process player input
+        // Get the latest mouse movement even if no event was generated
+        // This ensures continuous rotation even when mouse hits screen edge
+        int latestMouseX, latestMouseY;
+        SDL_GetRelativeMouseState(&latestMouseX, &latestMouseY);
+        mouseX += latestMouseX;
+        mouseY += latestMouseY;
+        
+        // Process player input using the standard input processing system
         player->processInput(
             moveForward, moveBackward, moveLeft, moveRight,
             rotateLeft, rotateRight, jump, crouch,

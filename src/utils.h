@@ -182,8 +182,9 @@ T clamp(T value, T min, T max) {
 }
 
 // Linear interpolation
-inline double lerp(double a, double b, double t) {
-    return a + (b - a) * t;
+template<typename T>
+T lerp(const T& a, const T& b, double t) {
+    return a + static_cast<T>((b - a) * t);
 }
 
 // Normalize angle to [0, 2π)

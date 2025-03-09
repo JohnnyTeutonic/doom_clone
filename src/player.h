@@ -39,7 +39,30 @@ struct PlayerSettings {
         maxHeadroom(0.2),
         viewBobAmount(0.05),
         viewBobSpeed(10.0),
-        maxMouseSensitivity(0.002)
+        maxMouseSensitivity(0.008)
+    {}
+};
+
+// Structure to store player input state
+struct InputState {
+    bool moveForward;
+    bool moveBackward;
+    bool moveLeft;
+    bool moveRight;
+    bool rotateLeft;
+    bool rotateRight;
+    double mouseX;
+    double mouseY;
+    
+    InputState() :
+        moveForward(false),
+        moveBackward(false),
+        moveLeft(false),
+        moveRight(false),
+        rotateLeft(false),
+        rotateRight(false),
+        mouseX(0.0),
+        mouseY(0.0)
     {}
 };
 
@@ -121,6 +144,7 @@ private:
     int m_armor;                            // Player armor
     double m_fov;                           // Field of view (in radians)
     PlayerSettings m_settings;              // Player settings
+    InputState m_inputs;                    // Current input state
     std::shared_ptr<Sector> m_currentSector; // Current sector
     Map* m_map;                             // Reference to the map
     Engine* m_engine;                       // Reference to the engine

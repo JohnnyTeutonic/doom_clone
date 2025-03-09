@@ -1,5 +1,6 @@
 #include "player.h"
 #include "map.h"
+#include <algorithm>
 #include <cmath>
 
 Player::Player() :
@@ -17,6 +18,7 @@ Player::Player() :
     m_health(100),
     m_armor(0),
     m_fov(90.0 * DEG_TO_RAD),
+    m_inputs(),
     m_map(nullptr),
     m_engine(nullptr)
 {
@@ -55,6 +57,70 @@ void Player::update(double deltaTime)
     // Handle vertical movement (jumping, falling)
     updateVerticalMovement(deltaTime);
     
+    // Process player movement using the stored input state
+    // Calculate movement speed based on state
+    double speed = m_settings.moveSpeed;
+    if (m_isCrouching) {
+        speed *= 0.5; // Slower when crouching
+    }
+    
+    // Movement vectors
+    Vec2 moveDir(0.0, 0.0);
+    
+    // Forward/backward movement along direction vector
+    if (m_inputs.moveForward) {
+        moveDir += m_direction;
+    }
+    if (m_inputs.moveBackward) {
+        moveDir -= m_direction;
+    }
+    
+    // Strafe left/right along right vector
+    if (m_inputs.moveLeft) {
+        moveDir -= m_right;
+    }
+    if (m_inputs.moveRight) {
+        moveDir += m_right;
+    }
+    
+    // Normalize the movement vector if necessary
+    if (moveDir.length() > EPSILON) {
+        moveDir.normalize();
+        
+        // Update player position with proper delta time
+        Vec2 newPosition = m_position + moveDir * speed * deltaTime;
+        
+        // Try to move to new position, handling collisions
+        tryMove(newPosition);
+        
+        // Update walking animation state
+        m_walkTimer = 0.5; // Reset walk timer when moving
+    } else {
+        // Gradually reduce walk timer when not moving
+        m_walkTimer = std::max(0.0, m_walkTimer - deltaTime);
+    }
+    
+    // Rotation from keyboard with proper delta time
+    if (m_inputs.rotateLeft) {
+        m_angle -= m_settings.rotateSpeed * deltaTime;
+    }
+    if (m_inputs.rotateRight) {
+        m_angle += m_settings.rotateSpeed * deltaTime;
+    }
+    
+    // Mouse look
+    if (m_inputs.mouseX != 0.0 || m_inputs.mouseY != 0.0) {
+        // Horizontal mouse movement rotates the player
+        m_angle += m_inputs.mouseX * m_settings.maxMouseSensitivity;
+        
+        // Vertical mouse movement changes view angle
+        m_verticalAngle -= m_inputs.mouseY * m_settings.maxMouseSensitivity;
+        m_verticalAngle = clamp(m_verticalAngle, -HALF_PI * 0.9, HALF_PI * 0.9);
+    }
+    
+    // Update direction vectors
+    updateDirectionVectors();
+    
     // Apply view bobbing while moving
     if (m_walkTimer > 0.0) {
         applyViewBob(deltaTime);
@@ -74,6 +140,16 @@ void Player::processInput(bool moveForward, bool moveBackward, bool moveLeft, bo
                          bool rotateLeft, bool rotateRight, bool jump, bool crouch,
                          double mouseX, double mouseY, bool mouseLook)
 {
+    // Store input state for use in update
+    m_inputs.moveForward = moveForward;
+    m_inputs.moveBackward = moveBackward;
+    m_inputs.moveLeft = moveLeft;
+    m_inputs.moveRight = moveRight;
+    m_inputs.rotateLeft = rotateLeft;
+    m_inputs.rotateRight = rotateRight;
+    m_inputs.mouseX = mouseX;
+    m_inputs.mouseY = mouseY;
+    
     // Handle jumping
     if (jump && m_isOnGround && !m_isJumping) {
         m_isJumping = true;
@@ -93,71 +169,6 @@ void Player::processInput(bool moveForward, bool moveBackward, bool moveLeft, bo
             m_eyeHeight = m_settings.eyeHeight;
         }
     }
-    
-    // Calculate movement speed based on state
-    double speed = m_settings.moveSpeed;
-    if (m_isCrouching) {
-        speed *= 0.5; // Slower when crouching
-    }
-    
-    // Movement vectors
-    Vec2 moveDir(0.0, 0.0);
-    
-    // Forward/backward movement along direction vector
-    if (moveForward) {
-        moveDir += m_direction;
-    }
-    if (moveBackward) {
-        moveDir -= m_direction;
-    }
-    
-    // Strafe left/right along right vector
-    if (moveLeft) {
-        moveDir -= m_right;
-    }
-    if (moveRight) {
-        moveDir += m_right;
-    }
-    
-    // Normalize the movement vector if necessary
-    if (moveDir.length() > EPSILON) {
-        moveDir.normalize();
-        
-        // Update player position
-        Vec2 newPosition = m_position + moveDir * speed * 0.016; // Assuming ~60 FPS
-        
-        // Try to move to new position, handling collisions
-        tryMove(newPosition);
-        
-        // Update walking animation state
-        m_walkTimer = 0.5; // Reset walk timer when moving
-    } else {
-        // Gradually reduce walk timer when not moving
-        m_walkTimer = std::max(0.0, m_walkTimer - 0.016); // Assuming ~60 FPS
-    }
-    
-    // Rotation from keyboard
-    if (rotateLeft) {
-        m_angle -= m_settings.rotateSpeed * 0.016; // Assuming ~60 FPS
-    }
-    if (rotateRight) {
-        m_angle += m_settings.rotateSpeed * 0.016; // Assuming ~60 FPS
-    }
-    
-    // Mouse look
-    if (mouseLook) {
-        // Horizontal mouse movement rotates the player
-        m_angle += mouseX * m_settings.maxMouseSensitivity;
-        
-        // Vertical mouse movement changes the view angle
-        m_verticalAngle -= mouseY * m_settings.maxMouseSensitivity;
-        
-        // Clamp vertical angle to prevent flipping
-        m_verticalAngle = clamp(m_verticalAngle, -HALF_PI * 0.9, HALF_PI * 0.9);
-    }
-    
-    // Update direction vectors based on new angle
-    updateDirectionVectors();
 }
 
 void Player::setPosition(const Vec2& position)
@@ -333,43 +344,44 @@ void Player::applyViewBob(double deltaTime)
 
 bool Player::checkWallCollisions(const Vec2& newPosition)
 {
-    if (!m_map) return true;  // No map, don't allow movement
+    if (!m_map) return false;
     
-    // Get the player's collision radius
     double radius = m_settings.radius;
     
-    // Simple collision check against walls in the current sector
-    if (m_currentSector) {
-        for (const auto& wall : m_currentSector->getWalls()) {
-            // Skip portal walls (can walk through them)
-            if (wall->isPortal()) continue;
-            
-            // Calculate closest point on wall to the new position
-            Vec2 wallStart = wall->getStart();
-            Vec2 wallEnd = wall->getEnd();
-            Vec2 wallDir = wallEnd - wallStart;
-            double wallLength = wallDir.length();
-            
-            if (wallLength < EPSILON) continue;  // Skip zero-length walls
-            
-            wallDir = wallDir / wallLength;  // Normalize
-            
-            // Vector from wall start to new position
-            Vec2 wallToPos = newPosition - wallStart;
-            
-            // Project wallToPos onto wallDir to find closest point
-            double projection = wallToPos.dot(wallDir);
-            projection = clamp(projection, 0.0, wallLength);
-            
-            // Closest point on wall
-            Vec2 closestPoint = wallStart + wallDir * projection;
-            
-            // Check distance to closest point
-            double distance = (newPosition - closestPoint).length();
-            if (distance < radius) {
-                // Collision detected
-                return true;
-            }
+    // Find the sector containing the player
+    std::shared_ptr<Sector> sector = m_map->findSectorContainingPoint(m_position);
+    if (!sector) return false; // No sector found, don't allow movement
+    
+    // Check collisions with walls in current sector
+    for (const auto& wall : sector->getWalls()) {
+        // Skip portal walls (can walk through them)
+        if (wall->isPortal()) continue;
+        
+        // Calculate closest point on wall to the new position
+        Vec2 wallStart = wall->getStart();
+        Vec2 wallEnd = wall->getEnd();
+        Vec2 wallDir = wall->getDirection();
+        double wallLength = wall->getLength();
+        
+        if (wallLength < EPSILON) continue;  // Skip zero-length walls
+        
+        wallDir = wallDir / wallLength;  // Normalize
+        
+        // Vector from wall start to new position
+        Vec2 wallToPos = newPosition - wallStart;
+        
+        // Project wallToPos onto wallDir to find closest point
+        double projection = wallToPos.dot(wallDir);
+        projection = clamp(projection, 0.0, wallLength);
+        
+        // Closest point on wall
+        Vec2 closestPoint = wallStart + wallDir * projection;
+        
+        // Check distance to closest point
+        double distance = (newPosition - closestPoint).length();
+        if (distance < radius) {
+            // Collision detected
+            return true;
         }
     }
     

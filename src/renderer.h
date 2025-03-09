@@ -31,8 +31,10 @@ class Engine;
 struct WallSpan {
     int x;                  // Screen x-coordinate
     int y1, y2;             // Top and bottom y-coordinates
+    int screenStartY, screenEndY; // Screen-space Y coordinates
     double z1, z2;          // Top and bottom z-coordinates (world space)
     double u;               // Texture u-coordinate (horizontal)
+    double texU;            // Texture u-coordinate for newer implementations
     double distance;        // Distance to wall
     int textureId;          // Wall texture ID
     bool isPortal;          // Whether this span is a portal
@@ -42,7 +44,7 @@ struct WallSpan {
     Wall* wall;             // Parent wall
     
     WallSpan() : 
-        x(0), y1(0), y2(0), z1(0), z2(0), u(0), 
+        x(0), y1(0), y2(0), screenStartY(0), screenEndY(0), z1(0), z2(0), u(0), texU(0), 
         distance(0), textureId(-1), isPortal(false), 
         isFlipped(false), lightLevel(1.0), sector(nullptr), wall(nullptr) {}
 };
@@ -176,9 +178,8 @@ private:
     void renderSprites(Map* map, Camera* camera);
     void renderSkybox(Camera* camera);
     
-    // Process visible walls from BSP tree
-    void processVisibleWalls(Map* map, Camera* camera, 
-                             const std::vector<std::shared_ptr<Wall>>& visibleWalls);
+    // Process visible walls for rendering
+    void processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& walls, Camera* camera);
     
     // Calculate wall spans
     void calculateWallSpans(Wall* wall, Camera* camera, Sector* sector);
@@ -191,7 +192,7 @@ private:
     
     // Draw spans
     void drawWallSpans();
-    void drawFloorCeilingSpans();
+    void drawFloorCeilingSpans(Camera* camera);
     void drawSpriteSpans();
     
     // Utility functions
