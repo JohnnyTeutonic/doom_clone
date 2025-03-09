@@ -54,6 +54,7 @@ private:
     double m_weaponDamage;
     double m_weaponCooldown;
     double m_timeSinceLastShot;
+    std::vector<class Weapon*> m_weapons;  // Vector to store weapons
     
     // Grenade properties
     int m_grenades;       // Grenade count
@@ -79,6 +80,10 @@ private:
     double m_gravity;
     double m_groundLevel;
     double m_jumpHeight;     // Current height of jump (separate from look angle)
+    double m_stepHeight;     // Current stair step height (for smooth stair climbing)
+    bool m_isMoving;         // Flag indicating if player is currently moving
+    double m_weaponBobX;     // Horizontal weapon bobbing effect
+    double m_weaponBobY;     // Vertical weapon bobbing effect
     
 public:
     Player();
@@ -133,6 +138,7 @@ public:
     double getHealth() const { return m_health; }
     int getAmmo() const { return m_ammo; }
     double getJumpHeight() const { return m_jumpHeight; }
+    double getStepHeight() const { return m_stepHeight; }
     
     // Setters
     void setPosition(const Vec2& position) { m_position = position; }
@@ -167,6 +173,9 @@ public:
     void updateJump(double deltaTime);
     bool isOnGround() const;
 
+    // Projectile management
+    void updateProjectiles(double deltaTime);
+
     // Add getter for combined vertical offset
     double getVerticalOffset() const { 
         return m_verticalAngle + m_lookAngle + m_jumpHeight; 
@@ -182,8 +191,11 @@ public:
         m_lookAngle = scaledAngle;
     }
 
-    // Static method to track total shots fired
+    // Static method to get the total shots fired counter
     static int& getTotalShotsFired();
+    
+    // Static method to reset the total shots fired counter
+    static void resetTotalShotsFired();
     
     // Method to check and pick up nearby items
     void checkNearbyItems();

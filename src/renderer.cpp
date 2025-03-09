@@ -25,6 +25,8 @@ Renderer::Renderer()
     , m_frameCount(0)
     , m_fpsTimer(0.0)
     , m_fps(0.0)
+    , m_usingExternalZBuffer(false)
+    , m_externalZBuffer(nullptr)
 {
     // Initialize lighting system
     m_lightingSystem.setEnabled(m_lightingEnabled);
@@ -133,22 +135,33 @@ void Renderer::renderView(const Map& map, const Player& player) {
     // Clear the z-buffer
     clearZBuffer();
     
-    // Get player position, direction, and vertical angles
-    const Vec2& pos = player.getPosition();
-    const Vec2& dir = player.getDirection();
-    const Vec2& plane = player.getPlane();
+    // Get current player position and direction for standard raycasting
+    Vec2 pos = player.getPosition();
+    Vec2 dir = player.getDirection();
+    Vec2 plane = player.getPlane();
     
-    // Use the combined vertical offset value that includes look angle, world effects, and jump height
-    double totalVerticalOffset = player.getVerticalOffset();
+    // Get screen space vertical offset for camera tilt
+    double screenSpaceOffset = 0;
     
-    // Calculate screen-space vertical offset
-    int screenSpaceOffset = static_cast<int>(totalVerticalOffset * m_screenHeight / 2);
+    // Apply vertical look angle if enabled
+    screenSpaceOffset = player.getVerticalAngle() * m_screenHeight / 2.0;
     
-    // Get player's elevation level (determine from map cell)
+    // Add jump height offset
+    screenSpaceOffset += player.getJumpHeight() * m_screenHeight * 0.75;
+    
+    // Add step height offset for smoother stair transitions
+    screenSpaceOffset += player.getStepHeight() * m_screenHeight * 0.5;
+    
+    // Convert to integer for pixel-based rendering and store in a variable that will be used throughout the method
+    int effectiveVerticalOffset = static_cast<int>(screenSpaceOffset);
+    
+    // Get player's current cell
     int playerX = static_cast<int>(pos.x);
     int playerY = static_cast<int>(pos.y);
+    
+    // Get player's elevation level (determine from map cell)
+    float playerStepHeight = player.getStepHeight(); // Get step height from player
     int playerElevation = map.getCellElevation(playerX, playerY);
-    float playerStepHeight = map.getStepHeight(playerX, playerY);
     
     // For each vertical strip of the screen
     for (int x = 0; x < m_screenWidth; x++) {
@@ -157,7 +170,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
         Vec2 rayDir = dir + plane * cameraX;
         
         // Apply vertical offset to wall and sprite rendering
-        int effectiveVerticalOffset = screenSpaceOffset;
+        // Note: effectiveVerticalOffset is already declared earlier
         
         // Calculate which box of the map we're in
         Vec2 mapPos(static_cast<int>(pos.x), static_cast<int>(pos.y));
@@ -264,6 +277,8 @@ void Renderer::renderView(const Map& map, const Player& player) {
         }
         
         // Save distance for sprite rendering
+        // IMPORTANT: Always use the actual perpWallDist for Z-buffer, regardless of wall type
+        // This ensures projectiles render correctly
         m_zBuffer[x] = perpWallDist;
         
         // Calculate wall height
@@ -438,15 +453,15 @@ void Renderer::renderView(const Map& map, const Player& player) {
             int rowSkip = 1; // Start with rendering every row
             
             // For each horizontal line on the screen from the middle down to the bottom
-            for (int y = m_screenHeight / 2 + screenSpaceOffset; y < m_screenHeight; y += rowSkip) {
+            for (int y = m_screenHeight / 2 + effectiveVerticalOffset; y < m_screenHeight; y += rowSkip) {
                 // Increase row skipping as we get further from horizon
-                if (y > m_screenHeight / 2 + screenSpaceOffset + 50) rowSkip = 2;
-                if (y > m_screenHeight / 2 + screenSpaceOffset + 100) rowSkip = 4;
+                if (y > m_screenHeight / 2 + effectiveVerticalOffset + 50) rowSkip = 2;
+                if (y > m_screenHeight / 2 + effectiveVerticalOffset + 100) rowSkip = 4;
                 
                 // Calculate the ray direction for this row
                 // Current y position compared to the center of the screen (horizon)
                 float posZ = 0.5 * m_screenHeight; // Player's view height
-                float rowDistance = posZ / (y - m_screenHeight / 2 - screenSpaceOffset);
+                float rowDistance = posZ / (y - m_screenHeight / 2 - effectiveVerticalOffset);
                 
                 // Calculate the real world step vector we have to add for each x
                 float floorStepX = rowDistance * (2.0 * plane.x) / m_screenWidth;
@@ -508,7 +523,7 @@ void Renderer::renderView(const Map& map, const Player& player) {
                     
                     // Draw ceiling pixels for this step only if ceiling rendering is enabled
                     if (m_showCeilings) {
-                        int ceilingY = m_screenHeight - y - 1 + 2 * screenSpaceOffset;
+                        int ceilingY = m_screenHeight - y - 1 + 2 * effectiveVerticalOffset;
                         if (ceilingY >= 0 && ceilingY < m_screenHeight) {
                             SDL_SetRenderDrawColor(m_renderer, ceilingColor.r, ceilingColor.g, ceilingColor.b, ceilingColor.a);
                             for (int i = 0; i < step && x + i < m_screenWidth; i++) {
@@ -1212,14 +1227,54 @@ void Renderer::renderProjectiles(const Player& player) {
         bool isVisible = false;
         // Check if the projectile's center is visible
         if (screenX >= 0 && screenX < m_screenWidth) {
+            // Get the appropriate z-buffer value based on whether we're using an external buffer
+            double wallDistance;
+            
+            if (m_usingExternalZBuffer && m_externalZBuffer) {
+                // Use the external float Z-buffer from CUDA renderer
+                wallDistance = static_cast<double>(m_externalZBuffer[screenX]);
+                std::cout << "  Using CUDA Z-buffer value at index " << screenX << ": " << wallDistance << std::endl;
+                
+                // Safety check for invalid Z-buffer values
+                if (wallDistance <= 0.0 || wallDistance > 10000.0) {
+                    std::cerr << "  WARNING: Invalid CUDA Z-buffer value: " << wallDistance << ", defaulting to 10000.0" << std::endl;
+                    wallDistance = 10000.0;
+                }
+            } else {
+                // Use our own double Z-buffer vector - make sure we're accessing the correct index
+                if (screenX < static_cast<int>(m_zBuffer.size())) {
+                    wallDistance = m_zBuffer[screenX];
+                    std::cout << "  Using CPU Z-buffer value at index " << screenX << ": " << wallDistance << std::endl;
+                    
+                    // Safety check for invalid Z-buffer values
+                    if (wallDistance <= 0.0 || wallDistance > 10000.0) {
+                        std::cerr << "  WARNING: Invalid CPU Z-buffer value: " << wallDistance << ", defaulting to 10000.0" << std::endl;
+                        wallDistance = 10000.0;
+                    }
+                } else {
+                    // Invalid index - use a large default value
+                    wallDistance = 10000.0;
+                    std::cerr << "  ERROR: Z-buffer index out of bounds: " << screenX << " (size: " << m_zBuffer.size() << ")" << std::endl;
+                }
+            }
+            
             // If the projectile's distance is less than the wall distance at this x-coordinate, it's visible
-            if (transformY < m_zBuffer[screenX]) {
+            // Add some tolerance to the comparison to prevent z-fighting
+            const double visibilityTolerance = 0.05; // Increased tolerance to help with visibility
+            
+            std::cout << "  Detailed debugging for " << typeStr << ":" << std::endl;
+            std::cout << "    Projectile position: (" << projectile->getPosition().x << ", " << projectile->getPosition().y << ")" << std::endl;
+            std::cout << "    Player position: (" << pos.x << ", " << pos.y << ")" << std::endl;
+            std::cout << "    Transform coords: X=" << transformX << ", Y=" << transformY << std::endl;
+            std::cout << "    Screen X: " << screenX << ", Z-buffer comparison: " << transformY << " < " << wallDistance << std::endl;
+            
+            if (transformY < wallDistance - visibilityTolerance) {
                 isVisible = true;
                 std::cout << "  " << typeStr << " is visible (distance: " << transformY 
-                          << ", zBuffer: " << m_zBuffer[screenX] << ")" << std::endl;
+                          << ", zBuffer: " << wallDistance << ")" << std::endl;
             } else {
                 std::cout << "  " << typeStr << " is occluded by wall (distance: " << transformY 
-                          << ", zBuffer: " << m_zBuffer[screenX] << ")" << std::endl;
+                          << ", zBuffer: " << wallDistance << ")" << std::endl;
             }
         } else {
             std::cout << "  " << typeStr << " is off-screen (screenX: " << screenX << ")" << std::endl;
@@ -1650,8 +1705,9 @@ void Renderer::renderUI(const Player& player) {
 // Clear the z-buffer
 void Renderer::clearZBuffer() {
     #if defined(__SSE2__) || defined(_MSC_VER)
-    optimized::fill_doubles(m_zBuffer.data(), m_zBuffer.data() + m_zBuffer.size(), std::numeric_limits<double>::max());
+    // Use a large but reasonable value (10000.0) instead of max double which could cause comparison issues
+    optimized::fill_doubles(m_zBuffer.data(), m_zBuffer.data() + m_zBuffer.size(), 10000.0);
     #else
-    std::fill(m_zBuffer.begin(), m_zBuffer.end(), std::numeric_limits<double>::max());
+    std::fill(m_zBuffer.begin(), m_zBuffer.end(), 10000.0);
     #endif
 } 

@@ -35,6 +35,10 @@ Player::Player()
     , m_gravity(20.0)      // DOOM-style gravity - gentler for a more predictable arc
     , m_groundLevel(0.0)   // Ground level reference
     , m_jumpHeight(0.0)    // Initialize jump height
+    , m_stepHeight(0.0)     // Initialize step height
+    , m_isMoving(false)    // Initialize movement flag
+    , m_weaponBobY(0.0)     // Initialize weapon bob Y position
+    , m_weaponBobX(0.0)     // Initialize weapon bob X position
 {
 }
 
@@ -59,26 +63,76 @@ void Player::init(double x, double y, double dirX, double dirY) {
 }
 
 void Player::update(double deltaTime, const Map& map) {
-    // Update weapon cooldown
-    if (m_timeSinceLastShot < m_weaponCooldown) {
-        m_timeSinceLastShot += deltaTime;
-    }
+    // Update vertical angle, clamping it to reasonable values
+    m_verticalAngle *= 0.8; // Apply damping to look movement
+    m_verticalAngle = std::max(-0.8, std::min(0.8, m_verticalAngle));  // Clamp vertical angle to avoid extreme looking up/down
     
-    // Update power-ups
+    // Update weapon cooldown
+    m_timeSinceLastShot += deltaTime;
+    
+    // Update projectiles
+    updateProjectiles(deltaTime);
+    
+    // Update jumping
+    updateJump(deltaTime);
+
+    // Update powerups
     updatePowerUps(deltaTime);
     
-    // Update jumping physics
-    updateJump(deltaTime);
+    // Get current cell information
+    int currentX = static_cast<int>(m_position.x);
+    int currentY = static_cast<int>(m_position.y);
+    CellType currentCell = map.getCell(currentX, currentY);
     
-    // Check for nearby items to pick up
-    checkNearbyItems();
-    
-    // Debug output for jump state
-    if (m_isJumping || m_verticalVelocity != 0.0) {
-        std::cout << "Jump State - IsJumping: " << m_isJumping 
-                  << ", Velocity: " << m_verticalVelocity 
-                  << ", Position: " << m_verticalAngle << std::endl;
+    // Handle step height interpolation for smoother stair climbing
+    if (currentCell == CellType::Stairs || 
+        currentCell == CellType::StairStep1 || 
+        currentCell == CellType::StairStep2 || 
+        currentCell == CellType::StairStep3) {
+        
+        // Get the target step height from the map
+        float targetStepHeight = map.getStepHeight(currentX, currentY);
+        
+        // Smoothly interpolate to the target height for more natural stair movement
+        const float stepHeightSpeed = 3.0f; // Adjust this value to control how quickly step height changes
+        if (std::abs(m_stepHeight - targetStepHeight) > 0.01f) {
+            if (m_stepHeight < targetStepHeight) {
+                m_stepHeight += deltaTime * stepHeightSpeed;
+                if (m_stepHeight > targetStepHeight) m_stepHeight = targetStepHeight;
+            } else {
+                m_stepHeight -= deltaTime * stepHeightSpeed;
+                if (m_stepHeight < targetStepHeight) m_stepHeight = targetStepHeight;
+            }
+        } else {
+            m_stepHeight = targetStepHeight; // Snap to exact value when very close
+        }
+    } else {
+        // When not on stairs, smoothly return to zero
+        if (m_stepHeight > 0.01f) {
+            m_stepHeight -= deltaTime * 2.0f;
+            if (m_stepHeight < 0.0f) m_stepHeight = 0.0f;
+        } else if (m_stepHeight < -0.01f) {
+            m_stepHeight += deltaTime * 2.0f;
+            if (m_stepHeight > 0.0f) m_stepHeight = 0.0f;
+        } else {
+            m_stepHeight = 0.0f;
+        }
     }
+    
+    // Special effect: make weapons bob slightly when walking
+    static double bobTimer = 0.0;
+    if (m_isMoving) {
+        bobTimer += deltaTime * 5.0;
+        m_weaponBobY = sin(bobTimer) * 0.04;
+        m_weaponBobX = cos(bobTimer / 2.0) * 0.02;
+    } else {
+        bobTimer = 0.0;
+        m_weaponBobY *= 0.8;
+        m_weaponBobX *= 0.8;
+    }
+    
+    // Reset movement flag for next frame
+    m_isMoving = false;
 }
 
 void Player::moveForward(double deltaTime, const Map& map) {
@@ -131,6 +185,7 @@ void Player::moveForward(double deltaTime, const Map& map) {
             int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
             if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
                 m_position.x = newX;
+                m_isMoving = true; // Set the moving flag when player moves
             } else {
                 std::cout << "Blocked X movement due to elevation change" << std::endl;
             }
@@ -141,6 +196,7 @@ void Player::moveForward(double deltaTime, const Map& map) {
             int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
             if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
                 m_position.y = newY;
+                m_isMoving = true; // Set the moving flag when player moves
             } else {
                 std::cout << "Blocked Y movement due to elevation change" << std::endl;
             }
@@ -255,6 +311,7 @@ void Player::moveBackward(double deltaTime, const Map& map) {
             int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
             if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
                 m_position.x = newX;
+                m_isMoving = true; // Set the moving flag when player moves
             } else {
                 std::cout << "Blocked backward X movement due to elevation change" << std::endl;
             }
@@ -265,6 +322,7 @@ void Player::moveBackward(double deltaTime, const Map& map) {
             int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
             if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
                 m_position.y = newY;
+                m_isMoving = true; // Set the moving flag when player moves
             } else {
                 std::cout << "Blocked backward Y movement due to elevation change" << std::endl;
             }
@@ -373,6 +431,7 @@ void Player::strafeLeft(double deltaTime, const Map& map) {
             int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
             if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
                 m_position.x = newX;
+                m_isMoving = true; // Set the moving flag when player moves
             }
         }
         
@@ -381,6 +440,7 @@ void Player::strafeLeft(double deltaTime, const Map& map) {
             int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
             if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
                 m_position.y = newY;
+                m_isMoving = true; // Set the moving flag when player moves
             }
         }
     }
@@ -445,6 +505,7 @@ void Player::strafeRight(double deltaTime, const Map& map) {
             int newXElevation = map.getCellElevation(static_cast<int>(newX), static_cast<int>(m_position.y));
             if (newXElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(newX), static_cast<int>(m_position.y))) {
                 m_position.x = newX;
+                m_isMoving = true; // Set the moving flag when player moves
             }
         }
         
@@ -453,6 +514,7 @@ void Player::strafeRight(double deltaTime, const Map& map) {
             int newYElevation = map.getCellElevation(static_cast<int>(m_position.x), static_cast<int>(newY));
             if (newYElevation == currentElevation || onStairs || map.isStairs(static_cast<int>(m_position.x), static_cast<int>(newY))) {
                 m_position.y = newY;
+                m_isMoving = true; // Set the moving flag when player moves
             }
         }
     }
@@ -595,14 +657,16 @@ bool Player::fire() {
     
     // Hard limit to 10 shots total regardless of ammo value
     static int& totalShotsFired = getTotalShotsFired();
-    if (totalShotsFired >= 10) {
-        std::cout << "HARD LIMIT: Maximum 10 shots allowed. Total shots fired: " << totalShotsFired << std::endl;
+    if (totalShotsFired >= 1000) {
+        std::cout << "HARD LIMIT: Maximum 1000 shots allowed. Total shots fired: " << totalShotsFired << std::endl;
         return false;
     }
     
     if (m_timeSinceLastShot < m_weaponCooldown) {
-        std::cout << "COOLDOWN: Can't fire yet, cooldown still active." << std::endl;
-        return false;
+        // Temporarily disable cooldown check for testing
+        std::cout << "COOLDOWN: Cooldown active but allowing firing for testing. Time since last shot: " 
+                 << m_timeSinceLastShot << ", Cooldown: " << m_weaponCooldown << std::endl;
+        // Don't return false here, continue with firing
     }
     
     std::cout << "AMMO CHECK: Current ammo before firing: " << m_ammo << std::endl;
@@ -1259,6 +1323,12 @@ int& Player::getTotalShotsFired() {
     return totalShotsFired;
 }
 
+void Player::resetTotalShotsFired() {
+    int& counter = getTotalShotsFired();
+    counter = 0;
+    std::cout << "DEBUG: Reset totalShotsFired counter to 0" << std::endl;
+}
+
 // New method to check for and pick up nearby items
 void Player::checkNearbyItems() {
     if (!m_spriteManager) return;
@@ -1283,5 +1353,13 @@ void Player::checkNearbyItems() {
             std::cout << "Player picked up item at distance: " << dist << std::endl;
             sprite->applyItemEffect(this);
         }
+    }
+}
+
+void Player::updateProjectiles(double deltaTime) {
+    // Update any player-owned projectiles via the projectile manager
+    if (m_projectileManager) {
+        // This method is a placeholder in case we need player-specific projectile logic
+        // The actual projectile updates are handled by the ProjectileManager in Engine::update
     }
 } 

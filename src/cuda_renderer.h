@@ -141,6 +141,9 @@ private:
     void copyTexturesToDevice();
     void copyLightsToDevice(const LightingSystem& lightingSystem); // Add method to copy lights
     
+    // Copy Z-buffer from device to host for projectile rendering
+    bool copyZBufferToHost();
+    
     void renderUI(const Player& player);
     
 public:
@@ -183,4 +186,7 @@ public:
     void addWallTextureVariation(int textureId) { m_wallTextureVariations.push_back(textureId); }
     void clearWallTextureVariations() { m_wallTextureVariations.clear(); }
     const std::vector<int>& getWallTextureVariations() const { return m_wallTextureVariations; }
+    
+    // Get Z-buffer data - needed for projectile occlusion testing
+    const float* getZBuffer() const { return m_hostZBuffer; }
 }; 

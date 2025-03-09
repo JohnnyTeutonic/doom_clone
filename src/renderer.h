@@ -41,6 +41,8 @@ private:
     
     // Rendering buffers
     std::vector<double> m_zBuffer;  // Depth buffer for sprite rendering
+    const float* m_externalZBuffer; // New pointer to store Z-buffer from CUDA renderer
+    bool m_usingExternalZBuffer;    // Flag to indicate if we're using external Z-buffer
     
     // Managers and references
     TextureManager* m_textureManager;
@@ -208,6 +210,18 @@ public:
     
     // Clear the Z-buffer
     void clearZBuffer();
+    
+    // Set an external Z-buffer (from CUDA renderer)
+    void setExternalZBuffer(const float* zBuffer) {
+        m_externalZBuffer = zBuffer;
+        m_usingExternalZBuffer = (zBuffer != nullptr);
+    }
+    
+    // Clear the external Z-buffer reference
+    void clearExternalZBuffer() {
+        m_externalZBuffer = nullptr;
+        m_usingExternalZBuffer = false;
+    }
 };
 
 #endif // RENDERER_H 

@@ -572,6 +572,9 @@ void Engine::restartGame() {
     m_player.setHealth(100.0);
     m_player.setAmmo(10);
     
+    // Reset shot counter
+    Player::resetTotalShotsFired();
+    
     // Reset game state
     setState(GameState::Playing);
 }
@@ -879,21 +882,15 @@ void Engine::render() {
             
         case GameState::Playing:
             // Render the game
-            if (m_useCuda && m_cudaRenderer) {
-                // Get the ray-casting buffer from CUDA without rendering it directly
-                // This returns a frame buffer that we can render ourselves
-                m_cudaRenderer->generateFrame(m_map, m_player);
+            if (m_useCuda && m_cudaRenderer && m_cudaRenderer->isInitialized()) {
+                // Use CUDA renderer for walls
+                m_cudaRenderer->render(m_map, m_player);
                 
-                // Now manually render the frame buffer to the screen
-                // This gives us complete control over the rendering order
-                m_cudaRenderer->blitFrameBuffer();
-                
-                // Render sprites using the CUDA renderer
+                // Render sprites with CUDA
                 m_cudaRenderer->renderSprites(m_map, m_player);
                 
-                // Now render all UI elements on top
+                // When using CUDA, the regular renderer still handles weapon, projectiles, and UI
                 if (m_renderer->isShowingWeapon()) {
-                    
                     // Verify we're using the right texture
                     int textureToUse = m_currentWeaponTexture;
                     
@@ -910,8 +907,20 @@ void Engine::render() {
                     m_renderer->renderWeapon(m_player, m_weaponRecoil, 0.0, textureToUse);
                 }
                 
+                // Share the CUDA Z-buffer with the renderer for projectile occlusion testing
+                if (m_cudaRenderer->getZBuffer()) {
+                    std::cout << "Setting external Z-buffer from CUDA for projectile rendering" << std::endl;
+                    m_renderer->setExternalZBuffer(m_cudaRenderer->getZBuffer());
+                } else {
+                    std::cout << "Warning: CUDA Z-buffer is null, projectiles may not render correctly" << std::endl;
+                    m_renderer->clearExternalZBuffer();
+                }
+                
                 // Render projectiles
                 m_renderer->renderProjectiles(m_player);
+                
+                // Clear external Z-buffer reference after use
+                m_renderer->clearExternalZBuffer();
                 
                 // Render UI elements
                 m_renderer->renderUI(m_player);
@@ -2228,8 +2237,19 @@ void Engine::setupMap() {
         int x = stair1StartX + (stair1EndX - stair1StartX) * i / stairLength;
         int y = stair1StartY + (stair1EndY - stair1StartY) * i / stairLength;
         
-        // Create stair steps
-        m_map.setCell(x, y, CellType::Stairs);
+        // Create stair steps with specific step types for better rendering
+        CellType stepType;
+        if (i < stairLength / 3) {
+            // Bottom third - use StairStep1 (25% elevation)
+            stepType = CellType::StairStep1;
+        } else if (i < 2 * stairLength / 3) {
+            // Middle third - use StairStep2 (50% elevation)
+            stepType = CellType::StairStep2;
+        } else {
+            // Top third - use StairStep3 (75% elevation)
+            stepType = CellType::StairStep3;
+        }
+        m_map.setCell(x, y, stepType);
         
         // Set step height based on position along the staircase
         float stepHeight = static_cast<float>(i) / stairLength;
@@ -2255,8 +2275,19 @@ void Engine::setupMap() {
         int x = stair2StartX + (stair2EndX - stair2StartX) * i / stairLength;
         int y = stair2StartY + (stair2EndY - stair2StartY) * i / stairLength;
         
-        // Create stair steps
-        m_map.setCell(x, y, CellType::Stairs);
+        // Create stair steps with specific step types for better rendering
+        CellType stepType;
+        if (i < stairLength / 3) {
+            // Bottom third - use StairStep1 (25% elevation)
+            stepType = CellType::StairStep1;
+        } else if (i < 2 * stairLength / 3) {
+            // Middle third - use StairStep2 (50% elevation)
+            stepType = CellType::StairStep2;
+        } else {
+            // Top third - use StairStep3 (75% elevation)
+            stepType = CellType::StairStep3;
+        }
+        m_map.setCell(x, y, stepType);
         
         // Set step height based on position along the staircase
         float stepHeight = static_cast<float>(i) / stairLength;
@@ -2429,6 +2460,134 @@ void Engine::setupMap() {
                 }
             }
         }
+    }
+    
+    // Add a new elevated room in the bottom-left quadrant
+    int elevatedRoomX = m_map.getWidth() / 6;      // Center X of the elevated room
+    int elevatedRoomY = 3 * m_map.getHeight() / 4; // Center Y of the elevated room
+    int elevatedRoomWidth = 12;                    // Width of the elevated room
+    int elevatedRoomHeight = 10;                   // Height of the elevated room
+    
+    // Calculate room boundaries
+    int roomStartX = elevatedRoomX - elevatedRoomWidth / 2;
+    int roomStartY = elevatedRoomY - elevatedRoomHeight / 2;
+    int roomEndX = roomStartX + elevatedRoomWidth;
+    int roomEndY = roomStartY + elevatedRoomHeight;
+    
+    // Create elevated room
+    for (int x = roomStartX; x < roomEndX; x++) {
+        for (int y = roomStartY; y < roomEndY; y++) {
+            // Set all cells in this region to empty with elevation 1
+            if (x >= 0 && x < m_map.getWidth() && y >= 0 && y < m_map.getHeight()) {
+                m_map.setCell(x, y, CellType::Empty);
+                m_map.setCellElevation(x, y, 1); // Set elevation to 1 (elevated)
+                
+                // Create walls around the perimeter of the elevated room
+                if (x == roomStartX || x == roomEndX - 1 || y == roomStartY || y == roomEndY - 1) {
+                    // Set the perimeter as walls
+                    m_map.setCell(x, y, CellType::Wall);
+                    
+                    // Use a special texture for elevated room walls
+                    if (!m_wallTextureVariations.empty() && m_wallTextureVariations.size() > 2) {
+                        m_map.setWallTexture(x, y, m_wallTextureVariations[2]); // Use a different texture
+                    }
+                }
+            }
+        }
+    }
+    
+    // Create stairs leading to the elevated room
+    int stairStartX = roomStartX + elevatedRoomWidth / 2; // Middle of the room width
+    int stairStartY = roomEndY;                          // Bottom of the room
+    int newStairLength = 6;                              // Length of the staircase
+    
+    // Create a small staircase directly below the room with specific stair step types
+    for (int i = 0; i < newStairLength; i++) {
+        int x = stairStartX;
+        int y = stairStartY + i;
+        
+        if (x >= 0 && x < m_map.getWidth() && y >= 0 && y < m_map.getHeight()) {
+            // Determine what type of stair step to use based on position
+            // This creates a more gradual transition with specific cell types
+            CellType stepType;
+            if (i < newStairLength / 3) {
+                // Upper third - use StairStep3 (75% elevation)
+                stepType = CellType::StairStep3;
+                m_map.setCellElevation(x, y, 1); // Upper part is still at elevation 1
+            } else if (i < 2 * newStairLength / 3) {
+                // Middle third - use StairStep2 (50% elevation)
+                stepType = CellType::StairStep2;
+                m_map.setCellElevation(x, y, i < newStairLength / 2 ? 1 : 0); // Split between elevations
+            } else {
+                // Lower third - use StairStep1 (25% elevation)
+                stepType = CellType::StairStep1;
+                m_map.setCellElevation(x, y, 0); // Lower part at ground level
+            }
+            
+            // Set the cell to the appropriate stair step type
+            m_map.setCell(x, y, stepType);
+            
+            // Set step height based on position along the staircase - more granular values
+            float stepHeight = 1.0f - (static_cast<float>(i) / newStairLength);
+            m_map.setStepHeight(x, y, stepHeight);
+            
+            // Clear walls to the left and right of the stairs to make it easier to navigate
+            if (i > 0) { // Don't clear the actual room walls
+                // Clear left side
+                if (x - 1 >= 0 && m_map.getCell(x - 1, y) == CellType::Wall) {
+                    m_map.setCell(x - 1, y, CellType::Empty);
+                }
+                // Clear right side
+                if (x + 1 < m_map.getWidth() && m_map.getCell(x + 1, y) == CellType::Wall) {
+                    m_map.setCell(x + 1, y, CellType::Empty);
+                }
+            }
+        }
+    }
+    
+    // Also widen the staircase for better navigation
+    // Add steps to the left and right of the main staircase
+    for (int i = 1; i < newStairLength - 1; i++) { // Skip first and last step to avoid messing up room walls
+        int y = stairStartY + i;
+        
+        // Add step to the left
+        int leftX = stairStartX - 1;
+        if (leftX >= 0 && y >= 0 && y < m_map.getHeight()) {
+            // Use same cell type and heights as the center column
+            CellType centerType = m_map.getCell(stairStartX, y);
+            float centerHeight = m_map.getStepHeight(stairStartX, y);
+            int centerElevation = m_map.getCellElevation(stairStartX, y);
+            
+            m_map.setCell(leftX, y, centerType);
+            m_map.setStepHeight(leftX, y, centerHeight);
+            m_map.setCellElevation(leftX, y, centerElevation);
+        }
+        
+        // Add step to the right
+        int rightX = stairStartX + 1;
+        if (rightX < m_map.getWidth() && y >= 0 && y < m_map.getHeight()) {
+            // Use same cell type and heights as the center column
+            CellType centerType = m_map.getCell(stairStartX, y);
+            float centerHeight = m_map.getStepHeight(stairStartX, y);
+            int centerElevation = m_map.getCellElevation(stairStartX, y);
+            
+            m_map.setCell(rightX, y, centerType);
+            m_map.setStepHeight(rightX, y, centerHeight);
+            m_map.setCellElevation(rightX, y, centerElevation);
+        }
+    }
+    
+    // Add a light in the elevated room
+    if (m_renderer) {
+        Light elevatedRoomLight = Light::createFlickeringLight(
+            Vec2(elevatedRoomX, elevatedRoomY),
+            Color(230, 180, 100), // Warm orange/yellow light
+            1.3f,                // Higher intensity
+            10.0f,               // Large radius to light the whole room
+            0.8f,                // Flicker speed
+            0.25f                // Flicker amount
+        );
+        m_renderer->getLightingSystem().addLight(elevatedRoomLight);
     }
     
     // Add some items and enemies to the ground level
@@ -3485,6 +3644,7 @@ void Engine::handleMainMenuInput() {
         // Handle the selected menu item
         switch (m_menuSelection) {
             case 0: // Play Game
+                Player::resetTotalShotsFired();
                 setState(GameState::Playing);
                 break;
                 

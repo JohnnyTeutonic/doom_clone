@@ -403,6 +403,27 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
                         }
                         break;
                         
+                    // Add special handling for stairs
+                    case CellType::Stairs:
+                        // Encode stairs with value 10 (different from walls and empty)
+                        cellValue = 10;
+                        break;
+                        
+                    case CellType::StairStep1:
+                        // 25% elevation - encode as 11
+                        cellValue = 11;
+                        break;
+                        
+                    case CellType::StairStep2:
+                        // 50% elevation - encode as 12
+                        cellValue = 12;
+                        break;
+                        
+                    case CellType::StairStep3:
+                        // 75% elevation - encode as 13
+                        cellValue = 13;
+                        break;
+                        
                     default:
                         cellValue = 0; // Empty or non-solid
                         break;
@@ -417,9 +438,9 @@ void CudaRenderer::copyMapToDevice(const Map& map, const Player& player) {
         cudaError_t error = cudaMemcpy(m_deviceMapData, hostMapData.data(), mapWidth * mapHeight * sizeof(int), cudaMemcpyHostToDevice);
         if (error != cudaSuccess) {
             std::cerr << "Failed to copy map data to device: " << cudaGetErrorString(error) << std::endl;
-        return;
-    }
-    
+            return;
+        }
+        
         // Create player data safely
         PlayerData hostPlayerData;
         
@@ -1275,6 +1296,9 @@ void CudaRenderer::render(const Map& map, const Player& player) {
     // Generate the frame
     generateFrame(map, player);
     
+    // Copy the z-buffer from device to host for projectile rendering
+    copyZBufferToHost();
+    
     // Blit the frame buffer
     blitFrameBuffer();
     
@@ -1706,4 +1730,24 @@ void CudaRenderer::printDeviceInfo() const {
     std::cout << "  Memory clock rate: " << (deviceProps.memoryClockRate / 1000) << " MHz" << std::endl;
     std::cout << "  Memory bus width: " << deviceProps.memoryBusWidth << " bits" << std::endl;
     std::cout << "  L2 cache size: " << (deviceProps.l2CacheSize / 1024) << " KB" << std::endl;
+} 
+
+bool CudaRenderer::copyZBufferToHost() {
+    // Skip if not initialized
+    if (!m_deviceZBuffer || !m_hostZBuffer) {
+        std::cerr << "CudaRenderer: Z-buffer not initialized for copy" << std::endl;
+        return false;
+    }
+    
+    // Copy Z-buffer data from device to host without any post-processing
+    cudaError_t error = cudaMemcpy(m_hostZBuffer, m_deviceZBuffer, 
+                                   m_screenWidth * m_screenHeight * sizeof(float), 
+                                   cudaMemcpyDeviceToHost);
+    
+    if (error != cudaSuccess) {
+        std::cerr << "Failed to copy Z-buffer from device: " << cudaGetErrorString(error) << std::endl;
+        return false;
+    }
+    
+    return true;
 } 

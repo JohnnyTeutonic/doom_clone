@@ -276,7 +276,8 @@ extern "C" __global__ void raycastKernel(
         
         // Check for walls (either regular walls with value 1 or encoded walls with values > 100)
         // The encoding is (textureId + 1) * 100 + 1, so valid wall values are 101, 201, 301, 401
-        if (cellValue == 1 || (cellValue > 100 && cellValue <= 401)) {
+        if (cellValue == 1 || (cellValue > 100 && cellValue <= 401) || 
+            (cellValue >= 10 && cellValue <= 13)) { // Add detection for stairs (10-13)
             hit = 1; // Wall hit
             
             // If this is a regular wall (value 1), set it to use texture 0
@@ -301,15 +302,41 @@ extern "C" __global__ void raycastKernel(
     }
     
     // Save z-buffer value - use original y coordinate
+    // IMPORTANT: Always use the actual perpWallDist for Z-buffer, regardless of wall type
+    // This ensures projectiles render correctly
     zBuffer[y * screenWidth + x] = perpWallDist;
     
     // Calculate height of line to draw on screen
     int lineHeight = static_cast<int>(screenHeight / perpWallDist);
     
-    // Calculate drawing boundaries with vertical offset
-    int drawStart = -lineHeight / 2 + screenHeight / 2 + static_cast<int>(totalVerticalOffset);
+    // Apply height adjustment for stairs - add offset based on stair type
+    float heightOffset = 0.0f;
+    bool isStair = false;
+    bool isStairStep = false;
+    float stepHeight = 0.0f;
+    
+    // Detect stair types and apply appropriate height offsets
+    if (cellValue >= 10 && cellValue <= 13) {
+        isStair = (cellValue == 10);
+        isStairStep = (cellValue >= 11 && cellValue <= 13);
+        
+        // Set step height based on stair type
+        if (cellValue == 11) { // StairStep1 (25% elevation)
+            stepHeight = 0.25f;
+        } else if (cellValue == 12) { // StairStep2 (50% elevation)
+            stepHeight = 0.5f;
+        } else if (cellValue == 13) { // StairStep3 (75% elevation)
+            stepHeight = 0.75f;
+        }
+        
+        // Scale the height offset based on step height
+        heightOffset = stepHeight * screenHeight * 0.3f; // Scale factor to control stair height
+    }
+    
+    // Calculate drawing boundaries with vertical offset and stair height adjustment
+    int drawStart = -lineHeight / 2 + screenHeight / 2 + static_cast<int>(totalVerticalOffset) - static_cast<int>(heightOffset);
     if (drawStart < 0) drawStart = 0;
-    int drawEnd = lineHeight / 2 + screenHeight / 2 + static_cast<int>(totalVerticalOffset);
+    int drawEnd = lineHeight / 2 + screenHeight / 2 + static_cast<int>(totalVerticalOffset) - static_cast<int>(heightOffset);
     if (drawEnd >= screenHeight) drawEnd = screenHeight - 1;
     
     // Texturing calculations
@@ -331,7 +358,10 @@ extern "C" __global__ void raycastKernel(
     
     // CRITICAL FIX: Force all walls to use texture 0 regardless of encoded value
     // This ensures consistent texturing across the entire wall and map
-    texNum = 0;
+    // For stairs, we'll use a special texture approach later
+    if (!isStair && !isStairStep) {
+        texNum = 0;
+    }
     
     // Calculate where exactly the wall was hit
     float wallX;
@@ -493,38 +523,91 @@ extern "C" __global__ void raycastKernel(
             b = static_cast<uint8_t>(b * 0.7f);
         }
         
-        // Apply classic Doom horizontal shadow bands emanating from top edge
-        float heightFactor = static_cast<float>(i - drawStart) / static_cast<float>(drawEnd - drawStart);
-        
-        // Create strong shadow at top that gradually fades as it goes down (classic Doom style)
-        // Extend shadows to cover 55% of wall height (instead of 35%)
-        if (heightFactor < 0.55f) {
-            // More dramatic shadow gradient from top
-            float shadowStrength;
-            
-            if (heightFactor < 0.08f) {
-                // Very top is darkest (30% brightness - even darker for more contrast)
-                shadowStrength = 0.3f + (heightFactor / 0.08f) * 0.2f;
-            } else if (heightFactor < 0.25f) {
-                // Middle section of shadow (50% to 70% brightness)
-                shadowStrength = 0.5f + ((heightFactor - 0.08f) / (0.25f - 0.08f)) * 0.2f;
+        // Special handling for stairs
+        if (isStair || isStairStep) {
+            // Override the color for stairs with special rendering
+            if (isStairStep) {
+                // Use different colors based on step height for stair steps
+                int baseR = 210 + static_cast<int>(stepHeight * 45);  // More red as steps go up
+                int baseG = 210 + static_cast<int>((1.0f - stepHeight) * 45); // More green as steps go down
+                int baseB = 255;  // Keep blue constant
+                
+                // Create 3D stair effect with two colors based on height
+                float heightFactor = static_cast<float>(i - drawStart) / static_cast<float>(drawEnd - drawStart);
+                
+                if (heightFactor < 0.5f) {
+                    // Top half of step (horizontal surface)
+                    r = static_cast<uint8_t>(baseR * lighting.x);
+                    g = static_cast<uint8_t>(baseG * lighting.y);
+                    b = static_cast<uint8_t>(baseB * lighting.z);
+                } else {
+                    // Bottom half of step (vertical riser) in slightly darker color
+                    r = static_cast<uint8_t>(baseR * 0.8f * lighting.x);
+                    g = static_cast<uint8_t>(baseG * 0.8f * lighting.y);
+                    b = static_cast<uint8_t>(baseB * 0.8f * lighting.z);
+                }
+                
+                // Add horizontal lines to show step edges if this is close to a horizontal separator
+                float stepSpacing = 0.125f; // 1/8th of the step height
+                if (abs(heightFactor - 0.5f) < 0.01f || 
+                    fmodf(heightFactor, stepSpacing) < 0.01f) {
+                    // Add dark blue edge at step edges
+                    r = static_cast<uint8_t>(50 * lighting.x);
+                    g = static_cast<uint8_t>(50 * lighting.y);
+                    b = static_cast<uint8_t>(150 * lighting.z);
+                }
             } else {
-                // Lower section of shadow (70% to 100% brightness) - longer fade-out
-                shadowStrength = 0.7f + ((heightFactor - 0.25f) / (0.55f - 0.25f)) * 0.3f;
+                // Render stair entry/exit point with a special pattern
+                // Calculate pattern based on position
+                int patternY = (i - drawStart) % 10;
+                int patternX = (x + patternY) % 10;
+                
+                if (x % 5 <= patternX) {
+                    // Yellow-orange for stair entry/exit
+                    r = static_cast<uint8_t>(255 * lighting.x);
+                    g = static_cast<uint8_t>(200 * lighting.y);
+                    b = static_cast<uint8_t>(0 * lighting.z);
+                } else {
+                    // Alternate with darker color
+                    r = static_cast<uint8_t>(180 * lighting.x);
+                    g = static_cast<uint8_t>(140 * lighting.y);
+                    b = static_cast<uint8_t>(0 * lighting.z);
+                }
+            }
+        } else {
+            // Apply classic Doom horizontal shadow bands emanating from top edge
+            float heightFactor = static_cast<float>(i - drawStart) / static_cast<float>(drawEnd - drawStart);
+            
+            // Create strong shadow at top that gradually fades as it goes down (classic Doom style)
+            // Extend shadows to cover 55% of wall height (instead of 35%)
+            if (heightFactor < 0.55f) {
+                // More dramatic shadow gradient from top
+                float shadowStrength;
+                
+                if (heightFactor < 0.08f) {
+                    // Very top is darkest (30% brightness - even darker for more contrast)
+                    shadowStrength = 0.3f + (heightFactor / 0.08f) * 0.2f;
+                } else if (heightFactor < 0.25f) {
+                    // Middle section of shadow (50% to 70% brightness)
+                    shadowStrength = 0.5f + ((heightFactor - 0.08f) / (0.25f - 0.08f)) * 0.2f;
+                } else {
+                    // Lower section of shadow (70% to 100% brightness) - longer fade-out
+                    shadowStrength = 0.7f + ((heightFactor - 0.25f) / (0.55f - 0.25f)) * 0.3f;
+                }
+                
+                r = static_cast<uint8_t>(r * shadowStrength);
+                g = static_cast<uint8_t>(g * shadowStrength);
+                b = static_cast<uint8_t>(b * shadowStrength);
             }
             
-            r = static_cast<uint8_t>(r * shadowStrength);
-            g = static_cast<uint8_t>(g * shadowStrength);
-            b = static_cast<uint8_t>(b * shadowStrength);
-        }
-        
-        // Add subtle darkening at the very bottom of walls (as in Doom)
-        if (heightFactor > 0.85f) {
-            // Lower portion of wall gets progressively darker
-            float bottomShadow = 1.0f - ((heightFactor - 0.85f) * 0.6f);
-            r = static_cast<uint8_t>(r * bottomShadow);
-            g = static_cast<uint8_t>(g * bottomShadow);
-            b = static_cast<uint8_t>(b * bottomShadow);
+            // Add subtle darkening at the very bottom of walls (as in Doom)
+            if (heightFactor > 0.85f) {
+                // Lower portion of wall gets progressively darker
+                float bottomShadow = 1.0f - ((heightFactor - 0.85f) * 0.6f);
+                r = static_cast<uint8_t>(r * bottomShadow);
+                g = static_cast<uint8_t>(g * bottomShadow);
+                b = static_cast<uint8_t>(b * bottomShadow);
+            }
         }
         
         // Recombine
