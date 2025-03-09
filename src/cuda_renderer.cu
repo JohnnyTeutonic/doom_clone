@@ -20,8 +20,9 @@ __device__ float3 calculatePointLight(
     // Normalize light direction
     float lightDist = sqrtf(lightDir.x * lightDir.x + lightDir.y * lightDir.y);
     
-    // Skip if point is outside light radius
-    if (lightDist > light.radius) {
+    // Skip if point is outside light radius - use a slightly increased radius for better visibility
+    float enhancedRadius = light.radius * 1.2f; // Increase effective light radius by 20%
+    if (lightDist > enhancedRadius) {
         return make_float3(ambientR, ambientG, ambientB);
     }
     
@@ -36,22 +37,23 @@ __device__ float3 calculatePointLight(
     diffuse = fmaxf(0.0f, diffuse);
     
     // Sharpen diffuse lighting for more defined shadows (Doom-like)
-    diffuse = powf(diffuse, 1.3f);
+    diffuse = powf(diffuse, 1.2f); // Reduced from 1.3f to 1.2f for more gradual lighting
     
     // Calculate attenuation (falloff with distance)
-    // Use more dramatic falloff for the Doom look
-    float attenuation = fmaxf(0.0f, 1.0f - (lightDist / light.radius));
-    // Classic Doom had sharper light falloff
-    attenuation = powf(attenuation, 1.8f); // Stronger falloff for more defined shadows
+    // Use more gradual falloff for better visibility
+    float attenuation = fmaxf(0.0f, 1.0f - (lightDist / enhancedRadius));
+    // Make falloff less sharp for better visibility
+    attenuation = powf(attenuation, 1.6f); // Reduced from 1.8f to 1.6f for more gradual falloff
     
-    // Calculate the final light contribution
+    // Calculate the final light contribution with increased intensity
+    float intensityBoost = 1.3f; // Boost intensity by 30%
     float3 result;
-    result.x = light.r * light.intensity * diffuse * attenuation;
-    result.y = light.g * light.intensity * diffuse * attenuation;
-    result.z = light.b * light.intensity * diffuse * attenuation;
+    result.x = light.r * light.intensity * intensityBoost * diffuse * attenuation;
+    result.y = light.g * light.intensity * intensityBoost * diffuse * attenuation;
+    result.z = light.b * light.intensity * intensityBoost * diffuse * attenuation;
     
-    // Enhance light/shadow contrast for Doom-like appearance
-    float contrast = 1.2f;
+    // Enhance light/shadow contrast for Doom-like appearance but slightly more gradual
+    float contrast = 1.15f; // Reduced from 1.2f to 1.15f for more natural appearance
     result.x = fminf(1.0f, result.x * contrast);
     result.y = fminf(1.0f, result.y * contrast);
     result.z = fminf(1.0f, result.z * contrast);
@@ -94,9 +96,8 @@ __device__ float3 calculateLighting(
     int numActiveLights,
     const CudaAmbientLight& ambient
 ) {
-    // Adjust ambient lighting to support horizontal shadows better
-    // Doom had strong shadowing at the top of walls, so we'll start with darker ambient
-    float ambientFactor = 0.80f;  // Slightly darker ambient for more dramatic shadows
+    // Adjust ambient lighting for better visibility
+    float ambientFactor = 0.85f;  // Increased from 0.80f for slightly brighter ambient
     float3 totalLight;
     totalLight.x = ambient.r * ambient.intensity * ambientFactor;
     totalLight.y = ambient.g * ambient.intensity * ambientFactor;
@@ -144,13 +145,13 @@ __device__ float3 calculateLighting(
     
     // Enhanced falloff for more defined shadows at distance
     if (distance > 1.5f) {
-        // More dramatic falloff curve that emphasizes closer walls
-        distFactor = powf(6.0f / distance, 1.3f);
+        // More gradual falloff curve for better visibility
+        distFactor = powf(6.5f / distance, 1.2f); // Increased base value and reduced exponent
         distFactor = fminf(1.0f, distFactor);
     }
     
-    // Doom had fairly dark shadow areas
-    float minBrightness = 0.12f;  // Darker minimum for better contrast
+    // Keep minimum brightness higher for better visibility
+    float minBrightness = 0.15f;  // Increased from 0.12f for better visibility
     totalLight.x = fmaxf(minBrightness, totalLight.x * distFactor);
     totalLight.y = fmaxf(minBrightness, totalLight.y * distFactor);
     totalLight.z = fmaxf(minBrightness, totalLight.z * distFactor);

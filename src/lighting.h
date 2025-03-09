@@ -140,7 +140,7 @@ public:
         : m_ambientColor(Color(64, 64, 96))  // Slight bluish ambient for doom-like atmosphere
         , m_ambientIntensity(0.3)           // Increased from 0.23 to 0.3 for better visibility
         , m_enabled(true)
-        , m_cullDistance(15.0)               // Default culling distance
+        , m_cullDistance(20.0)               // Increased from 15.0 to 20.0 for wider light visibility
         , m_useCulling(true)                 // Enable culling by default
         , m_updateFrequency(3)               // Update lights every 3 frames
         , m_updateCounter(0)

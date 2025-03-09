@@ -130,6 +130,9 @@ private:
     // Lighting properties
     float m_ambientLightLevel;  // Overall ambient light level
     
+    // Lighting control
+    bool m_lightingEnabled;
+    
     // Initialize CUDA resources
     bool initCuda();
     
@@ -171,6 +174,10 @@ public:
     void setSpriteManager(SpriteManager* spriteManager) { m_spriteManager = spriteManager; }
 
     bool isInitialized() const { return m_isInitialized; }
+    
+    // Lighting control
+    void setLightingEnabled(bool enabled) { m_lightingEnabled = enabled; }
+    bool isLightingEnabled() const { return m_lightingEnabled; }
     
     // Wall texture variations (like the regular renderer)
     void addWallTextureVariation(int textureId) { m_wallTextureVariations.push_back(textureId); }

@@ -183,17 +183,19 @@ bool Engine::init(int screenWidth, int screenHeight, bool fullscreen, int target
     m_renderer->setEngine(this);  // Set the engine reference
     std::cout << "Renderer initialized: " << m_renderer << std::endl;
     
-    // Initialize CUDA renderer if available
     if (m_useCuda) {
+        std::cout << "CUDA is available. Initializing CUDA renderer..." << std::endl;
         m_cudaRenderer = new CudaRenderer();
         if (!m_cudaRenderer->init(screenWidth, screenHeight, m_sdlRenderer, m_textureManager)) {
-            std::cerr << "Failed to initialize CUDA renderer, falling back to CPU renderer" << std::endl;
-            m_useCuda = false;
+            std::cerr << "Failed to initialize CUDA renderer - falling back to software rendering." << std::endl;
             delete m_cudaRenderer;
             m_cudaRenderer = nullptr;
+            m_useCuda = false;
         } else {
-            // Disable muzzle flash when using CUDA to prevent the yellow circle
-            m_renderer->toggleMuzzleFlash(); // This will enable it since it's disabled by default
+            // Sync lighting settings with regular renderer
+            if (m_renderer) {
+                m_cudaRenderer->setLightingEnabled(m_renderer->isLightingEnabled());
+            }
         }
     } else {
         // Enable muzzle flash for CPU renderer
@@ -649,6 +651,21 @@ void Engine::processInput() {
     // Handle global input actions
     if (m_inputHandler.isActionTriggered(InputAction::Quit, m_gameState)) {
         m_running = false;
+    }
+    
+    if (m_inputHandler.isActionTriggered(InputAction::ToggleLighting, m_gameState)) {
+        if (m_renderer) {
+            m_renderer->toggleLighting();
+            bool isEnabled = m_renderer->isLightingEnabled();
+            
+            // Sync with CUDA renderer if available
+            if (m_cudaRenderer) {
+                m_cudaRenderer->setLightingEnabled(isEnabled);
+            }
+            
+            // Updated message to reflect the new default state
+            showNotification(isEnabled ? "Lighting Effects ON" : "Lighting Effects OFF (Default)", 1.5);
+        }
     }
     
     if (m_inputHandler.isActionTriggered(InputAction::ToggleMusic, m_gameState)) {
@@ -2486,8 +2503,8 @@ void Engine::setupMap() {
                         groundLight = Light::createPointLight(
                             Vec2(x, y),
                             Color(r * 255, g * 255, b * 255),
-                            0.92f,                 // Intensity increased by 15%
-                            6.0f                   // Radius
+                            1.5f,                 // Increased intensity from 0.92f to 1.5f
+                            8.0f                  // Increased radius from 6.0f to 8.0f
                         );
                         break;
                         
@@ -2495,8 +2512,8 @@ void Engine::setupMap() {
                         groundLight = Light::createFlickeringLight(
                             Vec2(x, y),
                             Color(r * 255, g * 255, b * 255),
-                            0.92f,                 // Intensity increased by 15%
-                            6.0f,                  // Radius
+                            1.5f,                 // Increased intensity from 0.92f to 1.5f
+                            8.0f,                 // Increased radius from 6.0f to 8.0f
                             1.0f + (rand() % 100) / 100.0f,  // Random flicker speed
                             0.3f + (rand() % 100) / 500.0f   // Random flicker amount
                         );
@@ -2506,8 +2523,8 @@ void Engine::setupMap() {
                         groundLight = Light::createPulsingLight(
                             Vec2(x, y),
                             Color(r * 255, g * 255, b * 255),
-                            0.92f,                 // Intensity increased by 15%
-                            6.0f,                  // Radius
+                            1.5f,                 // Increased intensity from 0.92f to 1.5f
+                            8.0f,                 // Increased radius from 6.0f to 8.0f
                             0.3f + (rand() % 100) / 200.0f   // Random pulse speed
                         );
                         break;
@@ -2517,8 +2534,8 @@ void Engine::setupMap() {
                         groundLight = Light::createStrobeLight(
                             Vec2(x, y),
                             Color(r * 255, g * 255, b * 255),
-                            0.92f,                 // Intensity increased by 15%
-                            6.0f,                  // Radius
+                            1.5f,                 // Increased intensity from 0.92f to 1.5f
+                            8.0f,                 // Increased radius from 6.0f to 8.0f
                             0.2f + (rand() % 100) / 200.0f   // Random strobe speed
                         );
                         break;
@@ -2826,7 +2843,7 @@ void Engine::setupInput() {
     // Initialize input handler
     m_inputHandler.init();
     
-    // Bind keys to actions
+    // Movement and action keys
     m_inputHandler.bindKey(SDL_SCANCODE_W, InputAction::MoveForward);
     m_inputHandler.bindKey(SDL_SCANCODE_S, InputAction::MoveBackward);
     m_inputHandler.bindKey(SDL_SCANCODE_A, InputAction::StrafeLeft);
@@ -2842,13 +2859,14 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_F2, InputAction::ToggleMinimap);
     m_inputHandler.bindKey(SDL_SCANCODE_F3, InputAction::ToggleWeapon);
     m_inputHandler.bindKey(SDL_SCANCODE_F4, InputAction::ToggleCeilings);
+    m_inputHandler.bindKey(SDL_SCANCODE_F5, InputAction::ToggleLighting); // Add key binding for lighting toggle
     
-    // Menu navigation keys
+    // Menu navigation
     m_inputHandler.bindKey(SDL_SCANCODE_UP, InputAction::MenuUp);
     m_inputHandler.bindKey(SDL_SCANCODE_DOWN, InputAction::MenuDown);
     m_inputHandler.bindKey(SDL_SCANCODE_RETURN, InputAction::MenuSelect);
     
-    // Audio control keys
+    // Audio controls
     m_inputHandler.bindKey(SDL_SCANCODE_M, InputAction::ToggleMusic);
     m_inputHandler.bindKey(SDL_SCANCODE_PAGEUP, InputAction::IncreaseMusicVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_PAGEDOWN, InputAction::DecreaseMusicVolume);
@@ -2856,14 +2874,13 @@ void Engine::setupInput() {
     m_inputHandler.bindKey(SDL_SCANCODE_END, InputAction::DecreaseSfxVolume);
     m_inputHandler.bindKey(SDL_SCANCODE_F10, InputAction::EnhanceMidiQuality);  // F10 for enhancing MIDI quality
     
-    // Weapon keys
+    // Weapon selection keys
     m_inputHandler.bindKey(SDL_SCANCODE_1, InputAction::Weapon1);
     m_inputHandler.bindKey(SDL_SCANCODE_2, InputAction::Weapon2);
     m_inputHandler.bindKey(SDL_SCANCODE_3, InputAction::Weapon3);
     m_inputHandler.bindKey(SDL_SCANCODE_4, InputAction::Weapon4);
     m_inputHandler.bindKey(SDL_SCANCODE_5, InputAction::Weapon5);
     m_inputHandler.bindKey(SDL_SCANCODE_6, InputAction::Weapon6);
-    m_inputHandler.bindKey(SDL_SCANCODE_7, InputAction::Weapon7);
     
     // Debug keys
     m_inputHandler.bindKey(SDL_SCANCODE_F9, InputAction::TestSound);

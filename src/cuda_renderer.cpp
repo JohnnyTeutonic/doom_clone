@@ -51,6 +51,7 @@ CudaRenderer::CudaRenderer()
     , m_wallTextureHeight(64)        // Default texture dimensions (must be non-zero)
     , m_ambientLightLevel(0.2f)      // Default ambient light level
     , m_frameReady(false)
+    , m_lightingEnabled(false)       // Changed from true to false - lighting disabled by default
 {
     // Initialize wall texture variations with defaults (will be replaced by engine)
     m_wallTextureVariations = {0, 1, 2, 3};
@@ -1554,6 +1555,34 @@ void CudaRenderer::copyLightsToDevice(const LightingSystem& lightingSystem) {
     // Set ambient light data
     Color ambientColor = lightingSystem.getAmbientColor();
     double ambientIntensity = lightingSystem.getAmbientIntensity();
+    
+    // Check if lighting system is enabled globally
+    // Use both the local setting and the LightingSystem setting
+    bool lightingEnabled = m_lightingEnabled;
+    
+    // If lighting is disabled, set ambient to full white light (no darkness)
+    if (!lightingEnabled) {
+        // Using full bright ambient when lighting is disabled
+        std::cout << "CUDA Renderer: Lighting is DISABLED, using full brightness" << std::endl;
+        
+        hostAmbient.r = 1.0f;
+        hostAmbient.g = 1.0f;
+        hostAmbient.b = 1.0f;
+        hostAmbient.intensity = 1.0f;
+        
+        // Copy ambient light to device
+        cudaError_t cudaStatus = cudaMemcpy(m_deviceAmbient, &hostAmbient, sizeof(CudaAmbientLight), cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess) {
+            std::cerr << "Failed to copy ambient light to device: " << cudaGetErrorString(cudaStatus) << std::endl;
+        }
+        
+        // Set active lights to 0 since lighting is disabled
+        m_numActiveLights = 0;
+        return;
+    }
+    
+    // Normal path when lighting is enabled
+    std::cout << "CUDA Renderer: Lighting is ENABLED, processing " << lightingSystem.getLights().size() << " lights" << std::endl;
     
     hostAmbient.r = ambientColor.r / 255.0f;
     hostAmbient.g = ambientColor.g / 255.0f;

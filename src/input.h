@@ -30,6 +30,7 @@ enum class InputAction {
     ToggleMinimap,
     ToggleWeapon,
     ToggleCeilings,
+    ToggleLighting, // Add new action for toggling lighting
     ToggleMusic,
     IncreaseMusicVolume,
     DecreaseMusicVolume,

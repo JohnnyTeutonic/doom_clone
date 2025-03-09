@@ -19,7 +19,7 @@ Renderer::Renderer()
     , m_showMinimap(true)
     , m_showWeapon(true)
     , m_showCeilings(true)  // Initialize ceiling rendering to on by default
-    , m_lightingEnabled(true)
+    , m_lightingEnabled(false)  // Changed from true to false - lighting disabled by default
     , m_muzzleFlashEnabled(false)  // Disable muzzle flash by default
     , m_performanceLevel(PerformanceLevel::Medium)
     , m_frameCount(0)
@@ -28,6 +28,10 @@ Renderer::Renderer()
 {
     // Initialize lighting system
     m_lightingSystem.setEnabled(m_lightingEnabled);
+    
+    // Make sure random lights are visible by default
+    m_lightingEnabled = false;  // Changed from true to false - start with lighting off
+    m_lightingSystem.setEnabled(false);  // Changed from true to false
     
     // Initialize z-buffer
     m_zBuffer.resize(m_screenWidth, std::numeric_limits<double>::max());
