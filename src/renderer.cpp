@@ -207,99 +207,6 @@ void Renderer::renderMap(Map* map, Camera* camera)
     static int frameCount = 0;
     frameCount++;
     
-    if (frameCount % 60 == 0) {  // Print only once per second (assuming 60 FPS)
-        std::cout << "Frame " << frameCount << ": Processing " << visibleWalls.size() << " visible walls" << std::endl;
-    }
-    
-    // If no walls, create some test walls
-    if (visibleWalls.empty()) {
-        // Create synthetic test walls if none are found
-        Vec2 camPos = camera->getPosition();
-        double camAngle = camera->getAngle();
-        
-        // Create walls in cardinal directions around camera
-        for (int i = 0; i < 4; i++) {
-            double angle = i * PI / 2 + camAngle;
-            Vec2 start(camPos.x + cos(angle) * 2 - sin(angle), camPos.y + sin(angle) * 2 + cos(angle));
-            Vec2 end(camPos.x + cos(angle) * 2 + sin(angle), camPos.y + sin(angle) * 2 - cos(angle));
-            
-            auto wall = std::make_shared<Wall>(start, end);
-            wall->setTextureId(i);
-            visibleWalls.push_back(wall);
-        }
-        
-        std::cout << "WARNING: No walls found! Added " << visibleWalls.size() << " test walls." << std::endl;
-    }
-    
-    // DIRECT WALL DEBUG: Draw walls directly to screen without any intermediate processing
-    double eyeX, eyeY, eyeZ, dirX, dirY, dirZ;
-    camera->getViewMatrix(eyeX, eyeY, eyeZ, dirX, dirY, dirZ);
-    
-    // Get camera FOV and calculate projection variables
-    double fov = camera->getFOV();
-    double halfFovTan = tan(fov / 2.0);
-    double aspectRatio = static_cast<double>(m_screenWidth) / m_screenHeight;
-    
-    // Draw each wall directly
-    for (const auto& wall : visibleWalls) {
-        Vec2 start = wall->getStart();
-        Vec2 end = wall->getEnd();
-        
-        // Transform points to camera space
-        double startX = start.x - eyeX;
-        double startY = start.y - eyeY;
-        double endX = end.x - eyeX;
-        double endY = end.y - eyeY;
-        
-        // Rotate points around camera (inverse of camera rotation)
-        double cosAngle = cos(-camera->getAngle());
-        double sinAngle = sin(-camera->getAngle());
-        
-        double rotStartX = startX * cosAngle - startY * sinAngle;
-        double rotStartY = startX * sinAngle + startY * cosAngle;
-        double rotEndX = endX * cosAngle - endY * sinAngle;
-        double rotEndY = endX * sinAngle + endY * cosAngle;
-        
-        // Skip walls behind the camera
-        if (rotStartX < 0.1 && rotEndX < 0.1) {
-            continue;
-        }
-        
-        // Calculate screen x-coordinates
-        double startScreenX = (rotStartY / rotStartX / halfFovTan / aspectRatio + 1.0) * m_screenWidth / 2.0;
-        double endScreenX = (rotEndY / rotEndX / halfFovTan / aspectRatio + 1.0) * m_screenWidth / 2.0;
-        
-        // Draw a bright line on screen to show where wall should be
-        int x1 = static_cast<int>(startScreenX);
-        int x2 = static_cast<int>(endScreenX);
-        
-        // Only draw if in screen bounds
-        if ((x1 >= 0 && x1 < m_screenWidth) || (x2 >= 0 && x2 < m_screenWidth)) {
-            // Use a bright distinctive color based on wall ID
-            int textureId = wall->getTextureId() % 4;
-            Color debugColor;
-            
-            switch (textureId) {
-                case 0: debugColor = Color(255, 255, 255); break; // White
-                case 1: debugColor = Color(255, 0, 255); break;   // Magenta
-                case 2: debugColor = Color(255, 255, 0); break;   // Yellow
-                case 3: debugColor = Color(0, 255, 255); break;   // Cyan
-                default: debugColor = Color(255, 0, 0); break;    // Red (fallback)
-            }
-            
-            // Draw colored vertical lines at wall positions
-            for (int x = std::max(0, x1); x <= std::min(m_screenWidth - 1, x2); x++) {
-                for (int y = 0; y < m_screenHeight; y++) {
-                    // Draw every 5th line for a dashed effect
-                    if ((x - x1) % 5 == 0) {
-                        // Force pixel to be visible regardless of Z-buffer
-                        setPixel(x, y, debugColor);
-                    }
-                }
-            }
-        }
-    }
-    
     // Process visible walls to generate spans
     processVisibleWalls(map, camera, visibleWalls);
     
@@ -579,6 +486,11 @@ void Renderer::drawWallSpans()
     static int frameCounter = 0;
     frameCounter++;
     
+    // Debug message to check wall spans
+    if (frameCounter % 100 == 0) {
+        std::cout << "Drawing " << m_wallSpans.size() << " wall spans" << std::endl;
+    }
+    
     // Draw each wall span
     for (const auto& span : m_wallSpans) {
         // Skip portal walls for this simplified version
@@ -588,45 +500,159 @@ void Renderer::drawWallSpans()
         int y1 = std::max(0, span.y1);
         int y2 = std::min(m_screenHeight - 1, span.y2);
         
-        // SUPER OBVIOUS PATTERN:
-        // Use bright, unmistakable colors and patterns to test if walls are rendering at all
+        // Debug: Force walls to be visible with high contrast textures
+        if (y2 <= y1) {
+            // Fix degenerate spans
+            y2 = y1 + 100; // Ensure wall is visible
+        }
+        
+        // Force texture ID to be a reasonable value
+        int textureId = abs(span.textureId) % 4;  // Make sure it's 0-3
         
         // Draw the vertical strip
         for (int y = y1; y <= y2; y++) {
-            // Create a very visible pattern 
-            // - Alternate every 8 pixels vertically (bright yellow stripes on red)
-            // - Make walls pulse over time to make sure rendering updates
+            // Calculate vertical texture coordinate - normalized position on wall
+            double texV = static_cast<double>(y - y1) / static_cast<double>(y2 - y1 + 1);
+            
+            // Calculate horizontal texture coordinate - use span.u but ensure it wraps
+            // Force texU to have visible repetition for debugging
+            double texU = span.u * 3.0;  // Multiply to create more visible repetition
+            
+            // Ensure texture coordinates wrap properly
+            texU = texU - floor(texU);
+            texV = texV - floor(texV);
+            
+            // Get wall color based on texture ID
             Color wallColor;
             
-            // Vertical stripe pattern
-            bool isStripe = ((y / 8) % 2 == 0);
-            
-            // Time-based pulsing (changes every ~30 frames)
-            bool pulsePhase = ((frameCounter / 30) % 2 == 0);
-            
-            // Extremely bright contrasting colors
-            if (isStripe) {
-                // Bright yellow stripes
-                wallColor = pulsePhase ? Color(255, 255, 0) : Color(200, 200, 0);
-            } else {
-                // Bright red background
-                wallColor = pulsePhase ? Color(255, 0, 0) : Color(200, 0, 0);
+            // Enhanced debug coloring - make textures super visible
+            switch (textureId) {
+                case 0: { // Bloody stone wall - exaggerated colors
+                    // Stone pattern with bright red stains
+                    int stoneSize = 16;
+                    int stoneX = static_cast<int>(texU * 64) / stoneSize;
+                    int stoneY = static_cast<int>(texV * 64) / stoneSize;
+                    
+                    // Mortar grid - make it thicker and more visible
+                    bool isMortar = (static_cast<int>(texU * 64) % stoneSize < 3) || 
+                                   (static_cast<int>(texV * 64) % stoneSize < 3);
+                    
+                    // Bright blood stains - more common and brighter
+                    int seed = (stoneX * 17 + stoneY * 23) % 100;
+                    bool isBloodStain = (seed < 40);  // 40% chance for blood (more common)
+                    
+                    if (isMortar) {
+                        wallColor = Color(30, 20, 20);  // Dark mortar
+                    } else if (isBloodStain) {
+                        // Brighter blood stains
+                        wallColor = Color(200, 20, 20);  // Bright red blood
+                    } else {
+                        // Stone with high contrast
+                        wallColor = Color(90, 80, 70);  // Lighter stone
+                    }
+                    break;
+                }
+                
+                case 1: { // Tech panels - high contrast
+                    // Simplified tech pattern with high contrast
+                    int panelSize = 32;
+                    
+                    // Panel grid - thicker lines
+                    bool isEdge = (static_cast<int>(texU * 64) % panelSize < 4) || 
+                                 (static_cast<int>(texV * 64) % panelSize < 4);
+                    
+                    // Draw pentagram in center with high visibility
+                    double localU = (texU * 64) / 64.0;
+                    double localV = (texV * 64) / 64.0;
+                    double centerU = 0.5, centerV = 0.5;
+                    double dist = sqrt(pow(localU - centerU, 2) + pow(localV - centerV, 2));
+                    
+                    bool onPentagram = (dist > 0.3 && dist < 0.4);
+                    
+                    if (onPentagram) {
+                        wallColor = Color(255, 0, 0);  // Bright red pentagram
+                    } else if (isEdge) {
+                        wallColor = Color(100, 100, 120);  // Metal edge
+                    } else {
+                        wallColor = Color(40, 40, 60);  // Dark panel
+                    }
+                    break;
+                }
+                
+                case 2: { // Flesh wall - vibrant reds
+                    // Simplified organic pattern with high contrast
+                    int noiseX = static_cast<int>(texU * 64) / 4;
+                    int noiseY = static_cast<int>(texV * 64) / 4;
+                    
+                    // More visible veins
+                    bool onVein = false;
+                    for (int i = 0; i < 3; i++) {
+                        double veinY = 0.2 + i * 0.3;
+                        double veinThickness = 0.03;
+                        if (fabs(texV - veinY) < veinThickness) {
+                            onVein = true;
+                        }
+                    }
+                    
+                    if (onVein) {
+                        wallColor = Color(180, 10, 10);  // Bright red veins
+                    } else {
+                        // Base flesh color with pattern
+                        int pattern = ((noiseX + noiseY) % 3);
+                        int baseR = 100 + pattern * 20;
+                        int baseG = 30 + pattern * 10;
+                        int baseB = 30 + pattern * 10;
+                        wallColor = Color(baseR, baseG, baseB);
+                    }
+                    break;
+                }
+                
+                case 3: { // Hellish metal with runes - high contrast
+                    // Grid pattern with strong contrast
+                    int gridSize = 16;
+                    bool isGrid = (static_cast<int>(texU * 64) % gridSize < 2) || 
+                                 (static_cast<int>(texV * 64) % gridSize < 2);
+                    
+                    // Create visible rune patterns
+                    double localU = fmod(texU, 1.0);
+                    double localV = fmod(texV, 1.0);
+                    
+                    // Simple rune shape
+                    bool onRune = (fabs(localU - 0.5) < 0.1 && fabs(localV - 0.5) < 0.3) || 
+                                  (fabs(localU - 0.5) < 0.3 && fabs(localV - 0.5) < 0.1);
+                    
+                    if (onRune) {
+                        wallColor = Color(220, 80, 0);  // Bright orange-red rune
+                    } else if (isGrid) {
+                        wallColor = Color(80, 50, 30);  // Rusty edge
+                    } else {
+                        wallColor = Color(50, 40, 30);  // Dark metal
+                    }
+                    break;
+                }
+                
+                default:
+                    // Fallback - checkered pattern for visibility
+                    bool isCheckerDark = ((static_cast<int>(texU * 8) + static_cast<int>(texV * 8)) % 2 == 0);
+                    wallColor = isCheckerDark ? Color(40, 40, 40) : Color(160, 160, 160);
             }
             
-            // Special mode - draw diagonal pattern based on world position
-            if (span.x % 3 == 0) {
-                // Blue diagonal pattern for every third vertical strip
-                wallColor = Color(0, 0, 255);
-            }
+            // Apply minimal shading to preserve texture visibility
+            double fogFactor = std::max(0.7, 1.0 - span.distance / 30.0);
+            Color finalColor = Color(
+                static_cast<int>(wallColor.r * fogFactor),
+                static_cast<int>(wallColor.g * fogFactor),
+                static_cast<int>(wallColor.b * fogFactor)
+            );
             
-            // Absolutely no blending or lighting - we want raw color
-            // Draw regardless of Z-buffer - force the walls to be visible
+            // Set in Z-buffer and draw
             int index = y * m_screenWidth + span.x;
+            
+            // Always draw walls, they should override the floor
+            // as we've already sorted them by distance
             if (index >= 0 && index < m_screenWidth * m_screenHeight) {
-                // Force override Z-buffer 
-                m_zBuffer[index] = 0.0; // Closest possible distance
-                // Directly set the pixel - maximum visibility
-                setPixel(span.x, y, wallColor);
+                m_zBuffer[index] = span.distance;
+                setPixel(span.x, y, finalColor);
             }
         }
     }
