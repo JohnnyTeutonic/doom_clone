@@ -3,3 +3,5 @@ CMakeFiles
 bin
 .vscode
 build
+analysis.txt
+gmon.out
