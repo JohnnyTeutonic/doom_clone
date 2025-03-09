@@ -6,6 +6,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include "game_state.h" // Include game_state.h for GameState enum
 
 // Action types for different inputs
 enum class InputAction {
@@ -21,15 +22,30 @@ enum class InputAction {
     Jump,
     Crouch,
     Menu,
+    MenuUp,       // Added for menu navigation
+    MenuDown,     // Added for menu navigation
+    MenuSelect,   // Added for menu selection
     Quit,
     ToggleFPS,
     ToggleMinimap,
     ToggleWeapon,
+    ToggleCeilings,
+    ToggleLighting, // Add new action for toggling lighting
     ToggleMusic,
     IncreaseMusicVolume,
     DecreaseMusicVolume,
     IncreaseSfxVolume,
-    DecreaseSfxVolume
+    DecreaseSfxVolume,
+    Weapon1,
+    Weapon2,
+    Weapon3,
+    Weapon4,
+    Weapon5,
+    Weapon6,
+    Weapon7,
+    EnhanceMidiQuality,  // New action to enhance MIDI quality
+    TestSound,  // New action for testing sounds
+    TestWeapons  // New action for testing weapons
 };
 
 // Input handler class to manage keyboard and mouse input
@@ -70,6 +86,9 @@ public:
     // Process SDL events
     bool processEvent(const SDL_Event& event);
     
+    // Handle SDL events
+    bool handleEvent(const SDL_Event& event);
+    
     // Key state methods
     bool isKeyDown(SDL_Scancode key) const;
     bool isKeyPressed(SDL_Scancode key) const;  // Key was just pressed this frame
@@ -82,11 +101,18 @@ public:
     
     void getMousePosition(int& x, int& y) const;
     void getMouseMotion(int& x, int& y) const;
+    int getMouseRelX() const { return m_mouseRelX; }
+    int getMouseRelY() const { return m_mouseRelY; }
+    void resetMouseRel() { m_mouseRelX = 0; m_mouseRelY = 0; }
     
     // Action state methods
-    bool isActionActive(InputAction action) const;
-    bool isActionJustPressed(InputAction action) const;
+    bool isActionActive(InputAction action, GameState currentState = GameState::Playing) const;
+    bool isActionJustPressed(InputAction action, GameState currentState = GameState::Playing) const;
     bool isActionJustReleased(InputAction action) const;
+    
+    // Action methods
+    bool isActionTriggered(InputAction action, GameState currentState = GameState::Playing) const;
+    bool isAnyKeyPressed() const;
     
     // Key binding methods
     void bindKey(SDL_Scancode key, InputAction action);

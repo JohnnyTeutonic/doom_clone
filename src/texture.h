@@ -6,12 +6,16 @@
 #include <memory>
 #include <SDL2/SDL.h>
 #include "utils.h"
+#include <iostream>
 
 // Forward declarations
 class TextureManager;
 
 // Helper function to create a DOOM-style wall texture
 SDL_Surface* createDoomWallTexture(int width, int height);
+
+// Helper function to create a DOOM-style flat texture (for floors/ceilings)
+SDL_Surface* createDoomFlatTexture(int width, int height, bool isFloor);
 
 class Texture {
 private:
@@ -54,6 +58,9 @@ public:
     // Get a pixel at normalized coordinates (0.0 to 1.0)
     Color getPixelNormalized(double u, double v) const;
     
+    // Get raw pixel data for CUDA processing
+    const uint32_t* getPixelData() const;
+    
     // Get the SDL texture
     SDL_Texture* getSDLTexture() const { return m_sdlTexture.get(); }
 };
@@ -82,7 +89,10 @@ public:
     
     // Add an existing SDL texture
     int addTexture(SDL_Texture* sdlTexture) {
-        if (!sdlTexture) return -1;
+        if (!sdlTexture) {
+            std::cout << "TextureManager::addTexture - SDL_Texture is null" << std::endl;
+            return -1;
+        }
         
         auto texture = std::make_unique<Texture>();
         
@@ -97,11 +107,19 @@ public:
         
         // Add texture to the manager
         m_textures.push_back(std::move(texture));
-        return static_cast<int>(m_textures.size() - 1);
+        int id = static_cast<int>(m_textures.size() - 1);
+        std::cout << "TextureManager::addTexture - Added texture with ID: " << id << ", dimensions: " << width << "x" << height << std::endl;
+        return id;
     }
     
-    // Get a texture by ID
+    // Access a texture by ID
     const Texture* getTexture(int id) const;
+    
+    // Get the number of textures in the manager
+    int getTextureCount() const { return static_cast<int>(m_textures.size()); }
+    
+    // Access an SDL texture directly by ID
+    SDL_Texture* getSDLTexture(int id) const;
     
     // Initialize default textures
     void initDefaultTextures();

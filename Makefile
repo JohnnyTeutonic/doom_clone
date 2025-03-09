@@ -153,6 +153,54 @@ src/audio.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/audio.cpp.s
 .PHONY : src/audio.cpp.s
 
+src/cuda_renderer.o: src/cuda_renderer.cpp.o
+.PHONY : src/cuda_renderer.o
+
+# target to build an object file
+src/cuda_renderer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.o
+.PHONY : src/cuda_renderer.cpp.o
+
+src/cuda_renderer.i: src/cuda_renderer.cpp.i
+.PHONY : src/cuda_renderer.i
+
+# target to preprocess a source file
+src/cuda_renderer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.i
+.PHONY : src/cuda_renderer.cpp.i
+
+src/cuda_renderer.s: src/cuda_renderer.cpp.s
+.PHONY : src/cuda_renderer.s
+
+# target to generate assembly for a file
+src/cuda_renderer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cpp.s
+.PHONY : src/cuda_renderer.cpp.s
+
+src/cuda_renderer.o: src/cuda_renderer.cu.o
+.PHONY : src/cuda_renderer.o
+
+# target to build an object file
+src/cuda_renderer.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.o
+.PHONY : src/cuda_renderer.cu.o
+
+src/cuda_renderer.i: src/cuda_renderer.cu.i
+.PHONY : src/cuda_renderer.i
+
+# target to preprocess a source file
+src/cuda_renderer.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.i
+.PHONY : src/cuda_renderer.cu.i
+
+src/cuda_renderer.s: src/cuda_renderer.cu.s
+.PHONY : src/cuda_renderer.s
+
+# target to generate assembly for a file
+src/cuda_renderer.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/cuda_renderer.cu.s
+.PHONY : src/cuda_renderer.cu.s
+
 src/engine.o: src/engine.cpp.o
 .PHONY : src/engine.o
 
@@ -393,6 +441,30 @@ src/utils.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/utils.cpp.s
 .PHONY : src/utils.cpp.s
 
+src/webp_loader.o: src/webp_loader.cpp.o
+.PHONY : src/webp_loader.o
+
+# target to build an object file
+src/webp_loader.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.o
+.PHONY : src/webp_loader.cpp.o
+
+src/webp_loader.i: src/webp_loader.cpp.i
+.PHONY : src/webp_loader.i
+
+# target to preprocess a source file
+src/webp_loader.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.i
+.PHONY : src/webp_loader.cpp.i
+
+src/webp_loader.s: src/webp_loader.cpp.s
+.PHONY : src/webp_loader.s
+
+# target to generate assembly for a file
+src/webp_loader.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/webp_loader.cpp.s
+.PHONY : src/webp_loader.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -405,6 +477,12 @@ help:
 	@echo "... src/audio.o"
 	@echo "... src/audio.i"
 	@echo "... src/audio.s"
+	@echo "... src/cuda_renderer.o"
+	@echo "... src/cuda_renderer.i"
+	@echo "... src/cuda_renderer.s"
+	@echo "... src/cuda_renderer.o"
+	@echo "... src/cuda_renderer.i"
+	@echo "... src/cuda_renderer.s"
 	@echo "... src/engine.o"
 	@echo "... src/engine.i"
 	@echo "... src/engine.s"
@@ -435,6 +513,9 @@ help:
 	@echo "... src/utils.o"
 	@echo "... src/utils.i"
 	@echo "... src/utils.s"
+	@echo "... src/webp_loader.o"
+	@echo "... src/webp_loader.i"
+	@echo "... src/webp_loader.s"
 .PHONY : help
 
 

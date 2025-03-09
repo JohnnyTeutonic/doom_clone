@@ -24,14 +24,27 @@ void InputHandler::init() {
 }
 
 void InputHandler::update() {
-    // Store current key states as previous states
+    // First, store current key states as previous states
     m_prevKeyStates = m_keyStates;
     
     // Get current keyboard state directly from SDL
     int numKeys;
     const Uint8* keyboardState = SDL_GetKeyboardState(&numKeys);
     
-    // Update our key state map
+    // Debug output for menu navigation keys
+    bool upKeyDown = keyboardState[SDL_SCANCODE_UP] != 0;
+    bool downKeyDown = keyboardState[SDL_SCANCODE_DOWN] != 0;
+    bool enterKeyDown = keyboardState[SDL_SCANCODE_RETURN] != 0;
+    
+    // Track if we've updated key states for important keys like 1-3
+    bool updated1 = false;
+    bool updated2 = false;
+    bool updated3 = false;
+    bool updatedUp = false;
+    bool updatedDown = false;
+    bool updatedEnter = false;
+    
+    // Update our key state map for all mapped keys
     for (auto& binding : m_keyBindings) {
         SDL_Scancode scancode = binding.first;
         if (scancode < numKeys) {
@@ -45,23 +58,88 @@ void InputHandler::update() {
             } else if (!isDown && wasDown) {
                 std::cout << "Key released (direct): " << SDL_GetScancodeName(scancode) << " (scancode: " << scancode << ")" << std::endl;
             }
+            
+            // Track numeric keys specifically
+            if (scancode == SDL_SCANCODE_1) updated1 = true;
+            if (scancode == SDL_SCANCODE_2) updated2 = true;
+            if (scancode == SDL_SCANCODE_3) updated3 = true;
+            
+            // Track menu navigation keys
+            if (scancode == SDL_SCANCODE_UP) updatedUp = true;
+            if (scancode == SDL_SCANCODE_DOWN) updatedDown = true;
+            if (scancode == SDL_SCANCODE_RETURN) updatedEnter = true;
         }
     }
     
-    // Reset mouse motion
+    // Make absolutely sure we update the states for menu navigation keys
+    if (!updatedUp) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_UP];
+        bool isDown = keyboardState[SDL_SCANCODE_UP] ? true : false;
+        m_keyStates[SDL_SCANCODE_UP] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "UP key state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    if (!updatedDown) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_DOWN];
+        bool isDown = keyboardState[SDL_SCANCODE_DOWN] ? true : false;
+        m_keyStates[SDL_SCANCODE_DOWN] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "DOWN key state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    if (!updatedEnter) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_RETURN];
+        bool isDown = keyboardState[SDL_SCANCODE_RETURN] ? true : false;
+        m_keyStates[SDL_SCANCODE_RETURN] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "ENTER key state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    // Make absolutely sure we update the states for number keys (1-3) even if they're not bound
+    // This is a safeguard to ensure weapon switching keys are always tracked
+    if (!updated1) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_1];
+        bool isDown = keyboardState[SDL_SCANCODE_1] ? true : false;
+        m_keyStates[SDL_SCANCODE_1] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "Key 1 state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    if (!updated2) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_2];
+        bool isDown = keyboardState[SDL_SCANCODE_2] ? true : false;
+        m_keyStates[SDL_SCANCODE_2] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "Key 2 state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    if (!updated3) {
+        bool wasDown = m_keyStates[SDL_SCANCODE_3];
+        bool isDown = keyboardState[SDL_SCANCODE_3] ? true : false;
+        m_keyStates[SDL_SCANCODE_3] = isDown;
+        if (isDown != wasDown) {
+            std::cout << "Key 3 state updated (forced check): isDown=" << isDown << std::endl;
+        }
+    }
+    
+    // Reset mouse motion for this frame
     m_mouseRelX = 0;
     m_mouseRelY = 0;
 }
 
-bool InputHandler::processEvent(const SDL_Event& event) {
+bool InputHandler::handleEvent(const SDL_Event& event) {
     switch (event.type) {
         case SDL_KEYDOWN:
-            std::cout << "Key pressed: " << SDL_GetScancodeName(event.key.keysym.scancode) << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
             m_keyStates[event.key.keysym.scancode] = true;
             return true;
             
         case SDL_KEYUP:
-            std::cout << "Key released: " << SDL_GetScancodeName(event.key.keysym.scancode) << " (scancode: " << event.key.keysym.scancode << ")" << std::endl;
             m_keyStates[event.key.keysym.scancode] = false;
             return true;
             
@@ -89,10 +167,9 @@ bool InputHandler::processEvent(const SDL_Event& event) {
             else if (event.button.button == SDL_BUTTON_MIDDLE)
                 m_middleMouseButton = false;
             return true;
-            
-        default:
-            return false; // Event not handled
     }
+    
+    return false;
 }
 
 bool InputHandler::isKeyDown(SDL_Scancode key) const {
@@ -108,7 +185,25 @@ bool InputHandler::isKeyPressed(SDL_Scancode key) const {
     bool isDown = (currIt != m_keyStates.end() && currIt->second);
     bool wasDown = (prevIt != m_prevKeyStates.end() && prevIt->second);
     
-    return isDown && !wasDown;
+    bool result = isDown && !wasDown;
+    
+    // Special debug for menu navigation keys
+    if (key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN || key == SDL_SCANCODE_RETURN) {
+        std::cout << "isKeyPressed for menu key " << SDL_GetScancodeName(key) 
+                  << ": isDown=" << isDown 
+                  << ", wasDown=" << wasDown 
+                  << ", result=" << result << std::endl;
+    }
+    
+    // Debug output for number keys (1-3)
+    if (key == SDL_SCANCODE_1 || key == SDL_SCANCODE_2 || key == SDL_SCANCODE_3) {
+        std::cout << "isKeyPressed for key " << SDL_GetScancodeName(key) 
+                  << ": isDown=" << isDown 
+                  << ", wasDown=" << wasDown 
+                  << ", result=" << result << std::endl;
+    }
+    
+    return result;
 }
 
 bool InputHandler::isKeyReleased(SDL_Scancode key) const {
@@ -132,24 +227,86 @@ void InputHandler::getMouseMotion(int& x, int& y) const {
     y = m_mouseRelY;
 }
 
-bool InputHandler::isActionActive(InputAction action) const {
+bool InputHandler::isActionActive(InputAction action, GameState currentState) const {
     // Find all keys bound to this action
     for (const auto& binding : m_keyBindings) {
-        if (binding.second == action && isKeyDown(binding.first)) {
-            std::cout << "Action active: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
-            return true;
+        if (binding.second == action) {
+            // Handle state-specific behavior
+            if (currentState == GameState::MainMenu || currentState == GameState::Paused) {
+                // In menu states, only allow menu-specific actions for arrow keys
+                SDL_Scancode key = binding.first;
+                if ((key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN || 
+                     key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT) && 
+                    !(action == InputAction::MenuUp || action == InputAction::MenuDown || 
+                      action == InputAction::MenuSelect)) {
+                    // Skip movement keys when in menu states unless they're bound to menu actions
+                    continue;
+                }
+            }
+            
+            if (isKeyDown(binding.first)) {
+                std::cout << "Action active: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
+                return true;
+            }
         }
     }
     
     return false;
 }
 
-bool InputHandler::isActionJustPressed(InputAction action) const {
+bool InputHandler::isActionJustPressed(InputAction action, GameState currentState) const {
+    // Debug output for menu actions
+    if (action == InputAction::MenuUp || action == InputAction::MenuDown || action == InputAction::MenuSelect) {
+        std::cout << "Checking menu action: " << static_cast<int>(action) << std::endl;
+        
+        // Find all keys bound to this action and print their state
+        for (const auto& binding : m_keyBindings) {
+            if (binding.second == action) {
+                SDL_Scancode key = binding.first;
+                auto currIt = m_keyStates.find(key);
+                auto prevIt = m_prevKeyStates.find(key);
+                
+                bool isDown = (currIt != m_keyStates.end() && currIt->second);
+                bool wasDown = (prevIt != m_prevKeyStates.end() && prevIt->second);
+                bool isPressed = isDown && !wasDown;
+                
+                std::cout << "  Key: " << SDL_GetScancodeName(key) 
+                          << " (scancode: " << key << ")"
+                          << " isDown=" << isDown 
+                          << " wasDown=" << wasDown 
+                          << " isPressed=" << isPressed << std::endl;
+            }
+        }
+    }
+    
     // Find all keys bound to this action
     for (const auto& binding : m_keyBindings) {
-        if (binding.second == action && isKeyPressed(binding.first)) {
-            std::cout << "Action just pressed: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
-            return true;
+        if (binding.second == action) {
+            // Handle state-specific behavior
+            if (currentState == GameState::MainMenu || currentState == GameState::Paused) {
+                // In menu states, only allow menu-specific actions for arrow keys
+                SDL_Scancode key = binding.first;
+                if ((key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN || 
+                     key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT) && 
+                    !(action == InputAction::MenuUp || action == InputAction::MenuDown || 
+                      action == InputAction::MenuSelect)) {
+                    // Skip movement keys when in menu states unless they're bound to menu actions
+                    continue;
+                }
+            }
+            
+            if (isKeyPressed(binding.first)) {
+                // Special debug for weapon actions
+                if (action == InputAction::Weapon1 || 
+                    action == InputAction::Weapon2 || 
+                    action == InputAction::Weapon3) {
+                    std::cout << "WEAPON ACTION DETECTED: " << static_cast<int>(action) 
+                              << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
+                }
+                
+                std::cout << "Action just pressed: " << static_cast<int>(action) << " (key: " << SDL_GetScancodeName(binding.first) << ")" << std::endl;
+                return true;
+            }
         }
     }
     
@@ -201,4 +358,40 @@ void InputHandler::setMouseCapture(bool capture) {
 
 bool InputHandler::isMouseCaptured() const {
     return SDL_GetRelativeMouseMode() == SDL_TRUE;
+}
+
+bool InputHandler::isActionTriggered(InputAction action, GameState currentState) const {
+    // Find the key bound to this action
+    for (const auto& binding : m_keyBindings) {
+        if (binding.second == action) {
+            // Handle state-specific behavior
+            if (currentState == GameState::MainMenu || currentState == GameState::Paused) {
+                // In menu states, only allow menu-specific actions for arrow keys
+                SDL_Scancode key = binding.first;
+                if ((key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN || 
+                     key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT) && 
+                    !(action == InputAction::MenuUp || action == InputAction::MenuDown || 
+                      action == InputAction::MenuSelect)) {
+                    // Skip movement keys when in menu states unless they're bound to menu actions
+                    continue;
+                }
+            }
+            
+            // Check if this key was just pressed
+            if (isKeyPressed(binding.first)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool InputHandler::isAnyKeyPressed() const {
+    // Check if any key was just pressed
+    for (const auto& [key, isDown] : m_keyStates) {
+        if (isDown && !m_prevKeyStates.count(key)) {
+            return true;
+        }
+    }
+    return false;
 } 

@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include "game_state.h"
 
 // Forward declarations
 class Renderer;
@@ -18,6 +19,7 @@ class InputHandler;
 class Map;
 class Player;
 class AudioSystem;
+class CudaRenderer;
 
 #include "renderer.h"
 #include "map.h"
@@ -28,15 +30,7 @@ class AudioSystem;
 #include "input.h"
 #include "utils.h"
 #include "audio.h"
-
-// Game states
-enum class GameState {
-    MainMenu,
-    Playing,
-    Paused,
-    GameOver,
-    Victory
-};
+#include "cuda_renderer.h"
 
 class Engine {
 public:
@@ -61,6 +55,7 @@ public:
     TextureManager& getTextureManager() { return *m_textureManager; }
     SpriteManager& getSpriteManager() { return *m_spriteManager; }
     InputHandler& getInputHandler() { return m_inputHandler; }
+    const Map& getMap() const { return m_map; }
     Map& getMap() { return m_map; }
     Player& getPlayer() { return m_player; }
     
@@ -74,6 +69,8 @@ public:
     int getCeilingTexture() const { return m_ceilingTexture; }
     int getEnemyTexture() const { return m_enemyTexture; }
     const std::vector<int>& getEnemyTextureFrames() const { return m_enemyTextureFrames; }
+    int getImpTexture() const { return m_impTexture; }
+    const std::vector<int>& getImpTextureFrames() const { return m_impTextureFrames; }
     int getWeaponTexture() const { return m_weaponTexture; }
     
     // Create sprites from map cells
@@ -85,8 +82,33 @@ public:
     void setSfxVolume(int volume);
     bool isMusicPlaying() const;
     
+    // Enhanced MIDI quality in WSL
+    void enhanceMidiQuality();
+    
+    // Debug function to test sound playback
+    void testSoundEffects();
+    
+    // Test weapon firing
+    void testWeapons();
+    
     // Notification system
     void showNotification(const std::string& text, double duration);
+    
+    // Player actions
+    void fireWeapon();
+    void switchWeapon();
+    void useItem();
+    
+    // Enemy and sprite creation
+    int createImpEnemy(double x, double y, double size = 0.7);
+    void addAdditionalImps();
+    void addRandomImps();
+    
+    // Create barrels at random locations
+    void createRandomBarrels(int count);
+    
+    // Audio
+    void playSound(const std::string& soundName);
     
 private:
     void processInput();
@@ -94,10 +116,17 @@ private:
     void render();
     bool loadAssets();
     
+    // Input handling methods
+    void handlePlayingInput();
+    void handleMainMenuInput();
+    void handlePausedInput();
+    void handlePauseMenuInput();
+    
     // Window and rendering
     SDL_Window* m_window;
     SDL_Renderer* m_sdlRenderer;
     Renderer* m_renderer;
+    CudaRenderer* m_cudaRenderer;
     
     // Game objects
     Map m_map;
@@ -106,10 +135,16 @@ private:
     SpriteManager* m_spriteManager;
     ProjectileManager* m_projectileManager;
     InputHandler m_inputHandler;
+    AudioSystem* m_audioSystem;
     
     // Game state
     GameState m_gameState;
     bool m_running;
+    bool m_musicEnabled;  // Added flag for music enabled state
+    
+    // Menu state
+    std::vector<std::string> m_menuItems;
+    int m_menuSelection;
     
     // Timing
     int m_screenWidth;
@@ -127,34 +162,46 @@ private:
     bool m_fullscreen;
     int m_targetFPS;
     double m_frameTime;
+    bool m_useCuda;  // Added CUDA usage flag
     
     // Timing
     Timer m_frameTimer;
     
-    // Asset IDs
+    // Texture IDs
     int m_wallTexture;
     int m_floorTexture;
     int m_ceilingTexture;
-    int m_enemyTexture;
-    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
-    int m_weaponTexture;
     int m_bulletTexture;
+    int m_enemyTexture;
+    int m_impTexture;
+    int m_weaponTexture;
     int m_machineGunTexture;
+    int m_rocketLauncherTexture;
     int m_currentWeaponTexture;
+    int m_rocketTexture;
+    int m_explosionTexture;
+    int m_plasmaTexture;  // New texture for plasma projectiles
+    int m_itemTexture;  // Add item texture ID
+    int m_ammoBoxTexture; // Texture ID for ammo box
+    int m_barrelTexture; // Texture ID for barrel
+    
+    // Animation frames
+    std::vector<int> m_enemyTextureFrames;  // Animation frames for enemies
+    std::vector<int> m_impTextureFrames;    // Animation frames for Imp
     std::vector<int> m_wallTextureVariations;  // Store different wall texture IDs
     
     // Notification system
     std::string m_notificationText;
+    double m_notificationDuration;
     double m_notificationTimer;
-    
-    // Font handling
-    TTF_Font* m_font;
     SDL_Texture* m_notificationTexture;
     SDL_Rect m_notificationRect;
     
-    // Audio system
-    AudioSystem* m_audioSystem;
-    bool m_musicEnabled;
+    // Font handling
+    TTF_Font* m_font;
+    
+    // Mouse state tracking
+    bool m_prevMouseLeftDown;
     
     // Keyboard state tracking for WSL2 compatibility
     std::unordered_map<SDL_Scancode, bool> m_prevKeyboardState;
@@ -164,6 +211,8 @@ private:
     void setupPlayer();
     void setupInput();
     void renderNotification();
+    void renderMainMenu();
+    void renderPauseOverlay();
 };
 
 #endif // ENGINE_H 

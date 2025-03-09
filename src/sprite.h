@@ -8,13 +8,42 @@
 
 // Forward declarations
 class TextureManager;
+class Player;  // Add forward declaration for Player
 
 // Different types of sprites
 enum class SpriteType {
     Enemy,
     Item,
     Decoration,
-    Projectile
+    Projectile,
+    ImpEnemy  // New Imp enemy type from Doom
+};
+
+// Different types of items
+enum class ItemType {
+    None,
+    HealthSmall,     // +10 health (Health Bonus)
+    HealthMedium,    // +25 health (Medikit)
+    HealthLarge,     // +100 health (Soulsphere)
+    ArmorSmall,      // +5 armor (Armor Bonus)
+    ArmorMedium,     // +100 armor (Green Armor)
+    ArmorLarge,      // +200 armor (Blue Armor)
+    AmmoSmall,       // +5 ammo
+    AmmoMedium,      // +20 ammo
+    AmmoLarge,       // +100 ammo
+    WeaponShotgun,   // Shotgun pickup
+    WeaponChainsaw,  // Chainsaw pickup
+    WeaponRocket,    // Rocket Launcher pickup
+    WeaponPlasma,    // Plasma Gun pickup
+    PowerupBerserk,  // Berserk powerup
+    PowerupInvulnerability // Invulnerability powerup
+};
+
+// Different movement types for the Imp enemy
+enum class ImpMovementType {
+    Zigzag,    // Moves in a zigzag pattern
+    Teleport,  // Occasionally teleports short distances
+    Charge     // Charges directly at the player when in range
 };
 
 class Sprite {
@@ -46,6 +75,15 @@ private:
     double m_animationSpeed;
     double m_animationTimer;
     
+    // Imp-specific properties
+    ImpMovementType m_impMovementType;  // Movement type for Imp enemies
+    double m_specialMoveTimer;          // Timer for special movement actions
+    double m_specialMoveCooldown;       // Cooldown between special moves
+    Vec2 m_lastPlayerPos;               // Last known player position for tracking
+    
+    // Item properties
+    ItemType m_itemType;   // Type of item (if this is an item)
+    
 public:
     Sprite(double x, double y, double size, int textureId, SpriteType type);
     
@@ -63,8 +101,12 @@ public:
     
     // Getters
     const Vec2& getPosition() const { return m_position; }
+    double getX() const { return m_position.x; }
+    double getY() const { return m_position.y; }
     const Vec2& getDirection() const { return m_direction; }
     double getSize() const { return m_size; }
+    int getWidth() const { return static_cast<int>(m_size * 64); }  // Assuming 64x64 texture
+    int getHeight() const { return static_cast<int>(m_size * 64); } // Assuming 64x64 texture
     int getTextureId() const { return m_textureId; }
     SpriteType getType() const { return m_type; }
     bool isVisible() const { return m_isVisible; }
@@ -80,18 +122,50 @@ public:
     void setActive(bool active) { m_isActive = active; }
     void setMoveSpeed(double speed) { m_moveSpeed = speed; }
     void setTurnSpeed(double speed) { m_turnSpeed = speed; }
-    void setHealth(double health) { m_health = health; }
+    void setMoveDuration(double duration) { m_moveDuration = duration; }
+    void setHealth(double health) { 
+        m_health = health; 
+        // Update maxHealth if the new health is higher
+        if (health > m_maxHealth) {
+            m_maxHealth = health;
+        }
+    }
+    
+    void setMaxHealth(double maxHealth) {
+        m_maxHealth = maxHealth;
+        // Cap current health to max health
+        if (m_health > m_maxHealth) {
+            m_health = m_maxHealth;
+        }
+    }
     
     // Animation methods
     void setAnimated(bool animated, int frameCount = 1, double animationSpeed = 1.0);
     int getCurrentFrame() const { return m_currentFrame; }
     
+    // Imp-specific methods
+    void setImpMovementType(ImpMovementType type) { m_impMovementType = type; }
+    ImpMovementType getImpMovementType() const { return m_impMovementType; }
+    
+    // Item methods
+    ItemType getItemType() const { return m_itemType; }
+    void setItemType(ItemType type) { m_itemType = type; }
+    
+    // Apply item effect to player
+    void applyItemEffect(Player* player);
+    
 private:
     // AI methods
     void updateEnemyBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
+    void updateImpBehavior(double deltaTime, const Map& map, const Vec2& playerPos);
     void changeDirection(const Map& map);
     bool canMoveTo(const Vec2& newPos, const Map& map) const;
     void updateDeathAnimation(double deltaTime);
+    
+    // Imp movement pattern implementations
+    void moveZigzag(double deltaTime, const Map& map, const Vec2& playerPos);
+    void moveTeleport(double deltaTime, const Map& map, const Vec2& playerPos);
+    void moveCharge(double deltaTime, const Map& map, const Vec2& playerPos);
 };
 
 class SpriteManager {
@@ -99,8 +173,39 @@ private:
     std::vector<Sprite> m_sprites;
     const TextureManager* m_textureManager;
     
+    // Singleton instance
+    static SpriteManager* s_instance;
+    
+    // Make constructor private for singleton pattern
+    explicit SpriteManager(const TextureManager* textureManager);
+    
 public:
-    SpriteManager(const TextureManager* textureManager);
+    // Delete copy constructor and assignment operator
+    SpriteManager(const SpriteManager&) = delete;
+    SpriteManager& operator=(const SpriteManager&) = delete;
+    
+    ~SpriteManager();
+    
+    // Singleton access - returns the instance or creates it if needed
+    static SpriteManager* getInstance() { 
+        return s_instance; 
+    }
+    
+    // Properly initialize the singleton - should be called once at startup
+    static SpriteManager* initInstance(const TextureManager* textureManager) {
+        if (!s_instance) {
+            s_instance = new SpriteManager(textureManager);
+        }
+        return s_instance;
+    }
+    
+    // Set instance method - use with caution, only for special circumstances
+    static void setInstance(SpriteManager* instance) { 
+        if (s_instance && s_instance != instance) {
+            delete s_instance; // Clean up old instance to prevent memory leaks
+        }
+        s_instance = instance; 
+    }
     
     // Add a new sprite and return its ID
     int addSprite(double x, double y, double size, int textureId, SpriteType type);
@@ -118,7 +223,13 @@ public:
     Sprite* getSprite(int id);
     
     // Get all sprites
-    const std::vector<Sprite>& getSprites() const { return m_sprites; }
+    std::vector<Sprite*> getSprites() const {
+        std::vector<Sprite*> spritePointers;
+        for (size_t i = 0; i < m_sprites.size(); ++i) {
+            spritePointers.push_back(const_cast<Sprite*>(&m_sprites[i]));
+        }
+        return spritePointers;
+    }
     
     // Get active sprites (for rendering optimization)
     std::vector<Sprite*> getActiveSprites();

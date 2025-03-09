@@ -15,17 +15,28 @@ Renderer::Renderer()
     , m_spriteManager(nullptr)
     , m_projectileManager(nullptr)
     , m_engine(nullptr)
-    , m_showFPS(false)
+    , m_showFPS(true)
     , m_showMinimap(true)
     , m_showWeapon(true)
-    , m_lightingEnabled(true)
-    , m_performanceLevel(PerformanceLevel::High)
+    , m_showCeilings(true)  // Initialize ceiling rendering to on by default
+    , m_lightingEnabled(false)  // Changed from true to false - lighting disabled by default
+    , m_muzzleFlashEnabled(false)  // Disable muzzle flash by default
+    , m_performanceLevel(PerformanceLevel::Medium)
     , m_frameCount(0)
-    , m_fps(0.0)
     , m_fpsTimer(0.0)
+    , m_fps(0.0)
+    , m_usingExternalZBuffer(false)
+    , m_externalZBuffer(nullptr)
 {
     // Initialize lighting system
     m_lightingSystem.setEnabled(m_lightingEnabled);
+    
+    // Make sure random lights are visible by default
+    m_lightingEnabled = false;  // Changed from true to false - start with lighting off
+    m_lightingSystem.setEnabled(false);  // Changed from true to false
+    
+    // Initialize z-buffer
+    m_zBuffer.resize(m_screenWidth, std::numeric_limits<double>::max());
 }
 
 Renderer::~Renderer() {
@@ -87,7 +98,7 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
     
     // Render sprites if we have a sprite manager
     if (m_spriteManager) {
-        renderSprites(player);
+        renderSprites(map, player);
     }
     
     // Render projectiles if we have a projectile manager
@@ -122,28 +133,44 @@ void Renderer::render(const Map& map, const Player& player, double deltaTime, do
 
 void Renderer::renderView(const Map& map, const Player& player) {
     // Clear the z-buffer
-    std::fill(m_zBuffer.begin(), m_zBuffer.end(), std::numeric_limits<double>::max());
+    clearZBuffer();
     
-    // Get player position, direction, and vertical angle
-    const Vec2& pos = player.getPosition();
-    const Vec2& dir = player.getDirection();
-    const Vec2& plane = player.getPlane();
-    double verticalAngle = player.getVerticalAngle();  // Get the vertical look angle
+    // Get current player position and direction for standard raycasting
+    Vec2 pos = player.getPosition();
+    Vec2 dir = player.getDirection();
+    Vec2 plane = player.getPlane();
     
-    // Calculate vertical offset based on vertical angle
-    int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
+    // Get screen space vertical offset for camera tilt
+    double screenSpaceOffset = 0;
     
-    // Get player's elevation level (determine from map cell)
+    // Apply vertical look angle if enabled
+    screenSpaceOffset = player.getVerticalAngle() * m_screenHeight / 2.0;
+    
+    // Add jump height offset
+    screenSpaceOffset += player.getJumpHeight() * m_screenHeight * 0.75;
+    
+    // Add step height offset for smoother stair transitions
+    screenSpaceOffset += player.getStepHeight() * m_screenHeight * 0.5;
+    
+    // Convert to integer for pixel-based rendering and store in a variable that will be used throughout the method
+    int effectiveVerticalOffset = static_cast<int>(screenSpaceOffset);
+    
+    // Get player's current cell
     int playerX = static_cast<int>(pos.x);
     int playerY = static_cast<int>(pos.y);
+    
+    // Get player's elevation level (determine from map cell)
+    float playerStepHeight = player.getStepHeight(); // Get step height from player
     int playerElevation = map.getCellElevation(playerX, playerY);
-    float playerStepHeight = map.getStepHeight(playerX, playerY);
     
     // For each vertical strip of the screen
     for (int x = 0; x < m_screenWidth; x++) {
         // Calculate ray position and direction
         double cameraX = 2.0 * x / static_cast<double>(m_screenWidth) - 1.0;
         Vec2 rayDir = dir + plane * cameraX;
+        
+        // Apply vertical offset to wall and sprite rendering
+        // Note: effectiveVerticalOffset is already declared earlier
         
         // Calculate which box of the map we're in
         Vec2 mapPos(static_cast<int>(pos.x), static_cast<int>(pos.y));
@@ -199,6 +226,12 @@ void Renderer::renderView(const Map& map, const Player& player) {
             CellType cellType = map.getCell(mapPos.x, mapPos.y);
             int cellElevation = map.getCellElevation(mapPos.x, mapPos.y);
             
+            // Skip cells in invisible sectors (sector culling)
+            int cellSector = map.getSectorAt(mapPos.x, mapPos.y);
+            if (cellSector >= 0 && !map.isSectorVisible(cellSector)) {
+                continue;
+            }
+            
             // Check stair steps
             if (cellType == CellType::StairStep1 || 
                 cellType == CellType::StairStep2 || 
@@ -244,6 +277,8 @@ void Renderer::renderView(const Map& map, const Player& player) {
         }
         
         // Save distance for sprite rendering
+        // IMPORTANT: Always use the actual perpWallDist for Z-buffer, regardless of wall type
+        // This ensures projectiles render correctly
         m_zBuffer[x] = perpWallDist;
         
         // Calculate wall height
@@ -266,10 +301,10 @@ void Renderer::renderView(const Map& map, const Player& player) {
             heightOffset = -m_screenHeight / 3; // Move the wall lower
         }
         
-        // Apply vertical angle to wall placement
-        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
+        // Calculate drawing boundaries with vertical offset
+        int drawStart = -lineHeight / 2 + m_screenHeight / 2 + effectiveVerticalOffset + heightOffset;
         if (drawStart < 0) drawStart = 0;
-        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + verticalOffset + heightOffset;
+        int drawEnd = lineHeight / 2 + m_screenHeight / 2 + effectiveVerticalOffset + heightOffset;
         if (drawEnd >= m_screenHeight) drawEnd = m_screenHeight - 1;
 
         // Get wall texture or render special stair graphics
@@ -307,21 +342,15 @@ void Renderer::renderView(const Map& map, const Player& player) {
                 
                 // Add a shadow at the edge between horizontal and vertical parts
                 SDL_SetRenderDrawColor(m_renderer, 50, 50, 100, 255); // Dark shadow
-                SDL_RenderDrawLine(m_renderer, x, midPoint-1, x, midPoint+1);
+                SDL_RenderDrawLine(m_renderer, x, midPoint, x, midPoint+1);
             }
-            else if (isStairs) {
-                // For stair entry/exit points, create a distinct pattern
-                // Render the entry/exit point with a fancy pattern
-                // Create a chevron/arrow pattern pointing up/down
+            else {
+                // Render stair entry/exit point with a special pattern
                 for (int y = drawStart; y < drawEnd; y++) {
-                    // Calculate normalized position in the stair (0.0 to 1.0)
-                    float relY = (y - drawStart) / static_cast<float>(drawEnd - drawStart);
+                    // Calculate pattern based on position
+                    int patternY = (y - drawStart) % 10;
+                    int patternX = (x + patternY) % 10;
                     
-                    // Create an arrow/chevron pattern
-                    int patternValue = static_cast<int>((relY * 10)) % 10;
-                    int patternX = abs(patternValue - 5); // Creates a zigzag from 5->0->5
-                    
-                    // Arrow pattern is wider in the middle, narrower at ends
                     if (x % 5 <= patternX) {
                         // Golden/yellow for entry points
                         SDL_SetRenderDrawColor(m_renderer, 255, 215, 0, 255);
@@ -412,146 +441,247 @@ void Renderer::renderView(const Map& map, const Player& player) {
             }
         }
     }
-}
-
-void Renderer::renderSprites(const Player& player) {
-    if (!m_spriteManager) return;
     
-    // Get player position and vertical angle
-    const Vec2& pos = player.getPosition();
-    const Vec2& dir = player.getDirection();
-    const Vec2& plane = player.getPlane();
-    double verticalAngle = player.getVerticalAngle();  // Get vertical look angle
-    
-    // Calculate vertical offset based on vertical angle
-    int verticalOffset = static_cast<int>(verticalAngle * m_screenHeight / 2);
-    
-    // Get active sprites
-    std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
-    
-    // Sort sprites by distance (furthest first)
-    std::sort(sprites.begin(), sprites.end(), 
-        [&pos](const Sprite* a, const Sprite* b) {
-            double distA = (a->getPosition() - pos).lengthSquared();
-            double distB = (b->getPosition() - pos).lengthSquared();
-            return distA > distB;
-        }
-    );
-    
-    // Render each sprite
-    for (const Sprite* sprite : sprites) {
-        // Translate sprite position to relative to camera
-        double spriteX = sprite->getPosition().x - pos.x;
-        double spriteY = sprite->getPosition().y - pos.y;
+    // Floor and ceiling casting
+    if (m_textureManager) {
+        const Texture* floorTexture = m_textureManager->getTexture(m_engine->getFloorTexture());
+        const Texture* ceilingTexture = m_textureManager->getTexture(m_engine->getCeilingTexture());
         
-        // Transform sprite with the inverse camera matrix
-        double invDet = 1.0 / (plane.x * dir.y - dir.x * plane.y);
-        double transformX = invDet * (dir.y * spriteX - dir.x * spriteY);
-        double transformY = invDet * (-plane.y * spriteX + plane.x * spriteY);
-        
-        // Skip if behind player or too far away (culling)
-        if (transformY <= 0.1) continue;
-        
-        // Optimization: Skip distant sprites when in low performance mode
-        if (m_performanceLevel == PerformanceLevel::Low && transformY > 12.0) continue;
-        
-        // Calculate sprite screen position
-        int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
-        
-        // Calculate sprite height and width on screen
-        int spriteHeight = std::abs(static_cast<int>(m_screenHeight / transformY)) * sprite->getSize();
-        int spriteWidth = spriteHeight; // Square sprites
-        
-        // Calculate drawing boundaries with vertical offset applied
-        int drawStartY = -spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
-        if (drawStartY < 0) drawStartY = 0;
-        int drawEndY = spriteHeight / 2 + m_screenHeight / 2 + verticalOffset;
-        if (drawEndY >= m_screenHeight) drawEndY = m_screenHeight - 1;
-        
-        int drawStartX = -spriteWidth / 2 + spriteScreenX;
-        if (drawStartX < 0) drawStartX = 0;
-        int drawEndX = spriteWidth / 2 + spriteScreenX;
-        if (drawEndX >= m_screenWidth) drawEndX = m_screenWidth - 1;
-        
-        // Get the sprite texture based on animation frame
-        int textureId = sprite->getTextureId();
-        
-        // For enemy sprites, check if we need to use a different texture based on animation frame
-        if (sprite->getType() == SpriteType::Enemy) {
-            // Get the current animation frame
-            int currentFrame = sprite->getCurrentFrame();
+        if (floorTexture && ceilingTexture) {
+            // Performance optimization: Render floor/ceiling at lower resolution
+            // Skip rows based on distance from horizon
+            int rowSkip = 1; // Start with rendering every row
             
-            // Use the engine reference to get texture frames
-            if (m_engine && currentFrame >= 0) {
-                const std::vector<int>& enemyTextureFrames = m_engine->getEnemyTextureFrames();
-                if (!enemyTextureFrames.empty() && currentFrame < static_cast<int>(enemyTextureFrames.size())) {
-                    textureId = enemyTextureFrames[currentFrame];
-                }
-            }
-        }
-        
-        // Get the texture
-        const Texture* texture = m_textureManager->getTexture(textureId);
-        if (!texture) continue;
-        
-        // Optimization: Pre-calculate lighting based on distance (fake lighting for sprites)
-        // This is much faster than calculating per-pixel lighting for sprites
-        double distanceShade = 1.0 - std::min(1.0, transformY / 15.0);
-        
-        // Adjust shading based on performance level
-        if (m_performanceLevel == PerformanceLevel::High) {
-            // For high quality, use slightly more accurate lighting calculation
-            // Create a normal vector pointing towards the player for more accurate lighting
-            Vec2 spriteNormal = (pos - sprite->getPosition()).normalized();
-            
-            // Pre-calculate one lighting value for the whole sprite
-            Color lighting = m_lightingSystem.calculateLighting(sprite->getPosition(), spriteNormal, pos);
-            
-            // Adjust the distance shading based on this lighting
-            distanceShade *= (lighting.r + lighting.g + lighting.b) / (3.0 * 255.0);
-        }
-        
-        // Draw the sprite
-        for (int x = drawStartX; x < drawEndX; x++) {
-            // Check if sprite is in front of the wall
-            if (transformY > 0 && x >= 0 && x < m_screenWidth && transformY < m_zBuffer[x]) {
-                // Calculate texture x coordinate
-                double texX = (x - (-spriteWidth / 2 + spriteScreenX)) / static_cast<double>(spriteWidth);
+            // For each horizontal line on the screen from the middle down to the bottom
+            for (int y = m_screenHeight / 2 + effectiveVerticalOffset; y < m_screenHeight; y += rowSkip) {
+                // Increase row skipping as we get further from horizon
+                if (y > m_screenHeight / 2 + effectiveVerticalOffset + 50) rowSkip = 2;
+                if (y > m_screenHeight / 2 + effectiveVerticalOffset + 100) rowSkip = 4;
                 
-                // For medium/high quality, determine pixel lighting frequency
-                int pixelStride = 1; // Default render every pixel
-                if (m_performanceLevel == PerformanceLevel::Low) {
-                    pixelStride = transformY < 5.0 ? 1 : 2; // Skip pixels for distant sprites
-                }
+                // Calculate the ray direction for this row
+                // Current y position compared to the center of the screen (horizon)
+                float posZ = 0.5 * m_screenHeight; // Player's view height
+                float rowDistance = posZ / (y - m_screenHeight / 2 - effectiveVerticalOffset);
                 
-                // Draw vertical stripe
-                for (int y = drawStartY; y < drawEndY; y += pixelStride) {
-                    // Calculate texture y coordinate
-                    double texY = (y - drawStartY) / static_cast<double>(drawEndY - drawStartY);
+                // Calculate the real world step vector we have to add for each x
+                float floorStepX = rowDistance * (2.0 * plane.x) / m_screenWidth;
+                float floorStepY = rowDistance * (2.0 * plane.y) / m_screenWidth;
+                
+                // Calculate the leftmost ray position
+                float floorX = pos.x + rowDistance * (dir.x - plane.x);
+                float floorY = pos.y + rowDistance * (dir.y - plane.y);
+                
+                // Performance optimization: reduce resolution for distant floors/ceilings
+                int step = 1;
+                if (rowDistance > 3.0) step = 2;  // Medium distance
+                if (rowDistance > 6.0) step = 4;  // Far distance
+                if (rowDistance > 10.0) step = 8; // Very far distance
+                
+                // For each pixel in the horizontal line
+                for (int x = 0; x < m_screenWidth; x += step) {
+                    // Get the map cell coordinates
+                    int cellX = static_cast<int>(floorX);
+                    int cellY = static_cast<int>(floorY);
                     
-                    // Get pixel color from texture
-                    Color color = texture->getPixelNormalized(texX, texY);
+                    // Get the texture coordinates
+                    float tx = (floorX - cellX) * floorTexture->getWidth();
+                    float ty = (floorY - cellY) * floorTexture->getHeight();
                     
-                    // Skip transparent pixels
-                    if (color.a < 128) continue;
+                    // Use distance-based lighting approximation for better performance
+                    double distFactor = std::min(1.0, 10.0 / rowDistance);
+                    Color floorLighting(
+                        static_cast<Uint8>(128 * distFactor + 127),
+                        static_cast<Uint8>(128 * distFactor + 127),
+                        static_cast<Uint8>(128 * distFactor + 127)
+                    );
                     
-                    // Apply pre-calculated distance-based shading
-                    color = color.withLighting(distanceShade);
+                    // Only use full lighting calculation for nearby surfaces
+                    if (rowDistance < 5.0) {
+                        Vec2 floorPos(cellX + 0.5, cellY + 0.5);
+                        Vec2 normal = m_normalDown; // Floor normal points up
+                        floorLighting = m_lightingSystem.calculateLighting(floorPos, normal, pos);
+                    }
                     
-                    // Draw the pixel
-                    SDL_SetRenderDrawColor(m_renderer, color.r, color.g, color.b, color.a);
-                    SDL_RenderDrawPoint(m_renderer, x, y);
+                    // Get floor and ceiling colors
+                    Color floorColor = floorTexture->getPixel(tx, ty);
+                    Color ceilingColor = ceilingTexture->getPixel(tx, ty);
                     
-                    // Fill in skipped pixels with the same color if using stride > 1
-                    if (pixelStride > 1) {
-                        for (int i = 1; i < pixelStride && y + i < drawEndY; i++) {
-                            SDL_RenderDrawPoint(m_renderer, x, y + i);
+                    // Apply lighting
+                    floorColor = floorColor * floorLighting;
+                    ceilingColor = ceilingColor * floorLighting; // Use same lighting for ceiling
+                    
+                    // Draw floor pixels for this step
+                    SDL_SetRenderDrawColor(m_renderer, floorColor.r, floorColor.g, floorColor.b, floorColor.a);
+                    for (int i = 0; i < step && x + i < m_screenWidth; i++) {
+                        SDL_RenderDrawPoint(m_renderer, x + i, y);
+                        
+                        // Fill in skipped rows for smoother appearance
+                        for (int j = 1; j < rowSkip && y + j < m_screenHeight; j++) {
+                            SDL_RenderDrawPoint(m_renderer, x + i, y + j);
                         }
                     }
+                    
+                    // Draw ceiling pixels for this step only if ceiling rendering is enabled
+                    if (m_showCeilings) {
+                        int ceilingY = m_screenHeight - y - 1 + 2 * effectiveVerticalOffset;
+                        if (ceilingY >= 0 && ceilingY < m_screenHeight) {
+                            SDL_SetRenderDrawColor(m_renderer, ceilingColor.r, ceilingColor.g, ceilingColor.b, ceilingColor.a);
+                            for (int i = 0; i < step && x + i < m_screenWidth; i++) {
+                                SDL_RenderDrawPoint(m_renderer, x + i, ceilingY);
+                                
+                                // Fill in skipped rows for smoother appearance
+                                for (int j = 1; j < rowSkip && ceilingY - j >= 0; j++) {
+                                    SDL_RenderDrawPoint(m_renderer, x + i, ceilingY - j);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Move to next position
+                    floorX += floorStepX * step;
+                    floorY += floorStepY * step;
                 }
             }
         }
     }
+}
+
+void Renderer::renderSprites(const Map& map, const Player& player) {
+    if (!m_spriteManager || !m_textureManager) {
+        std::cerr << "ERROR: SpriteManager or TextureManager is null in renderSprites!" << std::endl;
+        return;
+    }
+    
+    // Get player position and direction
+    const Vec2& pos = player.getPosition();
+    const Vec2& dir = player.getDirection();
+    const Vec2& plane = player.getPlane();
+    
+    // Use the combined vertical offset
+    double totalVerticalOffset = player.getVerticalOffset();
+    int verticalOffsetPixels = static_cast<int>(totalVerticalOffset * m_screenHeight / 2);
+    
+    // Get all active sprites
+    std::vector<Sprite*> sprites = m_spriteManager->getActiveSprites();
+    if (sprites.empty()) {
+        // Debug message only if we expect sprites
+        std::cout << "No active sprites to render" << std::endl;
+        return;
+    }
+    
+    std::cout << "Rendering " << sprites.size() << " active sprites" << std::endl;
+    
+    // Count sprites by type for debugging
+    int impCount = 0;
+    int enemyCount = 0;
+    int itemCount = 0;
+    int otherCount = 0;
+    
+    for (const Sprite* sprite : sprites) {
+        switch (sprite->getType()) {
+            case SpriteType::ImpEnemy:
+                impCount++;
+                break;
+            case SpriteType::Enemy:
+                enemyCount++;
+                break;
+            case SpriteType::Item:
+                itemCount++;
+                break;
+            default:
+                otherCount++;
+                break;
+        }
+    }
+    
+    std::cout << "Sprite types: " << impCount << " imps, " << enemyCount << " enemies, " 
+              << itemCount << " items, " << otherCount << " other" << std::endl;
+    
+    // Sort sprites by distance (furthest first for proper alpha blending)
+    std::sort(sprites.begin(), sprites.end(), [&pos](const Sprite* a, const Sprite* b) {
+        double distA = (a->getPosition() - pos).lengthSquared();
+        double distB = (b->getPosition() - pos).lengthSquared();
+        return distA > distB;  // Sort in descending order (furthest first)
+    });
+    
+    // For each sprite
+    int renderedCount = 0;
+    for (const Sprite* sprite : sprites) {
+        if (!sprite->isVisible() || !sprite->isActive()) {
+            continue;
+        }
+        
+        // Skip sprites in invisible sectors (sector culling)
+        int spriteSectorId = map.getSectorAt(sprite->getPosition().x, sprite->getPosition().y);
+        if (spriteSectorId >= 0 && !map.isSectorVisible(spriteSectorId)) {
+            continue;
+        }
+        
+        // Translate sprite position relative to player
+        Vec2 spritePos = sprite->getPosition() - pos;
+        
+        // Transform sprite with the inverse camera matrix
+        double invDet = 1.0 / (plane.x * dir.y - dir.x * plane.y);
+        double transformX = invDet * (dir.y * spritePos.x - dir.x * spritePos.y);
+        double transformY = invDet * (-plane.y * spritePos.x + plane.x * spritePos.y);
+        
+        // Skip if behind player or too far
+        if (transformY <= 0.1 || transformY > 20.0) {
+            continue;
+        }
+        
+        // Calculate screen position
+        int spriteScreenX = static_cast<int>((m_screenWidth / 2) * (1.0 + transformX / transformY));
+        
+        // Calculate sprite size on screen
+        int spriteSize = static_cast<int>(m_screenHeight / transformY);
+        spriteSize = std::min(std::max(spriteSize, 4), 20);  // Clamp size between 4 and 20 pixels
+        
+        // Calculate drawing boundaries
+        int drawStartX = spriteScreenX - spriteSize / 2;
+        int drawEndX = spriteScreenX + spriteSize / 2;
+        int drawStartY = m_screenHeight / 2 - spriteSize / 2;
+        int drawEndY = m_screenHeight / 2 + spriteSize / 2;
+        
+        // Get the texture for this sprite
+        int textureId = sprite->getTextureId();
+        std::cout << "  Sprite texture ID: " << textureId << std::endl;
+        
+        const Texture* texture = m_textureManager->getTexture(textureId);
+        if (!texture) {
+            std::cerr << "ERROR: Invalid texture ID " << textureId << " for sprite!" << std::endl;
+            continue;
+        }
+        
+        // Draw the sprite
+        SDL_Texture* sdlTexture = texture->getSDLTexture();
+        if (!sdlTexture) {
+            std::cerr << "ERROR: Null SDL_Texture for texture ID " << textureId << "!" << std::endl;
+            continue;
+        }
+        
+        // Ensure texture blend mode is set to BLEND for proper transparency
+        SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+        
+        // Set up source and destination rectangles
+        SDL_Rect srcRect = {0, 0, texture->getWidth(), texture->getHeight()};
+        
+        // For animated sprites, use the current frame
+        if (sprite->getCurrentFrame() > 0) {
+            srcRect.x = sprite->getCurrentFrame() * texture->getWidth();
+        }
+        
+        SDL_Rect dstRect = {drawStartX, drawStartY, drawEndX - drawStartX, drawEndY - drawStartY};
+        
+        // Render the sprite
+        if (SDL_RenderCopy(m_renderer, sdlTexture, &srcRect, &dstRect) != 0) {
+            std::cerr << "ERROR: Failed to render sprite: " << SDL_GetError() << std::endl;
+        } else {
+            renderedCount++;
+        }
+    }
+    
+    std::cout << "Successfully rendered " << renderedCount << " sprites" << std::endl;
 }
 
 void Renderer::renderMinimap(const Map& map, const Player& player, ProjectileManager& projectileManager) {
@@ -763,7 +893,6 @@ void Renderer::renderMinimap(const Map& map, const Player& player, ProjectileMan
                                     }
                                 }
                             }
-                            if (targetElevation >= 0) break;
                         }
                         
                         // Draw up/down marker
@@ -887,7 +1016,7 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         std::cout << "No texture manager available for weapon rendering" << std::endl;
         return;
     }
-    
+        
     // Get the weapon texture using the passed texture ID
     const Texture* weaponTexture = m_textureManager->getTexture(weaponTextureId);
     
@@ -926,7 +1055,7 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
         SDL_RenderFillRect(m_renderer, &barrelRect);
         return;
     }
-    
+        
     // Calculate the weapon size (maintain aspect ratio)
     float aspectRatio = static_cast<float>(weaponTexture->getWidth()) / weaponTexture->getHeight();
     int weaponHeight = m_screenHeight / 2;  // Take up half the screen height
@@ -934,7 +1063,42 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
     
     // Center the weapon at the bottom of the screen
     int weaponX = (m_screenWidth - weaponWidth) / 2;
+    
+    // Special adjustment for the rocket launcher
+    // Move it right by 15% of its width to properly center it
+    weaponX += static_cast<int>(weaponWidth * 0.15f); 
+    
+    // Position weapon at bottom of screen
     int weaponY = m_screenHeight - weaponHeight;
+    
+    // Add debug output to check current texture
+    std::cout << "Rendering weapon with textureID: " << weaponTextureId 
+              << ", aspect ratio: " << aspectRatio << std::endl;
+    
+    // Specific vertical adjustment for rocket launcher
+    bool isRocketLauncher = false;
+    
+    // Check if this is the rocket launcher by texture ID
+    // Updated to include textureID 17 which is the actual rocket launcher ID
+    if (weaponTextureId == 17 || (weaponTextureId >= 7 && weaponTextureId <= 10)) {
+        isRocketLauncher = true;
+        std::cout << "ROCKET LAUNCHER DETECTED - applying vertical adjustment" << std::endl;
+    }
+    
+    // Alternative detection method using aspect ratio as a backup
+    // Updated to include the aspect ratio around 1.34 which is the rocket launcher's ratio
+    if (!isRocketLauncher && (aspectRatio < 0.9f || (aspectRatio > 1.3f && aspectRatio < 1.4f) || aspectRatio > 1.5f)) {
+        isRocketLauncher = true;
+        std::cout << "ROCKET LAUNCHER DETECTED by aspect ratio - applying vertical adjustment" << std::endl;
+    }
+    
+    // Apply a much more significant adjustment
+    if (isRocketLauncher) {
+        // Move the rocket launcher much lower - 40% further down for better positioning
+        int rocketAdjustment = static_cast<int>(weaponHeight * 0.40f);
+        weaponY += rocketAdjustment;
+        std::cout << "Adjusted rocket Y position by " << rocketAdjustment << " pixels" << std::endl;
+    }
     
     // Apply recoil effect
     int recoilY = static_cast<int>(recoil * 20);  // Scale recoil to pixels
@@ -950,13 +1114,46 @@ void Renderer::renderWeapon(const Player& player, double recoil, double flashInt
     // Get the SDL texture from the Texture object
     SDL_Texture* sdlTexture = weaponTexture->getSDLTexture();
     if (sdlTexture) {
-        // Draw the texture
-        SDL_RenderCopy(m_renderer, sdlTexture, NULL, &destRect);
+        
+        // CRITICAL: Save the entire renderer state
+        SDL_Renderer* renderer = m_renderer;
+        
+        // Save blend mode
+        SDL_BlendMode oldBlendMode;
+        SDL_GetTextureBlendMode(sdlTexture, &oldBlendMode);
+        
+        // Force alpha blending for the weapon
+        SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+        
+        // Set the alpha value to fully opaque
+        SDL_SetTextureAlphaMod(sdlTexture, 255);
+        
+        // Save current target
+        SDL_Texture* currentTarget = SDL_GetRenderTarget(renderer);
+        SDL_SetRenderTarget(renderer, NULL);  // Ensure we're rendering to the default target
+        
+        // CRITICAL: Use this more reliable method to render the texture
+        // This ensures it's rendered at the correct size and position
+        SDL_RenderCopyEx(
+            renderer,          // Renderer
+            sdlTexture,        // Texture
+            NULL,              // Source rectangle (NULL = entire texture)
+            &destRect,         // Destination rectangle
+            0.0,               // Angle (no rotation)
+            NULL,              // Center of rotation (NULL = center of dest rect)
+            SDL_FLIP_NONE      // No flipping
+        );
+        
+        // Restore renderer state
+        SDL_SetRenderTarget(renderer, currentTarget);
+        SDL_SetTextureBlendMode(sdlTexture, oldBlendMode);
+    } else {
+        std::cout << "Failed to get SDL_Texture from weapon texture" << std::endl;
     }
     
     // Render muzzle flash if needed
-    if (flashIntensity > 0.0) {
-        renderMuzzleFlash(flashIntensity);
+    if (flashIntensity > 0.0 && m_muzzleFlashEnabled) {
+        renderMuzzleFlash(flashIntensity, recoil);
     }
 }
 
@@ -988,7 +1185,10 @@ void Renderer::renderProjectiles(const Player& player) {
     
     // Get active projectiles
     std::vector<Projectile*> projectiles = m_projectileManager->getActiveProjectiles();
-        
+    
+    // DEBUG: Output total active projectiles
+    std::cout << "Rendering projectiles: " << projectiles.size() << " active projectiles" << std::endl;
+    
     // Render each projectile
     for (const Projectile* projectile : projectiles) {
         if (!projectile) {
@@ -996,10 +1196,15 @@ void Renderer::renderProjectiles(const Player& player) {
             continue;
         }
         
-        // Print projectile information
-        std::cout << "Rendering bullet at (" << projectile->getPosition().x << ", " 
-                  << projectile->getPosition().y << "), active: " << projectile->isActive() 
-                  << ", lifetime: " << projectile->getLifetime() << " seconds" << std::endl;
+        // DEBUG: Output projectile type
+        std::string typeStr = "Unknown";
+        switch (projectile->getType()) {
+            case ProjectileType::Bullet: typeStr = "Bullet"; break;
+            case ProjectileType::Rocket: typeStr = "Rocket"; break;
+            case ProjectileType::Plasma: typeStr = "Plasma"; break;
+            case ProjectileType::Grenade: typeStr = "Grenade"; break;
+            case ProjectileType::BFG: typeStr = "BFG"; break;
+        }
         
         // Calculate projectile position relative to player
         double projX = projectile->getPosition().x - pos.x;
@@ -1011,20 +1216,78 @@ void Renderer::renderProjectiles(const Player& player) {
         double transformY = invDet * (-plane.y * projX + plane.x * projY);
         
         // Skip if behind player or too far
-        if (transformY <= 0.1) {
-            std::cout << "Bullet behind player, skipping" << std::endl;
+        if (transformY <= 0.1 || transformY > 20.0) {
             continue;
         }
         
         // Calculate screen position
         int screenX = static_cast<int>((m_screenWidth / 2) * (1 + transformX / transformY));
         
+        // Check if projectile is occluded by walls using the zBuffer
+        bool isVisible = false;
+        // Check if the projectile's center is visible
+        if (screenX >= 0 && screenX < m_screenWidth) {
+            // Get the appropriate z-buffer value based on whether we're using an external buffer
+            double wallDistance;
+            
+            if (m_usingExternalZBuffer && m_externalZBuffer) {
+                // Use the external float Z-buffer from CUDA renderer
+                wallDistance = static_cast<double>(m_externalZBuffer[screenX]);
+                std::cout << "  Using CUDA Z-buffer value at index " << screenX << ": " << wallDistance << std::endl;
+                
+                // Safety check for invalid Z-buffer values
+                if (wallDistance <= 0.0 || wallDistance > 10000.0) {
+                    std::cerr << "  WARNING: Invalid CUDA Z-buffer value: " << wallDistance << ", defaulting to 10000.0" << std::endl;
+                    wallDistance = 10000.0;
+                }
+            } else {
+                // Use our own double Z-buffer vector - make sure we're accessing the correct index
+                if (screenX < static_cast<int>(m_zBuffer.size())) {
+                    wallDistance = m_zBuffer[screenX];
+                    std::cout << "  Using CPU Z-buffer value at index " << screenX << ": " << wallDistance << std::endl;
+                    
+                    // Safety check for invalid Z-buffer values
+                    if (wallDistance <= 0.0 || wallDistance > 10000.0) {
+                        std::cerr << "  WARNING: Invalid CPU Z-buffer value: " << wallDistance << ", defaulting to 10000.0" << std::endl;
+                        wallDistance = 10000.0;
+                    }
+                } else {
+                    // Invalid index - use a large default value
+                    wallDistance = 10000.0;
+                    std::cerr << "  ERROR: Z-buffer index out of bounds: " << screenX << " (size: " << m_zBuffer.size() << ")" << std::endl;
+                }
+            }
+            
+            // If the projectile's distance is less than the wall distance at this x-coordinate, it's visible
+            // Add some tolerance to the comparison to prevent z-fighting
+            const double visibilityTolerance = 0.05; // Increased tolerance to help with visibility
+            
+            std::cout << "  Detailed debugging for " << typeStr << ":" << std::endl;
+            std::cout << "    Projectile position: (" << projectile->getPosition().x << ", " << projectile->getPosition().y << ")" << std::endl;
+            std::cout << "    Player position: (" << pos.x << ", " << pos.y << ")" << std::endl;
+            std::cout << "    Transform coords: X=" << transformX << ", Y=" << transformY << std::endl;
+            std::cout << "    Screen X: " << screenX << ", Z-buffer comparison: " << transformY << " < " << wallDistance << std::endl;
+            
+            if (transformY < wallDistance - visibilityTolerance) {
+                isVisible = true;
+                std::cout << "  " << typeStr << " is visible (distance: " << transformY 
+                          << ", zBuffer: " << wallDistance << ")" << std::endl;
+            } else {
+                std::cout << "  " << typeStr << " is occluded by wall (distance: " << transformY 
+                          << ", zBuffer: " << wallDistance << ")" << std::endl;
+            }
+        } else {
+            std::cout << "  " << typeStr << " is off-screen (screenX: " << screenX << ")" << std::endl;
+        }
+        
+        // Skip if not visible
+        if (!isVisible) {
+            continue;
+        }
+        
         // Calculate bullet size based on distance
         int size = static_cast<int>(m_screenHeight / transformY * 0.05); // Make bullets smaller but still visible
         size = std::max(4, std::min(size, 20)); // Clamp size between 4 and 20 pixels
-        
-        std::cout << "Bullet screen position: x=" << screenX << ", size=" << size 
-                 << ", distance=" << transformY << std::endl;
         
         // Calculate drawing boundaries
         int drawStartY = -size / 2 + m_screenHeight / 2;
@@ -1045,6 +1308,7 @@ void Renderer::renderProjectiles(const Player& player) {
                 break;
             case ProjectileType::Rocket:
                 textureId = m_projectileManager->getRocketTextureId();
+                std::cout << "  Using rocket texture from manager: " << textureId << std::endl;
                 break;
             case ProjectileType::Plasma:
                 textureId = m_projectileManager->getPlasmaTextureId();
@@ -1093,8 +1357,8 @@ void Renderer::renderProjectiles(const Player& player) {
                 
                 // Draw the rotated texture
                 SDL_RenderCopyEx(
-                    m_renderer,
-                    sdlTexture,
+                    m_renderer,               // Renderer
+                    sdlTexture,               // Texture
                     NULL,                    // Use the entire source texture
                     &destRect,               // Destination on screen
                     angle,                   // Rotation angle in degrees
@@ -1102,14 +1366,68 @@ void Renderer::renderProjectiles(const Player& player) {
                     SDL_FLIP_NONE            // No flipping
                 );
                 
+                // Add a bright outline for better visibility (debug)
+                SDL_SetRenderDrawColor(m_renderer, 255, 0, 0, 255); // Bright red outline
+                SDL_RenderDrawRect(m_renderer, &destRect);
+                
+                // Special handling for rocket projectiles
+                if (projectile->getType() == ProjectileType::Rocket) {
+                    // Draw a larger, more noticeable outline for rockets
+                    SDL_Rect rocketOutline = { 
+                        destRect.x - 2, 
+                        destRect.y - 2, 
+                        destRect.w + 4, 
+                        destRect.h + 4 
+                    };
+                    SDL_SetRenderDrawColor(m_renderer, 255, 165, 0, 255); // Orange outline
+                    SDL_RenderDrawRect(m_renderer, &rocketOutline);
+                    
+                    // Add a second outline
+                    SDL_Rect rocketOutline2 = { 
+                        destRect.x - 4, 
+                        destRect.y - 4, 
+                        destRect.w + 8, 
+                        destRect.h + 8 
+                    };
+                    SDL_SetRenderDrawColor(m_renderer, 255, 215, 0, 255); // Gold outline
+                    SDL_RenderDrawRect(m_renderer, &rocketOutline2);
+                    
+                    // Draw a trail behind the rocket
+                    int trailLength = 4;
+                    for (int i = 1; i <= trailLength; i++) {
+                        double trailScale = 0.8 - (i * 0.15); // Gradually smaller
+                        SDL_Rect trailRect = {
+                            destRect.x - static_cast<int>(projectile->getDirection().x * i * 10),
+                            destRect.y - static_cast<int>(projectile->getDirection().y * i * 10),
+                            static_cast<int>(destRect.w * trailScale),
+                            static_cast<int>(destRect.h * trailScale)
+                        };
+                        // Gradient from orange to red to fade
+                        int alpha = 255 - (i * 50);
+                        if (alpha < 0) alpha = 0;
+                        SDL_SetRenderDrawColor(m_renderer, 255, 100 - (i * 20), 0, alpha);
+                        SDL_RenderDrawRect(m_renderer, &trailRect);
+                    }
+                }
+                
+                // Draw a second outline for extra visibility
+                SDL_Rect outerRect = { 
+                    destRect.x - 1, 
+                    destRect.y - 1, 
+                    destRect.w + 2, 
+                    destRect.h + 2 
+                };
+                SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 255); // Yellow outer outline
+                SDL_RenderDrawRect(m_renderer, &outerRect);
+                
                 // Add a small glow effect
                 if (m_performanceLevel != PerformanceLevel::Low) {
                     SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 64);
                     SDL_Rect glowRect = { 
-                        centerX - size / 2 - 2, 
-                        centerY - size / 2 - 2, 
-                        size + 4, 
-                        size + 4 
+                        destRect.x - 2, 
+                        destRect.y - 2, 
+                        destRect.w + 4, 
+                        destRect.h + 4 
                     };
                     SDL_RenderDrawRect(m_renderer, &glowRect);
                 }
@@ -1162,6 +1480,9 @@ void Renderer::renderProjectiles(const Player& player) {
                                     255                          // Alpha
                                 );
                                 break;
+                            default:
+                                color = Color(255, 255, 255, 255);
+                                break;
                         }
                         
                         // Draw the pixel
@@ -1184,9 +1505,9 @@ void Renderer::renderProjectiles(const Player& player) {
     }
 }
 
-void Renderer::renderMuzzleFlash(double intensity) {
-    // Skip if intensity is too low
-    if (intensity <= 0.01) return;
+void Renderer::renderMuzzleFlash(double intensity, double recoil) {
+    // Skip if intensity is too low or muzzle flash is disabled
+    if (intensity <= 0.01 || !m_muzzleFlashEnabled) return;
     
     // Calculate flash size based on intensity
     int flashSize = static_cast<int>(30 * intensity);
@@ -1221,14 +1542,49 @@ void Renderer::renderMuzzleFlash(double intensity) {
         weaponHeight = m_screenHeight / 2;  // Take up half the screen height
         weaponWidth = static_cast<int>(weaponHeight * aspectRatio);
         
-        // Center the weapon
+        // Center the weapon at the bottom of the screen
         weaponX = (m_screenWidth - weaponWidth) / 2;
+        
+        // Special adjustment for the rocket launcher
+        // Move it right by 15% of its width to properly center it
+        weaponX += static_cast<int>(weaponWidth * 0.15f); 
+        
         weaponY = m_screenHeight - weaponHeight;
         
-        // Position the flash at the end of the barrel - adjusted for shotgun.webp
-        // This is a rough estimate; adjust based on your texture
-        int flashX = weaponX + weaponWidth * 0.8;
-        int flashY = weaponY + weaponHeight * 0.3;
+        // Determine if this is the rocket launcher based on aspect ratio
+        bool isRocketLauncher = false;
+        if (aspectRatio < 0.9f || (aspectRatio > 1.3f && aspectRatio < 1.4f) || aspectRatio > 1.5f) {
+            isRocketLauncher = true;
+            std::cout << "ROCKET LAUNCHER DETECTED in muzzle flash - applying adjustment" << std::endl;
+        }
+        
+        // Apply the same vertical adjustment as in renderWeapon
+        if (isRocketLauncher) {
+            // Move the rocket launcher much lower - 40% further down
+            int rocketAdjustment = static_cast<int>(weaponHeight * 0.40f);
+            weaponY += rocketAdjustment;
+            std::cout << "Adjusted muzzle flash Y position by " << rocketAdjustment << " pixels" << std::endl;
+        }
+        
+        // Apply recoil effect for flash positioning
+        int recoilY = static_cast<int>(recoil * 20);  // Scale recoil to pixels
+        
+        // Position the flash at the end of the barrel - adjusted for the weapon type
+        // For rocket launcher, position it near the top of the weapon
+        float flashXRatio, flashYRatio;
+        
+        if (isRocketLauncher) {
+            // Position the flash at the rocket launcher barrel
+            flashXRatio = 0.7f;  // 70% from the left edge
+            flashYRatio = 0.18f; // Adjusted to be higher up on the rocket launcher (was 0.25f)
+        } else {
+            // Default positioning for other weapons
+            flashXRatio = 0.8f;  // 80% from the left edge
+            flashYRatio = 0.3f;  // 30% from the top
+        }
+        
+        int flashX = weaponX + static_cast<int>(weaponWidth * flashXRatio);
+        int flashY = weaponY + static_cast<int>(weaponHeight * flashYRatio) + recoilY;
         
         // Draw the flash as a yellow/orange circle
         for (int y = -flashSize; y <= flashSize; y++) {
@@ -1318,4 +1674,40 @@ void Renderer::DrawArrow(const SDL_Rect& rect, int direction) {
             SDL_RenderDrawLine(m_renderer, centerX - size, centerY, centerX + size/2, centerY);
             break;
     }
+}
+
+void Renderer::renderUI(const Player& player) {
+    // Render HUD
+    renderHUD(player);
+    
+    // Render FPS counter if enabled
+    if (m_showFPS) {
+        // Calculate FPS
+        m_frameCount++;
+        double currentTime = SDL_GetTicks() / 1000.0;
+        if (currentTime - m_fpsTimer >= 1.0) {
+            m_fps = m_frameCount / (currentTime - m_fpsTimer);
+            m_frameCount = 0;
+            m_fpsTimer = currentTime;
+        }
+        
+        // Render FPS text
+        std::string fpsText = "FPS: " + std::to_string(static_cast<int>(m_fps));
+        renderText(fpsText, 10, 10, Color(255, 255, 255, 255));
+    }
+    
+    // Render minimap if enabled
+    if (m_showMinimap && m_engine) {
+        renderMinimap(m_engine->getMap(), player);
+    }
+}
+
+// Clear the z-buffer
+void Renderer::clearZBuffer() {
+    #if defined(__SSE2__) || defined(_MSC_VER)
+    // Use a large but reasonable value (10000.0) instead of max double which could cause comparison issues
+    optimized::fill_doubles(m_zBuffer.data(), m_zBuffer.data() + m_zBuffer.size(), 10000.0);
+    #else
+    std::fill(m_zBuffer.begin(), m_zBuffer.end(), 10000.0);
+    #endif
 } 

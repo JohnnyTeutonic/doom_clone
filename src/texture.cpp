@@ -252,19 +252,84 @@ Color Texture::getPixel(int x, int y) const {
 }
 
 Color Texture::getPixelNormalized(double u, double v) const {
-    // Normalize coordinates to [0, 1]
-    u = u - floor(u);
-    v = v - floor(v);
+    // Check if texture is loaded
+    if (m_width == 0 || m_height == 0) {
+        return Color(0, 0, 0);
+    }
     
-    // Convert to pixel coordinates
-    int x = static_cast<int>(u * m_width);
-    int y = static_cast<int>(v * m_height);
+    // Convert normalized coordinates to pixel coordinates
+    int x = static_cast<int>(u * m_width) % m_width;
+    int y = static_cast<int>(v * m_height) % m_height;
     
-    // Handle edge cases
-    if (x == m_width) x = m_width - 1;
-    if (y == m_height) y = m_height - 1;
+    // Handle negative coordinates
+    if (x < 0) x += m_width;
+    if (y < 0) y += m_height;
     
     return getPixel(x, y);
+}
+
+// Implementation of getPixelData
+const uint32_t* Texture::getPixelData() const {
+    // Create a static buffer to hold the converted data
+    // This is not thread-safe but works for our purposes
+    static std::vector<uint32_t> buffer;
+    
+    // Resize the buffer if necessary
+    buffer.resize(m_width * m_height);
+    
+    #if defined(__SSE2__) || defined(_MSC_VER)
+    // SSE optimized version
+    // Process pixels in batches of 4
+    int totalPixels = m_width * m_height;
+    int vectorizedEnd = totalPixels - (totalPixels % 4);
+    
+    for (int i = 0; i < vectorizedEnd; i += 4) {
+        // Load 4 colors from the texture
+        Color c0 = (i < m_pixels.size()) ? m_pixels[i] : Color{0, 0, 0};
+        Color c1 = (i+1 < m_pixels.size()) ? m_pixels[i+1] : Color{0, 0, 0};
+        Color c2 = (i+2 < m_pixels.size()) ? m_pixels[i+2] : Color{0, 0, 0};
+        Color c3 = (i+3 < m_pixels.size()) ? m_pixels[i+3] : Color{0, 0, 0};
+        
+        // Convert to ARGB format using SSE
+        __m128i r_vals = _mm_set_epi32(c3.r, c2.r, c1.r, c0.r);
+        __m128i g_vals = _mm_set_epi32(c3.g, c2.g, c1.g, c0.g);
+        __m128i b_vals = _mm_set_epi32(c3.b, c2.b, c1.b, c0.b);
+        __m128i a_vals = _mm_set1_epi32(0xFF); // Alpha is always 255
+        
+        // Shift and combine to create ARGB pixels
+        r_vals = _mm_slli_epi32(r_vals, 16);
+        g_vals = _mm_slli_epi32(g_vals, 8);
+        a_vals = _mm_slli_epi32(a_vals, 24);
+        
+        // Combine all channels
+        __m128i argb = _mm_or_si128(a_vals, r_vals);
+        argb = _mm_or_si128(argb, g_vals);
+        argb = _mm_or_si128(argb, b_vals);
+        
+        // Store result in buffer
+        _mm_storeu_si128((__m128i*)&buffer[i], argb);
+    }
+    
+    // Handle remaining pixels
+    for (int i = vectorizedEnd; i < totalPixels; i++) {
+        if (i < m_pixels.size()) {
+            Color color = m_pixels[i];
+            buffer[i] = (0xFF << 24) | (color.r << 16) | (color.g << 8) | color.b;
+        } else {
+            buffer[i] = 0xFF000000; // Transparent black for out of bounds
+        }
+    }
+    #else
+    // Convert Color pixels to uint32_t ARGB format
+    for (int y = 0; y < m_height; y++) {
+        for (int x = 0; x < m_width; x++) {
+            Color color = getPixel(x, y);
+            buffer[y * m_width + x] = (0xFF << 24) | (color.r << 16) | (color.g << 8) | color.b;
+        }
+    }
+    #endif
+    
+    return buffer.data();
 }
 
 // TextureManager implementation
@@ -324,6 +389,9 @@ int TextureManager::createTextureFromSurface(SDL_Surface* surface) {
         return -1;
     }
     
+    // Set the texture blend mode to enable alpha blending
+    SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_BLEND);
+    
     // Get surface dimensions
     texture->m_width = surface->w;
     texture->m_height = surface->h;
@@ -353,10 +421,26 @@ int TextureManager::createTextureFromSurface(SDL_Surface* surface) {
 
 const Texture* TextureManager::getTexture(int id) const {
     if (id < 0 || id >= static_cast<int>(m_textures.size())) {
+        std::cout << "TextureManager::getTexture - Invalid texture ID: " << id << ", max ID: " << (m_textures.size() - 1) << std::endl;
         return nullptr;
     }
     
     return m_textures[id].get();
+}
+
+SDL_Texture* TextureManager::getSDLTexture(int id) const {
+    const Texture* texture = getTexture(id);
+    if (!texture) {
+        std::cout << "TextureManager::getSDLTexture - Texture not found for ID: " << id << std::endl;
+        return nullptr;
+    }
+    
+    SDL_Texture* sdlTexture = texture->getSDLTexture();
+    if (!sdlTexture) {
+        std::cout << "TextureManager::getSDLTexture - SDL_Texture is null for ID: " << id << std::endl;
+    }
+    
+    return sdlTexture;
 }
 
 void TextureManager::initDefaultTextures() {
@@ -372,6 +456,111 @@ void TextureManager::initDefaultTextures() {
     
     // Green wall texture
     createCheckerboardTexture(64, 64, Color(0, 100, 0), Color(34, 139, 34), 16);
+    
+    // Create DOOM-style wall texture
+    SDL_Surface* doomWallSurface = createDoomWallTexture(64, 64);
+    if (doomWallSurface) {
+        createTextureFromSurface(doomWallSurface);
+        SDL_FreeSurface(doomWallSurface);
+    }
+    
+    // Create DOOM-style floor textures - multiple variations
+    
+    // Floor texture 1 - FLOOR7_2 style (tan with octagon pattern)
+    SDL_Surface* doomFloorSurface1 = createDoomFlatTexture(64, 64, true);
+    if (doomFloorSurface1) {
+        createTextureFromSurface(doomFloorSurface1);
+        SDL_FreeSurface(doomFloorSurface1);
+    }
+    
+    // Floor texture 2 - Green marble style (FLOOR4_8 inspired)
+    SDL_Surface* floorSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (floorSurface) {
+        SDL_LockSurface(floorSurface);
+        Uint32* pixels = (Uint32*)floorSurface->pixels;
+        
+        // Create FLOOR1_6 style texture (gray stone)
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 15) - 7;
+                
+                // Add crack patterns
+                int px = x % 32;
+                int py = y % 32;
+                bool isCrack = ((px + py) % 13 == 0) || ((px * py) % 29 == 0);
+                
+                if (isCrack) {
+                    // Darker crack color
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        50 + noise, 50 + noise, 50 + noise);
+                } else {
+                    // Base stone gray color
+                    int variation = ((x + y) % 7) * 3;
+                    pixels[y * 64 + x] = SDL_MapRGB(floorSurface->format, 
+                        90 + variation + noise, 90 + variation + noise, 90 + variation + noise);
+                }
+            }
+        }
+        SDL_UnlockSurface(floorSurface);
+        createTextureFromSurface(floorSurface);
+        SDL_FreeSurface(floorSurface);
+    }
+    
+    // Create DOOM-style ceiling textures
+    
+    // Ceiling texture 1 - CEIL3_5 style (blue grid pattern)
+    SDL_Surface* doomCeilingSurface1 = createDoomFlatTexture(64, 64, false);
+    if (doomCeilingSurface1) {
+        createTextureFromSurface(doomCeilingSurface1);
+        SDL_FreeSurface(doomCeilingSurface1);
+    }
+    
+    // Ceiling texture 2 - FLAT23 style (metal panels)
+    SDL_Surface* ceilingSurface = SDL_CreateRGBSurface(0, 64, 64, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (ceilingSurface) {
+        SDL_LockSurface(ceilingSurface);
+        Uint32* pixels = (Uint32*)ceilingSurface->pixels;
+        
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                int noise = (rand() % 8) - 4;
+                
+                // Create a metal panel pattern
+                int panelX = x % 16;
+                int panelY = y % 16;
+                
+                // Panel edges
+                bool isPanelEdge = (panelX == 0 || panelX == 15 || panelY == 0 || panelY == 15);
+                
+                // Metal bolts in corners
+                bool isBolt = ((panelX <= 2 || panelX >= 13) && (panelY <= 2 || panelY >= 13));
+                
+                // Panel surface features
+                bool isFeature = ((panelX + panelY) % 7 == 0);
+                
+                if (isPanelEdge) {
+                    // Dark panel edge
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        60 + noise, 60 + noise, 65 + noise);
+                } else if (isBolt) {
+                    // Metal bolts
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        70 + noise, 70 + noise, 75 + noise);
+                } else if (isFeature) {
+                    // Surface feature (scratch or dent)
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        90 + noise, 90 + noise, 95 + noise);
+                } else {
+                    // Base metal panel color
+                    pixels[y * 64 + x] = SDL_MapRGB(ceilingSurface->format, 
+                        80 + noise, 80 + noise, 85 + noise);
+                }
+            }
+        }
+        SDL_UnlockSurface(ceilingSurface);
+        createTextureFromSurface(ceilingSurface);
+        SDL_FreeSurface(ceilingSurface);
+    }
 }
 
 // Helper function to create a DOOM-style wall texture
@@ -407,4 +596,86 @@ SDL_Surface* createDoomWallTexture(int width, int height) {
     
     SDL_UnlockSurface(surface);
     return surface;
-} 
+}
+
+// Helper function to create a DOOM-style flat texture (for floors/ceilings)
+SDL_Surface* createDoomFlatTexture(int width, int height, bool isFloor) {
+    SDL_Surface* surface = SDL_CreateRGBSurface(0, width, height, 32, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+    if (!surface) {
+        std::cerr << "Failed to create surface: " << SDL_GetError() << std::endl;
+        return nullptr;
+    }
+    
+    SDL_LockSurface(surface);
+    Uint32* pixels = (Uint32*)surface->pixels;
+    
+    // Seed for consistent noise pattern
+    srand(isFloor ? 42 : 137);
+    
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int noise = (rand() % 10) - 5;
+            
+            if (isFloor) {
+                // FLOOR4_8 inspired texture (green marble-like pattern)
+                int patternX = x % 32;
+                int patternY = y % 32;
+                
+                // Create marble-like swirls
+                int swirl = ((patternX * patternX + patternY * patternY) % 32) / 2;
+                
+                // Determine if this is a vein in the marble
+                bool isVein = (((patternX + patternY + swirl) % 16) < 3) || 
+                             (((patternX * patternY + swirl) % 24) < 2);
+                
+                // Color the pixel based on the pattern
+                if (isVein) {
+                    // Dark green veins
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        40 + noise, 60 + noise, 40 + noise);
+                } else {
+                    // Base marble color (greenish)
+                    int variation = swirl % 4 * 5;
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        70 + variation + noise, 90 + variation + noise, 70 + variation + noise);
+                }
+            } else {
+                // CEIL1_2 inspired texture (brown with lines)
+                int patternX = x % 64;
+                int patternY = y % 64;
+                
+                // Create grid pattern with thin lines
+                bool isLine = ((patternX % 16 == 0) || (patternY % 16 == 0));
+                bool isSecondaryLine = ((patternX % 8 == 0 && patternX % 16 != 0) || 
+                                       (patternY % 8 == 0 && patternY % 16 != 0));
+                
+                // Small details in a 4x4 grid
+                int detailX = (patternX / 4) % 4;
+                int detailY = (patternY / 4) % 4;
+                bool isDetail = ((detailX == 0 || detailX == 3) && (detailY == 0 || detailY == 3));
+                
+                // Color the pixel based on the pattern
+                if (isLine) {
+                    // Darker brown lines
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        90 + noise, 70 + noise, 50 + noise);
+                } else if (isSecondaryLine) {
+                    // Slightly darker than base for secondary lines
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        110 + noise, 90 + noise, 70 + noise);
+                } else if (isDetail) {
+                    // Small details
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        130 + noise, 110 + noise, 90 + noise);
+                } else {
+                    // Base brown color
+                    pixels[y * width + x] = SDL_MapRGB(surface->format, 
+                        120 + noise, 100 + noise, 80 + noise);
+                }
+            }
+        }
+    }
+    
+    SDL_UnlockSurface(surface);
+    return surface;
+}

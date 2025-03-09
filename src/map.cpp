@@ -2,15 +2,35 @@
 #include <fstream>
 #include <random>
 #include <algorithm>
+#include <queue>
 
-Map::Map() : m_width(0), m_height(0) {
-}
-
-Map::Map(int width, int height) : m_width(width), m_height(height) {
-    m_cells.resize(width * height, CellType::Empty);
-    m_wallTextures.resize(width * height, 0);  // Default texture ID is 0
-    m_cellElevation.resize(width * height, 0); // Default elevation is ground level (0)
-    m_stepHeight.resize(width * height, 0.0f); // Default step height is 0
+Map::Map(int width, int height) : 
+    m_width(width), 
+    m_height(height),
+    m_cells(height, std::vector<CellType>(width, CellType::Empty)),
+    m_wallTextures(height, std::vector<int>(width, 0)),
+    m_elevations(height, std::vector<int>(width, 0)),
+    m_stepHeights(height, std::vector<float>(width, 0.0f)),
+    m_doorStates(height, std::vector<DoorState>(width, DoorState::Closed)),
+    m_doorOpenAmount(height, std::vector<float>(width, 0.0f)),
+    m_teleportTargets(height, std::vector<std::pair<int, int>>(width, {0, 0})),
+    m_secretFound(height, std::vector<bool>(width, false)),
+    m_playerSector(0),
+    m_engine(nullptr)
+{
+    // Initially create a simple sector covering the whole map
+    Sector initialSector;
+    initialSector.id = 0;
+    initialSector.vertices = {
+        Vec2(0, 0),
+        Vec2(width, 0),
+        Vec2(width, height),
+        Vec2(0, height)
+    };
+    initialSector.isVisible = true;
+    m_sectors.push_back(initialSector);
+    
+    m_cellToSector.resize(height, std::vector<int>(width, 0));
 }
 
 bool Map::loadFromString(const std::string& mapStr) {
@@ -33,8 +53,8 @@ bool Map::loadFromString(const std::string& mapStr) {
     }
     
     // Resize the cells vector
-    m_cells.resize(m_width * m_height, CellType::Empty);
-    m_wallTextures.resize(m_width * m_height, 0);
+    m_cells.resize(m_height, std::vector<CellType>(m_width, CellType::Empty));
+    m_wallTextures.resize(m_height, std::vector<int>(m_width, 0));
     
     // Parse the map string
     int x = 0, y = 0;
@@ -49,24 +69,24 @@ bool Map::loadFromString(const std::string& mapStr) {
             // Set cell type based on character
             switch (c) {
                 case '#':
-                    m_cells[y * m_width + x] = CellType::Wall;
+                    m_cells[y][x] = CellType::Wall;
                     // Choose wall texture based on position (for variety)
-                    m_wallTextures[y * m_width + x] = (x + y) % 4;
+                    m_wallTextures[y][x] = (x + y) % 4;
                     break;
                 case '.':
-                    m_cells[y * m_width + x] = CellType::Empty;
+                    m_cells[y][x] = CellType::Empty;
                     break;
                 case 'D':
-                    m_cells[y * m_width + x] = CellType::Door;
+                    m_cells[y][x] = CellType::Door;
                     break;
                 case 'I':
-                    m_cells[y * m_width + x] = CellType::Item;
+                    m_cells[y][x] = CellType::Item;
                     break;
                 case 'E':
-                    m_cells[y * m_width + x] = CellType::Enemy;
+                    m_cells[y][x] = CellType::Enemy;
                     break;
                 default:
-                    m_cells[y * m_width + x] = CellType::Empty;
+                    m_cells[y][x] = CellType::Empty;
                     break;
             }
         }
@@ -139,16 +159,13 @@ CellType Map::getCell(int x, int y) const {
         return CellType::Wall;  // Out of bounds is considered a wall
     }
     
-    return m_cells[y * m_width + x];
+    return m_cells[y][x];
 }
 
 void Map::setCell(int x, int y, CellType type) {
-    // Check bounds
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return;  // Out of bounds, do nothing
+    if (x >= 0 && x < m_width && y >= 0 && y < m_height) {
+        m_cells[y][x] = type;
     }
-    
-    m_cells[y * m_width + x] = type;
 }
 
 bool Map::isValidPosition(double x, double y) const {
@@ -162,7 +179,7 @@ bool Map::isValidPosition(double x, double y) const {
     }
     
     // Get the cell type
-    CellType cellType = m_cells[cellY * m_width + cellX];
+    CellType cellType = m_cells[cellY][cellX];
     
     // Check if cell is empty, stairs, or stair steps
     return cellType == CellType::Empty || 
@@ -173,15 +190,12 @@ bool Map::isValidPosition(double x, double y) const {
 }
 
 int Map::getWallTexture(int x, int y) const {
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return 0; // Default texture for out of bounds
+    if (x >= 0 && x < m_width && y >= 0 && y < m_height) {
+        if (m_cells[y][x] == CellType::Wall) {
+            return m_wallTextures[y][x];
+        }
     }
-    
-    if (m_cells[y * m_width + x] == CellType::Wall) {
-        return m_wallTextures[y * m_width + x];
-    }
-    
-    return 0; // Default texture for non-walls
+    return 0;
 }
 
 void Map::setWallTexture(int x, int y, int textureId) {
@@ -189,7 +203,7 @@ void Map::setWallTexture(int x, int y, int textureId) {
         return; // Out of bounds, do nothing
     }
     
-    m_wallTextures[y * m_width + x] = textureId;
+    m_wallTextures[y][x] = textureId;
 }
 
 Vec2 Map::getRandomEmptyPosition() const {
@@ -301,65 +315,479 @@ double Map::castRay(double startX, double startY, double dirX, double dirY,
 }
 
 int Map::getCellElevation(int x, int y) const {
-    // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
         return 0; // Default elevation for out of bounds
     }
     
-    return m_cellElevation[y * m_width + x];
+    return m_elevations[y][x];
 }
 
 void Map::setCellElevation(int x, int y, int elevation) {
-    // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
         return; // Out of bounds, do nothing
     }
     
-    m_cellElevation[y * m_width + x] = elevation;
+    m_elevations[y][x] = elevation;
 }
 
 float Map::getStepHeight(int x, int y) const {
-    // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
         return 0.0f; // Default step height for out of bounds
     }
     
-    return m_stepHeight[y * m_width + x];
+    return m_stepHeights[y][x];
 }
 
 void Map::setStepHeight(int x, int y, float height) {
-    // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
         return; // Out of bounds, do nothing
     }
     
-    // Clamp height to 0.0-1.0
-    height = std::max(0.0f, std::min(height, 1.0f));
-    m_stepHeight[y * m_width + x] = height;
+    m_stepHeights[y][x] = height;
 }
 
 bool Map::isStairs(int x, int y) const {
-    // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false; // Out of bounds is not stairs
+        return false;
     }
     
-    return m_cells[y * m_width + x] == CellType::Stairs;
+    return m_cells[y][x] == CellType::Stairs;
 }
 
 bool Map::isStairStep(int x, int y) const {
-    // Check bounds
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        return false; // Out of bounds is not a stair step
+        return false;
     }
     
-    CellType cell = m_cells[y * m_width + x];
-    return cell == CellType::StairStep1 || 
-           cell == CellType::StairStep2 || 
-           cell == CellType::StairStep3;
+    CellType cell = m_cells[y][x];
+    return cell == CellType::StairStep1 || cell == CellType::StairStep2 || cell == CellType::StairStep3;
 }
 
 bool Map::isSolid(int x, int y) const {
-    CellType cell = getCell(x, y);
-    return cell == CellType::Wall || cell == CellType::Door || cell == CellType::ElevatedWall;
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return true;  // Out of bounds is considered solid
+    }
+    
+    CellType cellType = m_cells[y][x];
+    return cellType == CellType::Wall || 
+           cellType == CellType::ElevatedWall ||
+           cellType == CellType::SecretWall || 
+           (cellType == CellType::Door && m_doorStates[y][x] != DoorState::Open);
+}
+
+// Door methods
+bool Map::isDoor(int x, int y) const {
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false;
+    }
+    return m_cells[y][x] == CellType::Door;
+}
+
+DoorState Map::getDoorState(int x, int y) const {
+    if (!isDoor(x, y)) {
+        return DoorState::Closed;
+    }
+    return m_doorStates[y][x];
+}
+
+float Map::getDoorOpenAmount(int x, int y) const {
+    if (!isDoor(x, y)) {
+        return 0.0f;
+    }
+    return m_doorOpenAmount[y][x];
+}
+
+void Map::setDoorState(int x, int y, DoorState state) {
+    if (!isDoor(x, y)) {
+        return;
+    }
+    m_doorStates[y][x] = state;
+}
+
+void Map::setDoorOpenAmount(int x, int y, float amount) {
+    if (!isDoor(x, y)) {
+        return;
+    }
+    m_doorOpenAmount[y][x] = amount;
+}
+
+void Map::updateDoors(double deltaTime) {
+    for (int y = 0; y < m_height; y++) {
+        for (int x = 0; x < m_width; x++) {
+            if (!isDoor(x, y)) {
+                continue;
+            }
+            
+            // Update door open amount based on state
+            switch (m_doorStates[y][x]) {
+                case DoorState::Opening:
+                    m_doorOpenAmount[y][x] += deltaTime;
+                    if (m_doorOpenAmount[y][x] >= 1.0f) {
+                        m_doorOpenAmount[y][x] = 1.0f;
+                        m_doorStates[y][x] = DoorState::Open;
+                    }
+                    break;
+                    
+                case DoorState::Closing:
+                    m_doorOpenAmount[y][x] -= deltaTime;
+                    if (m_doorOpenAmount[y][x] <= 0.0f) {
+                        m_doorOpenAmount[y][x] = 0.0f;
+                        m_doorStates[y][x] = DoorState::Closed;
+                    }
+                    break;
+                    
+                case DoorState::Closed:
+                    m_doorOpenAmount[y][x] = 0.0f;
+                    break;
+                    
+                case DoorState::Open:
+                    m_doorOpenAmount[y][x] = 1.0f;
+                    break;
+            }
+        }
+    }
+}
+
+void Map::toggleDoor(int x, int y) {
+    if (!isDoor(x, y)) {
+        return;
+    }
+    
+    DoorState currentState = m_doorStates[y][x];
+    switch (currentState) {
+        case DoorState::Closed:
+        case DoorState::Closing:
+            m_doorStates[y][x] = DoorState::Opening;
+            break;
+            
+        case DoorState::Open:
+        case DoorState::Opening:
+            m_doorStates[y][x] = DoorState::Closing;
+            break;
+    }
+}
+
+bool Map::activateDoor(int x, int y) {
+    if (!isDoor(x, y)) {
+        return false;
+    }
+    
+    toggleDoor(x, y);
+    return true;
+}
+
+// Secret wall methods
+bool Map::isSecretWall(int x, int y) const {
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false;
+    }
+    return m_cells[y][x] == CellType::SecretWall;
+}
+
+bool Map::isSecretFound(int x, int y) const {
+    if (!isSecretWall(x, y)) {
+        return false;
+    }
+    return m_secretFound[y][x];
+}
+
+void Map::setSecretFound(int x, int y, bool found) {
+    if (!isSecretWall(x, y)) {
+        return;
+    }
+    m_secretFound[y][x] = found;
+}
+
+bool Map::activateSecret(int x, int y) {
+    if (!isSecretWall(x, y)) {
+        return false;
+    }
+    
+    setSecretFound(x, y, true);
+    return true;
+}
+
+// Teleport methods
+bool Map::isTeleportPad(int x, int y) const {
+    if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        return false;
+    }
+    return m_cells[y][x] == CellType::TeleportPad;
+}
+
+std::pair<int, int> Map::getTeleportTarget(int x, int y) const {
+    if (!isTeleportPad(x, y)) {
+        return {-1, -1};
+    }
+    return m_teleportTargets[y][x];
+}
+
+void Map::setTeleportTarget(int x, int y, int targetX, int targetY) {
+    if (!isTeleportPad(x, y)) {
+        return;
+    }
+    m_teleportTargets[y][x] = {targetX, targetY};
+}
+
+bool Map::activateTeleport(int x, int y, Vec2& outDestination) {
+    if (!isTeleportPad(x, y)) {
+        return false;
+    }
+    
+    std::pair<int, int> target = getTeleportTarget(x, y);
+    if (target.first < 0 || target.first >= m_width || target.second < 0 || target.second >= m_height) {
+        return false;
+    }
+    
+    // Set the destination to the center of the target cell
+    outDestination.x = target.first + 0.5;
+    outDestination.y = target.second + 0.5;
+    return true;
+}
+
+// Create sectors based on the map layout
+void Map::createSectors() {
+    m_sectors.clear();
+    m_playerSector = 0;
+    m_visibleSectors.clear();
+    
+    // Initialize the cell to sector mapping
+    m_cellToSector.resize(m_height, std::vector<int>(m_width, -1));
+    
+    // For a simple implementation, we'll create sectors based on room layouts
+    // This is a simplified approach - a more advanced implementation would use
+    // flood fill or other algorithms to detect enclosed spaces
+    
+    // First, identify enclosed rooms by looking for walls
+    std::vector<std::vector<bool>> visited(m_width, std::vector<bool>(m_height, false));
+    int sectorId = 0;
+    
+    for (int x = 0; x < m_width; x++) {
+        for (int y = 0; y < m_height; y++) {
+            // Skip walls and already visited cells
+            if (getCell(x, y) == CellType::Wall || visited[x][y]) {
+                continue;
+            }
+            
+            // Found a new potential sector
+            Sector sector;
+            sector.id = sectorId++;
+            sector.isVisible = false;
+            
+            // Use flood fill to find all cells in this sector
+            std::queue<std::pair<int, int>> queue;
+            queue.push({x, y});
+            visited[x][y] = true;
+            
+            std::vector<std::pair<int, int>> sectorCells;
+            
+            while (!queue.empty()) {
+                auto [cx, cy] = queue.front();
+                queue.pop();
+                
+                sectorCells.push_back({cx, cy});
+                
+                // Map this cell to the current sector
+                m_cellToSector[cy][cx] = sector.id;
+                
+                // Check adjacent cells
+                const int dx[] = {0, 1, 0, -1};
+                const int dy[] = {-1, 0, 1, 0};
+                
+                for (int i = 0; i < 4; i++) {
+                    int nx = cx + dx[i];
+                    int ny = cy + dy[i];
+                    
+                    // Check bounds
+                    if (nx < 0 || nx >= m_width || ny < 0 || ny >= m_height) {
+                        continue;
+                    }
+                    
+                    // Skip walls and visited cells
+                    if (getCell(nx, ny) == CellType::Wall || visited[nx][ny]) {
+                        continue;
+                    }
+                    
+                    queue.push({nx, ny});
+                    visited[nx][ny] = true;
+                }
+            }
+            
+            // Create a simplified boundary for the sector
+            // For now, we'll just use the min/max coordinates to create a rectangle
+            int minX = m_width, minY = m_height, maxX = 0, maxY = 0;
+            
+            for (const auto& cell : sectorCells) {
+                minX = std::min(minX, cell.first);
+                minY = std::min(minY, cell.second);
+                maxX = std::max(maxX, cell.first);
+                maxY = std::max(maxY, cell.second);
+            }
+            
+            // Create vertices for the sector boundary (clockwise order)
+            sector.vertices.push_back(Vec2(minX, minY));
+            sector.vertices.push_back(Vec2(maxX, minY));
+            sector.vertices.push_back(Vec2(maxX, maxY));
+            sector.vertices.push_back(Vec2(minX, maxY));
+            
+            m_sectors.push_back(sector);
+        }
+    }
+    
+    // Find neighboring sectors
+    for (auto& sector : m_sectors) {
+        for (auto& otherSector : m_sectors) {
+            if (sector.id == otherSector.id) {
+                continue;
+            }
+            
+            // Check if sectors share a boundary
+            // This is a simplified approach - a more accurate approach would check
+            // if any edges of the sectors are adjacent
+            bool isNeighbor = false;
+            
+            for (const auto& v1 : sector.vertices) {
+                for (const auto& v2 : otherSector.vertices) {
+                    double dist = (v1 - v2).length();
+                    if (dist < 2.0) {  // If vertices are close, consider them neighbors
+                        isNeighbor = true;
+                        break;
+                    }
+                }
+                if (isNeighbor) break;
+            }
+            
+            if (isNeighbor) {
+                sector.neighbors.push_back(otherSector.id);
+            }
+        }
+    }
+    
+    std::cout << "Created " << m_sectors.size() << " sectors for visibility culling" << std::endl;
+}
+
+// Update sector visibility based on player position
+void Map::updateVisibility(const Vec2& playerPos) {
+    // Reset visibility
+    for (auto& sector : m_sectors) {
+        sector.isVisible = false;
+    }
+    
+    // Clear the visible sectors list
+    m_visibleSectors.clear();
+    
+    // Find the sector containing the player
+    m_playerSector = getSectorAt(playerPos.x, playerPos.y);
+    
+    if (m_playerSector < 0 || m_playerSector >= static_cast<int>(m_sectors.size())) {
+        // Player is not in any sector, make all sectors visible
+        for (size_t i = 0; i < m_sectors.size(); i++) {
+            m_sectors[i].isVisible = true;
+            m_visibleSectors.push_back(i);
+        }
+        return;
+    }
+    
+    // Mark the player's sector as visible
+    m_sectors[m_playerSector].isVisible = true;
+    m_visibleSectors.push_back(m_playerSector);
+    
+    // Mark neighboring sectors as visible
+    std::queue<int> queue;
+    std::vector<bool> visited(m_sectors.size(), false);
+    
+    queue.push(m_playerSector);
+    visited[m_playerSector] = true;
+    
+    // Only consider sectors up to a certain distance from the player
+    const int MAX_SECTOR_DISTANCE = 2;
+    int distance = 0;
+    
+    while (!queue.empty() && distance < MAX_SECTOR_DISTANCE) {
+        int size = queue.size();
+        
+        for (int i = 0; i < size; i++) {
+            int currentSector = queue.front();
+            queue.pop();
+            
+            // Mark as visible
+            m_sectors[currentSector].isVisible = true;
+            
+            // Add to visible sectors list if not already added
+            if (std::find(m_visibleSectors.begin(), m_visibleSectors.end(), currentSector) == m_visibleSectors.end()) {
+                m_visibleSectors.push_back(currentSector);
+            }
+            
+            // Add neighbors to queue
+            for (int neighborId : m_sectors[currentSector].neighbors) {
+                if (!visited[neighborId]) {
+                    queue.push(neighborId);
+                    visited[neighborId] = true;
+                }
+            }
+        }
+        
+        distance++;
+    }
+}
+
+// Check if a sector is visible
+bool Map::isSectorVisible(int sectorId) const {
+    if (sectorId < 0 || sectorId >= static_cast<int>(m_sectors.size())) {
+        return true;  // If sector ID is invalid, assume it's visible
+    }
+    
+    return m_sectors[sectorId].isVisible;
+}
+
+// Get the sector at a specific position
+int Map::getSectorAt(double x, double y) const {
+    int cellX = static_cast<int>(x);
+    int cellY = static_cast<int>(y);
+    
+    // Check bounds
+    if (cellX < 0 || cellX >= m_width || cellY < 0 || cellY >= m_height) {
+        return -1;
+    }
+    
+    // Check if position is a wall
+    if (getCell(cellX, cellY) == CellType::Wall) {
+        return -1;
+    }
+    
+    // Find the sector containing this position
+    for (size_t i = 0; i < m_sectors.size(); i++) {
+        const auto& sector = m_sectors[i];
+        
+        // Check if point is inside the sector boundary
+        // Using a simple point-in-polygon test for rectangular sectors
+        if (sector.vertices.size() >= 4) {
+            double minX = std::min(sector.vertices[0].x, std::min(sector.vertices[1].x, 
+                          std::min(sector.vertices[2].x, sector.vertices[3].x)));
+            double maxX = std::max(sector.vertices[0].x, std::max(sector.vertices[1].x, 
+                          std::max(sector.vertices[2].x, sector.vertices[3].x)));
+            double minY = std::min(sector.vertices[0].y, std::min(sector.vertices[1].y, 
+                          std::min(sector.vertices[2].y, sector.vertices[3].y)));
+            double maxY = std::max(sector.vertices[0].y, std::max(sector.vertices[1].y, 
+                          std::max(sector.vertices[2].y, sector.vertices[3].y)));
+            
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                return i;
+            }
+        }
+    }
+    
+    return -1;
+}
+
+// Check if two positions are in the same sector
+bool Map::isInSameSector(double x1, double y1, double x2, double y2) const {
+    int sector1 = getSectorAt(x1, y1);
+    int sector2 = getSectorAt(x2, y2);
+    
+    return (sector1 >= 0 && sector1 == sector2);
+}
+
+Map::~Map() {
+    // No dynamic memory to clean up
 } 
