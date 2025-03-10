@@ -588,8 +588,8 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     // ========================
     
     // Define the central room where player starts - INCREASED SIZE
-    double roomSize = 12.0;  // Increased from 8.0
-    double wallHeight = 4.0;
+    double roomSize = 24.0;  // Increased from 12.0 (doubled again)
+    double wallHeight = 8.0;  // Doubled
     
     // Starting room walls (slightly offset from player start position)
     // Use texture 1 (metal panels) for the starting room
@@ -603,15 +603,15 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     // ========================
     
     // North corridor - WIDENED
-    double corridorWidth = 5.0;  // Increased from 3.0
-    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y - roomSize), Vec2(pos.x - corridorWidth, pos.y - roomSize - 8), 0); // Left wall
-    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y - roomSize), Vec2(pos.x + corridorWidth, pos.y - roomSize - 8), 0); // Right wall
+    double corridorWidth = 10.0;  // Increased from 5.0 (doubled)
+    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y - roomSize), Vec2(pos.x - corridorWidth, pos.y - roomSize - 16), 0); // Left wall
+    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y - roomSize), Vec2(pos.x + corridorWidth, pos.y - roomSize - 16), 0); // Right wall
     
     // North room (stone texture with blood - texture 0)
-    double northRoomY = pos.y - roomSize - 16;  // Further away for better visibility
+    double northRoomY = pos.y - roomSize - 32;  // Further away for better visibility (doubled)
     
     // Create north room with a circular design (octagonal approximation)
-    double northRadius = roomSize + 4;  // Larger radius
+    double northRadius = roomSize + 8;  // Larger radius (doubled)
     int numSegments = 8;
     Vec2 northCenter(pos.x, northRoomY);
     
@@ -630,17 +630,17 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     
     // Connect corridor to the octagonal room
     walls.emplace_back(
-        Vec2(pos.x - corridorWidth, pos.y - roomSize - 8),
+        Vec2(pos.x - corridorWidth, pos.y - roomSize - 16),
         Vec2(northCenter.x - northRadius * cos(7 * 2.0 * 3.14159265358979323846 / numSegments), 
              northCenter.y - northRadius * sin(7 * 2.0 * 3.14159265358979323846 / numSegments)), 0);
              
     walls.emplace_back(
-        Vec2(pos.x + corridorWidth, pos.y - roomSize - 8),
+        Vec2(pos.x + corridorWidth, pos.y - roomSize - 16),
         Vec2(northCenter.x - northRadius * cos(6 * 2.0 * 3.14159265358979323846 / numSegments), 
              northCenter.y - northRadius * sin(6 * 2.0 * 3.14159265358979323846 / numSegments)), 0);
     
     // Add pillars in north room (arranged in a circle) - MADE FEWER AND SMALLER
-    double pillarSize = 0.8;  // Smaller pillars
+    double pillarSize = 1.6;  // Larger pillars (doubled)
     double pillarRadius = northRadius * 0.6;
     int numPillars = 4;  // Fewer pillars
     
@@ -663,12 +663,12 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     // ========================
     
     // East corridor - WIDENED
-    walls.emplace_back(Vec2(pos.x + roomSize, pos.y - corridorWidth), Vec2(pos.x + roomSize + 8, pos.y - corridorWidth), 2); // North wall
-    walls.emplace_back(Vec2(pos.x + roomSize, pos.y + corridorWidth), Vec2(pos.x + roomSize + 8, pos.y + corridorWidth), 2); // South wall
+    walls.emplace_back(Vec2(pos.x + roomSize, pos.y - corridorWidth), Vec2(pos.x + roomSize + 16, pos.y - corridorWidth), 2); // North wall
+    walls.emplace_back(Vec2(pos.x + roomSize, pos.y + corridorWidth), Vec2(pos.x + roomSize + 16, pos.y + corridorWidth), 2); // South wall
     
     // East room (flesh texture - texture 2) - maze-like structure with WIDER PATHS
-    double eastRoomX = pos.x + roomSize + 16;  // Further away for better visibility
-    double mazeSize = roomSize + 4;  // Larger maze
+    double eastRoomX = pos.x + roomSize + 32;  // Further away for better visibility (doubled)
+    double mazeSize = roomSize + 8;  // Larger maze (doubled)
     
     // Main room boundaries
     walls.emplace_back(Vec2(eastRoomX - mazeSize, pos.y - mazeSize), Vec2(eastRoomX + mazeSize, pos.y - mazeSize), 2); // North wall
@@ -678,8 +678,8 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     walls.emplace_back(Vec2(eastRoomX - mazeSize, pos.y - corridorWidth), Vec2(eastRoomX - mazeSize, pos.y - mazeSize), 2); // West wall segment
     
     // Connect corridor to main room
-    walls.emplace_back(Vec2(pos.x + roomSize + 8, pos.y - corridorWidth), Vec2(eastRoomX - mazeSize, pos.y - corridorWidth), 2);
-    walls.emplace_back(Vec2(pos.x + roomSize + 8, pos.y + corridorWidth), Vec2(eastRoomX - mazeSize, pos.y + corridorWidth), 2);
+    walls.emplace_back(Vec2(pos.x + roomSize + 16, pos.y - corridorWidth), Vec2(eastRoomX - mazeSize, pos.y - corridorWidth), 2);
+    walls.emplace_back(Vec2(pos.x + roomSize + 16, pos.y + corridorWidth), Vec2(eastRoomX - mazeSize, pos.y + corridorWidth), 2);
     
     // Create a SIMPLIFIED maze-like structure with wider paths
     double mazeUnit = mazeSize / 2.5;  // Wider units
@@ -703,12 +703,12 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     // ========================
     
     // South corridor - WIDENED
-    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y + roomSize), Vec2(pos.x - corridorWidth, pos.y + roomSize + 8), 3); // Left wall
-    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y + roomSize), Vec2(pos.x + corridorWidth, pos.y + roomSize + 8), 3); // Right wall
+    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y + roomSize), Vec2(pos.x - corridorWidth, pos.y + roomSize + 16), 3); // Left wall
+    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y + roomSize), Vec2(pos.x + corridorWidth, pos.y + roomSize + 16), 3); // Right wall
     
     // South room (hellish metal with runes - texture 3) - create a star chamber
-    double southRoomY = pos.y + roomSize + 16;  // Further away for better visibility
-    double starRadius = roomSize + 4;  // Larger radius
+    double southRoomY = pos.y + roomSize + 32;  // Further away for better visibility (doubled)
+    double starRadius = roomSize + 8;  // Larger radius (doubled)
     Vec2 southCenter(pos.x, southRoomY);
     
     // Create star-shaped room with 5 points
@@ -733,8 +733,8 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     }
     
     // Connect corridor to star room
-    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y + roomSize + 8), starPoints[9], 3);
-    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y + roomSize + 8), starPoints[0], 3);
+    walls.emplace_back(Vec2(pos.x - corridorWidth, pos.y + roomSize + 16), starPoints[9], 3);
+    walls.emplace_back(Vec2(pos.x + corridorWidth, pos.y + roomSize + 16), starPoints[0], 3);
     
     // Add a pentagram in the center of the south room
     double pentRadius = starRadius * 0.4;  // Larger pentagram
@@ -753,12 +753,12 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     // ========================
     
     // West corridor - WIDENED
-    walls.emplace_back(Vec2(pos.x - roomSize, pos.y - corridorWidth), Vec2(pos.x - roomSize - 8, pos.y - corridorWidth), 1); // North wall
-    walls.emplace_back(Vec2(pos.x - roomSize, pos.y + corridorWidth), Vec2(pos.x - roomSize - 8, pos.y + corridorWidth), 1); // South wall
+    walls.emplace_back(Vec2(pos.x - roomSize, pos.y - corridorWidth), Vec2(pos.x - roomSize - 16, pos.y - corridorWidth), 1); // North wall
+    walls.emplace_back(Vec2(pos.x - roomSize, pos.y + corridorWidth), Vec2(pos.x - roomSize - 16, pos.y + corridorWidth), 1); // South wall
     
     // West room (metal panels - texture 1) - create a room with columns but FEWER and SMALLER
-    double westRoomX = pos.x - roomSize - 16;  // Further away for better visibility
-    double westRoomSize = roomSize + 4;  // Larger room
+    double westRoomX = pos.x - roomSize - 32;  // Further away for better visibility (doubled)
+    double westRoomSize = roomSize + 8;  // Larger room (doubled)
     
     // Main room boundaries
     walls.emplace_back(Vec2(westRoomX - westRoomSize, pos.y - westRoomSize), Vec2(westRoomX + westRoomSize, pos.y - westRoomSize), 1); // North wall
@@ -768,13 +768,13 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     walls.emplace_back(Vec2(westRoomX - westRoomSize, pos.y + westRoomSize), Vec2(westRoomX - westRoomSize, pos.y - westRoomSize), 1); // West wall
     
     // Connect corridor to main room
-    walls.emplace_back(Vec2(pos.x - roomSize - 8, pos.y - corridorWidth), Vec2(westRoomX + westRoomSize, pos.y - corridorWidth), 1);
-    walls.emplace_back(Vec2(pos.x - roomSize - 8, pos.y + corridorWidth), Vec2(westRoomX + westRoomSize, pos.y + corridorWidth), 1);
+    walls.emplace_back(Vec2(pos.x - roomSize - 16, pos.y - corridorWidth), Vec2(westRoomX + westRoomSize, pos.y - corridorWidth), 1);
+    walls.emplace_back(Vec2(pos.x - roomSize - 16, pos.y + corridorWidth), Vec2(westRoomX + westRoomSize, pos.y + corridorWidth), 1);
     
     // Create FEWER columns in a grid pattern
     int numRows = 2;
     int numCols = 2;
-    double columnSize = 0.8;  // Smaller columns
+    double columnSize = 1.6;  // Larger columns (doubled)
     double spaceX = westRoomSize * 1.8 / (numCols + 1);
     double spaceY = westRoomSize * 1.8 / (numRows + 1);
     
@@ -803,7 +803,7 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
     // ========================
     
     // Create a more visible central platform in the starting room
-    double platformSize = 3.0;  // Larger platform
+    double platformSize = 6.0;  // Larger platform (doubled)
     Vec2 platCenter = pos;
     
     walls.emplace_back(Vec2(platCenter.x - platformSize, platCenter.y - platformSize), 
@@ -816,7 +816,7 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
                         Vec2(platCenter.x - platformSize, platCenter.y - platformSize), 0);
     
     // Add visible markers (simple short walls) pointing to each corridor
-    double markerSize = 2.0;
+    double markerSize = 4.0;  // Doubled
     double markerDistance = roomSize * 0.6;
     
     // North marker (pointing to north corridor)

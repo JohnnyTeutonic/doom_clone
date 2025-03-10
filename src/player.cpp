@@ -196,9 +196,26 @@ void Player::setVerticalAngle(double angle)
 
 bool Player::tryMove(const Vec2& newPosition)
 {
+    // Vector from current position to new position
+    Vec2 moveVec = newPosition - m_position;
+    double moveDistance = moveVec.length();
+    
+    // If not moving, no collision check needed
+    if (moveDistance < EPSILON) {
+        return true;
+    }
+    
     // Check for wall collisions
-    if (checkWallCollisions(newPosition)) {
-        return false;
+    Vec2 adjustedPosition;
+    bool collision = checkWallCollisions(newPosition, adjustedPosition);
+    
+    if (collision) {
+        // If we have an adjusted position (sliding along wall), use that
+        if ((adjustedPosition - m_position).lengthSquared() > EPSILON) {
+            m_position = adjustedPosition;
+            return true;
+        }
+        return false; // Couldn't move at all
     }
     
     // No collisions, move to new position
@@ -342,11 +359,15 @@ void Player::applyViewBob(double deltaTime)
     m_eyeHeight += bobOffset;
 }
 
-bool Player::checkWallCollisions(const Vec2& newPosition)
+bool Player::checkWallCollisions(const Vec2& newPosition, Vec2& adjustedPosition)
 {
     if (!m_map) return false;
     
     double radius = m_settings.radius;
+    bool collisionDetected = false;
+    
+    // Start with the assumption we can move to the new position
+    adjustedPosition = newPosition;
     
     // Find the sector containing the player
     std::shared_ptr<Sector> sector = m_map->findSectorContainingPoint(m_position);
@@ -378,14 +399,57 @@ bool Player::checkWallCollisions(const Vec2& newPosition)
         Vec2 closestPoint = wallStart + wallDir * projection;
         
         // Check distance to closest point
-        double distance = (newPosition - closestPoint).length();
+        Vec2 toClosest = closestPoint - newPosition;
+        double distance = toClosest.length();
+        
         if (distance < radius) {
             // Collision detected
-            return true;
+            collisionDetected = true;
+            
+            // Calculate penetration vector (how much we're intersecting the wall)
+            Vec2 penetrationVec = toClosest.normalized() * (radius - distance);
+            
+            // Calculate wall normal (perpendicular to wall)
+            Vec2 wallNormal = Vec2(-wallDir.y, wallDir.x);
+            
+            // Make sure wall normal points away from wall
+            if (wallNormal.dot(newPosition - closestPoint) < 0) {
+                wallNormal = wallNormal * (-1.0);
+            }
+            
+            // Calculate sliding vector parallel to the wall
+            Vec2 moveVector = newPosition - m_position;
+            
+            // Project movement vector onto wall plane
+            double normalComponent = moveVector.dot(wallNormal);
+            Vec2 slideVector = moveVector - wallNormal * normalComponent;
+            
+            // Apply sliding - move as far as we can along the wall
+            double slideDistance = slideVector.length();
+            if (slideDistance > EPSILON) {
+                // Normalize and scale the slide vector
+                Vec2 slideDirection = slideVector / slideDistance;
+                
+                // Adjust the position by moving along the wall
+                // Use a slightly reduced slide amount for stability
+                double slideAmount = slideDistance * 0.9;
+                adjustedPosition = m_position + slideDirection * slideAmount;
+                
+                // Make sure we're not too close to the wall at the adjusted position
+                Vec2 adjustedToClosest = closestPoint - adjustedPosition;
+                double adjustedDistance = adjustedToClosest.length();
+                if (adjustedDistance < radius) {
+                    // Move away from wall to maintain minimum distance
+                    adjustedPosition = adjustedPosition + adjustedToClosest.normalized() * (radius - adjustedDistance);
+                }
+            } else {
+                // No sliding possible, just back away from the wall
+                adjustedPosition = adjustedPosition + penetrationVec;
+            }
         }
     }
     
-    return false;  // No collisions
+    return collisionDetected;
 }
 
 bool Player::tryClimbStep(const Vec2& newPosition, double stepHeight)

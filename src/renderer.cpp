@@ -835,7 +835,7 @@ void Renderer::renderMinimap(Map* map, Player* player, int x, int y, int size)
     Vec2 playerPos = player->getPosition();
     
     // Adjust scale to ensure walls are visible - use a fixed, appropriate scale
-    double scale = size / 50.0; // Smaller denominator means more zoomed in
+    double scale = size / 100.0; // Smaller denominator to show more of the larger map
     
     // Draw all walls directly using setPixel for better visibility
     const auto& sectors = map->getSectors();

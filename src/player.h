@@ -163,7 +163,7 @@ private:
     void applyViewBob(double deltaTime);
     
     // Check for collisions with walls
-    bool checkWallCollisions(const Vec2& newPosition);
+    bool checkWallCollisions(const Vec2& newPosition, Vec2& adjustedPosition);
     
     // Try to climb a step
     bool tryClimbStep(const Vec2& newPosition, double stepHeight);
