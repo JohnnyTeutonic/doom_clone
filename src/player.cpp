@@ -102,10 +102,10 @@ void Player::update(double deltaTime)
     
     // Rotation from keyboard with proper delta time
     if (m_inputs.rotateLeft) {
-        m_angle -= m_settings.rotateSpeed * deltaTime;
+        m_angle -= m_settings.rotateSpeed * 2.0 * deltaTime; // Double speed for keyboard
     }
     if (m_inputs.rotateRight) {
-        m_angle += m_settings.rotateSpeed * deltaTime;
+        m_angle += m_settings.rotateSpeed * 2.0 * deltaTime; // Double speed for keyboard
     }
     
     // Mouse look
@@ -373,78 +373,161 @@ bool Player::checkWallCollisions(const Vec2& newPosition, Vec2& adjustedPosition
     std::shared_ptr<Sector> sector = m_map->findSectorContainingPoint(m_position);
     if (!sector) return false; // No sector found, don't allow movement
     
-    // Check collisions with walls in current sector
+    // Get all sectors within potential reach, but use raw pointers for adjoining sectors
+    std::vector<Sector*> relevantSectors = {sector.get()};
+    
+    // Get walls from portals that connect to other sectors
     for (const auto& wall : sector->getWalls()) {
-        // Skip portal walls (can walk through them)
-        if (wall->isPortal()) continue;
+        if (wall->isPortal() && wall->getAdjoiningSector()) {
+            // Add adjoining sector as a raw pointer - we don't own it
+            Sector* adjoiningSector = wall->getAdjoiningSector();
+            // Make sure we don't add duplicates
+            if (std::find(relevantSectors.begin(), relevantSectors.end(), adjoiningSector) == relevantSectors.end()) {
+                relevantSectors.push_back(adjoiningSector);
+            }
+        }
+    }
+    
+    // Vector from current to new position
+    Vec2 moveVector = newPosition - m_position;
+    double moveLength = moveVector.length();
+    
+    // Check collisions with walls in all relevant sectors
+    for (const auto& currentSector : relevantSectors) {
+        // Skip invalid sectors
+        if (!currentSector) continue;
         
-        // Calculate closest point on wall to the new position
-        Vec2 wallStart = wall->getStart();
-        Vec2 wallEnd = wall->getEnd();
-        Vec2 wallDir = wall->getDirection();
-        double wallLength = wall->getLength();
-        
-        if (wallLength < EPSILON) continue;  // Skip zero-length walls
-        
-        wallDir = wallDir / wallLength;  // Normalize
-        
-        // Vector from wall start to new position
-        Vec2 wallToPos = newPosition - wallStart;
-        
-        // Project wallToPos onto wallDir to find closest point
-        double projection = wallToPos.dot(wallDir);
-        projection = clamp(projection, 0.0, wallLength);
-        
-        // Closest point on wall
-        Vec2 closestPoint = wallStart + wallDir * projection;
-        
-        // Check distance to closest point
-        Vec2 toClosest = closestPoint - newPosition;
-        double distance = toClosest.length();
-        
-        if (distance < radius) {
-            // Collision detected
-            collisionDetected = true;
+        for (const auto& wall : currentSector->getWalls()) {
+            // Skip invalid walls
+            if (!wall) continue;
             
-            // Calculate penetration vector (how much we're intersecting the wall)
-            Vec2 penetrationVec = toClosest.normalized() * (radius - distance);
+            // Calculate wall direction early for use in portal checks
+            Vec2 wallStart = wall->getStart();
+            Vec2 wallEnd = wall->getEnd();
+            Vec2 wallDir = wall->getDirection();
+            double wallLength = wall->getLength();
             
-            // Calculate wall normal (perpendicular to wall)
+            if (wallLength < EPSILON) continue;  // Skip zero-length walls
+            
+            wallDir = wallDir / wallLength;  // Normalize
+            
+            // For portal walls, only check collision if we're not entering the portal properly
+            if (wall->isPortal()) {
+                // Only perform portal wall check if we're moving toward it at a steep angle
+                Vec2 wallNormal = Vec2(-wallDir.y, wallDir.x); // Perpendicular to wall
+                // Make sure wall normal points away from the wall
+                if (wallNormal.dot(Vec2(1, 0)) < 0) {
+                    wallNormal = wallNormal * (-1.0);
+                }
+                
+                // If we're moving roughly toward the portal, skip the collision check
+                if (moveVector.dot(wallNormal) < 0) {
+                    continue;
+                }
+            }
+            
+            // Calculate wall normal (perpendicular to wall, pointing outward)
             Vec2 wallNormal = Vec2(-wallDir.y, wallDir.x);
             
-            // Make sure wall normal points away from wall
-            if (wallNormal.dot(newPosition - closestPoint) < 0) {
+            // Make sure normal points outward from the wall
+            Vec2 testPoint = wallStart + wallDir * (wallLength / 2) + wallNormal * 0.1;
+            if (!currentSector->containsPoint(testPoint)) {
                 wallNormal = wallNormal * (-1.0);
             }
             
-            // Calculate sliding vector parallel to the wall
-            Vec2 moveVector = newPosition - m_position;
+            // Vector from wall start to new position
+            Vec2 wallToPos = newPosition - wallStart;
             
-            // Project movement vector onto wall plane
-            double normalComponent = moveVector.dot(wallNormal);
-            Vec2 slideVector = moveVector - wallNormal * normalComponent;
+            // Project wallToPos onto wallDir to find closest point
+            double projection = wallToPos.dot(wallDir);
+            projection = clamp(projection, 0.0, wallLength);
             
-            // Apply sliding - move as far as we can along the wall
-            double slideDistance = slideVector.length();
-            if (slideDistance > EPSILON) {
-                // Normalize and scale the slide vector
-                Vec2 slideDirection = slideVector / slideDistance;
+            // Closest point on wall
+            Vec2 closestPoint = wallStart + wallDir * projection;
+            
+            // Check distance to closest point
+            Vec2 toClosest = closestPoint - newPosition;
+            double distance = toClosest.length();
+            
+            // If we're too close to the wall
+            if (distance < radius) {
+                collisionDetected = true;
                 
-                // Adjust the position by moving along the wall
-                // Use a slightly reduced slide amount for stability
-                double slideAmount = slideDistance * 0.9;
-                adjustedPosition = m_position + slideDirection * slideAmount;
+                // First, try simple push-back along the wall normal
+                Vec2 pushBackVec = wallNormal * (radius - distance + 0.01); // Add a small buffer
+                adjustedPosition = newPosition + pushBackVec;
                 
-                // Make sure we're not too close to the wall at the adjusted position
-                Vec2 adjustedToClosest = closestPoint - adjustedPosition;
-                double adjustedDistance = adjustedToClosest.length();
-                if (adjustedDistance < radius) {
-                    // Move away from wall to maintain minimum distance
-                    adjustedPosition = adjustedPosition + adjustedToClosest.normalized() * (radius - adjustedDistance);
+                // Now, calculate sliding vector parallel to the wall
+                double normalComponent = moveVector.dot(wallNormal);
+                
+                // Only allow sliding if we're actually moving toward or along the wall
+                if (normalComponent < 0 || std::abs(normalComponent) < moveLength * 0.1) {
+                    Vec2 slideVector = moveVector - wallNormal * normalComponent;
+                    double slideLength = slideVector.length();
+                    
+                    if (slideLength > EPSILON) {
+                        // Scale the slide to be safe
+                        double scaleFactor = 0.9; // Slightly reduce slide amount for stability
+                        Vec2 scaledSlide = slideVector * (scaleFactor * moveLength / slideLength);
+                        
+                        // Only apply sliding if it doesn't push us closer to the wall
+                        Vec2 potentialSlidePos = m_position + scaledSlide;
+                        double newDistToWall = (closestPoint - potentialSlidePos).length();
+                        
+                        if (newDistToWall >= radius) {
+                            // Safe to slide
+                            adjustedPosition = potentialSlidePos;
+                        } else {
+                            // Sliding would push us too close, try partial sliding
+                            // Find how far along the wall we can safely move
+                            double safeDistanceFactor = (newDistToWall - 0.01) / radius;
+                            if (safeDistanceFactor > 0) {
+                                adjustedPosition = m_position + scaledSlide * safeDistanceFactor;
+                            } else {
+                                // Can't slide at all, just push back
+                                adjustedPosition = newPosition + pushBackVec;
+                            }
+                        }
+                    }
                 }
-            } else {
-                // No sliding possible, just back away from the wall
-                adjustedPosition = adjustedPosition + penetrationVec;
+                
+                // Final safety check - make sure we're not inside any wall
+                bool stillColliding = false;
+                for (const auto& checkSector : relevantSectors) {
+                    if (!checkSector) continue;
+                    
+                    for (const auto& checkWall : checkSector->getWalls()) {
+                        if (!checkWall) continue;
+                        if (checkWall->isPortal()) continue; // Skip portal walls for this check
+                        
+                        // Quick distance check to adjusted position
+                        Vec2 checkWallStart = checkWall->getStart();
+                        Vec2 checkWallEnd = checkWall->getEnd();
+                        double checkWallLength = (checkWallEnd - checkWallStart).length();
+                        if (checkWallLength < EPSILON) continue;
+                        
+                        Vec2 checkWallDir = (checkWallEnd - checkWallStart) * (1.0 / checkWallLength);
+                        
+                        Vec2 checkWallToPos = adjustedPosition - checkWallStart;
+                        double checkProjection = checkWallToPos.dot(checkWallDir);
+                        checkProjection = clamp(checkProjection, 0.0, checkWallLength);
+                        
+                        Vec2 checkClosestPoint = checkWallStart + checkWallDir * checkProjection;
+                        double checkDistance = (adjustedPosition - checkClosestPoint).length();
+                        
+                        if (checkDistance < radius) {
+                            // Still too close to this wall after adjustment
+                            stillColliding = true;
+                            break;
+                        }
+                    }
+                    if (stillColliding) break;
+                }
+                
+                if (stillColliding) {
+                    // As a last resort, don't move at all
+                    adjustedPosition = m_position;
+                }
             }
         }
     }

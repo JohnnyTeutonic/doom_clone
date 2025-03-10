@@ -486,9 +486,11 @@ int main(int argc, char* argv[])
                         moveRight = true;
                         break;
                     case SDLK_q:
+                    case SDLK_LEFT:
                         rotateLeft = true;
                         break;
                     case SDLK_e:
+                    case SDLK_RIGHT:
                         rotateRight = true;
                         break;
                     case SDLK_SPACE:
@@ -521,9 +523,11 @@ int main(int argc, char* argv[])
                         moveRight = false;
                         break;
                     case SDLK_q:
+                    case SDLK_LEFT:
                         rotateLeft = false;
                         break;
                     case SDLK_e:
+                    case SDLK_RIGHT:
                         rotateRight = false;
                         break;
                     case SDLK_LCTRL:
@@ -533,8 +537,7 @@ int main(int argc, char* argv[])
                         break;
                 }
             } else if (event.type == SDL_MOUSEMOTION) {
-                mouseX = event.motion.xrel;
-                mouseY = event.motion.yrel;
+                // We're now using SDL_GetRelativeMouseState directly, so don't process the events here
             }
         }
         
@@ -550,8 +553,8 @@ int main(int argc, char* argv[])
         // This ensures continuous rotation even when mouse hits screen edge
         int latestMouseX, latestMouseY;
         SDL_GetRelativeMouseState(&latestMouseX, &latestMouseY);
-        mouseX += latestMouseX;
-        mouseY += latestMouseY;
+        mouseX = latestMouseX;  // Use only the latest mouse movement
+        mouseY = latestMouseY;
         
         // Process player input using the standard input processing system
         player->processInput(
@@ -559,10 +562,6 @@ int main(int argc, char* argv[])
             rotateLeft, rotateRight, jump, crouch,
             mouseX, mouseY, true
         );
-        
-        // Reset mouse deltas
-        mouseX = 0;
-        mouseY = 0;
         
         // Update player
         player->update(deltaTime);
