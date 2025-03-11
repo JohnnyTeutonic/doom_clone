@@ -19,12 +19,19 @@ find_package(SDL2_image REQUIRED)
 find_package(SDL2_ttf REQUIRED)
 find_package(SDL2_mixer REQUIRED)
 
+# Find WebP library for animated WebP support
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(WEBP REQUIRED libwebp)
+pkg_check_modules(WEBPDEMUX REQUIRED libwebpdemux)
+
 # Include directories
 include_directories(
     ${SDL2_INCLUDE_DIRS}
     ${SDL2_IMAGE_INCLUDE_DIRS}
     ${SDL2_TTF_INCLUDE_DIRS}
     ${SDL2_MIXER_INCLUDE_DIRS}
+    ${WEBP_INCLUDE_DIRS}
+    ${WEBPDEMUX_INCLUDE_DIRS}
 )
 
 # Collect source files
@@ -46,6 +53,8 @@ target_link_libraries(doom_clone
     ${SDL2_IMAGE_LIBRARIES}
     ${SDL2_TTF_LIBRARIES}
     ${SDL2_MIXER_LIBRARIES}
+    ${WEBP_LIBRARIES}
+    ${WEBPDEMUX_LIBRARIES}
 )
 
 # Copy assets to build directory
@@ -98,6 +107,23 @@ if(WIN32)
                 $<TARGET_FILE_DIR:doom_clone>/SDL2_mixer.dll
         )
     endif()
+    
+    # Copy WebP DLLs if available
+    if(EXISTS ${WEBP_LIBRARY_DIRS}/libwebp.dll)
+        add_custom_command(TARGET doom_clone POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                ${WEBP_LIBRARY_DIRS}/libwebp.dll
+                $<TARGET_FILE_DIR:doom_clone>/libwebp.dll
+        )
+    endif()
+    
+    if(EXISTS ${WEBPDEMUX_LIBRARY_DIRS}/libwebpdemux.dll)
+        add_custom_command(TARGET doom_clone POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                ${WEBPDEMUX_LIBRARY_DIRS}/libwebpdemux.dll
+                $<TARGET_FILE_DIR:doom_clone>/libwebpdemux.dll
+        )
+    endif()
 endif()
 
 # Add debug and optimization flags
@@ -120,4 +146,8 @@ message(STATUS "  C++ compiler: ${CMAKE_CXX_COMPILER}")
 message(STATUS "  C++ flags: ${CMAKE_CXX_FLAGS}")
 message(STATUS "  SDL2 include: ${SDL2_INCLUDE_DIRS}")
 message(STATUS "  SDL2 libraries: ${SDL2_LIBRARIES}")
+message(STATUS "  WebP include: ${WEBP_INCLUDE_DIRS}")
+message(STATUS "  WebP libraries: ${WEBP_LIBRARIES}")
+message(STATUS "  WebP demuxer include: ${WEBPDEMUX_INCLUDE_DIRS}")
+message(STATUS "  WebP demuxer libraries: ${WEBPDEMUX_LIBRARIES}")
 message(STATUS "  Output directory: ${CMAKE_BINARY_DIR}/bin") 

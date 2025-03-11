@@ -2,8 +2,17 @@
 #include "map.h"
 #include "utils.h"
 #include "player.h"
+#include "TextureManager.h"
 #include <iostream>
 #include <limits>
+#include <cstring>
+
+#ifdef _WIN32
+#include <direct.h>
+#define getcwd _getcwd
+#else
+#include <unistd.h>
+#endif
 
 // Forward declarations for texture functions
 Color getDoomFloorColor(int x, int y, int floorTileSize);
@@ -168,7 +177,7 @@ void Renderer::endFrame()
     // Copy framebuffer to renderer
     SDL_RenderCopy(m_renderer, m_frameBuffer, nullptr, nullptr);
     
-    // Present renderer
+    // Present renderer - this makes everything visible
     SDL_RenderPresent(m_renderer);
 }
 
@@ -821,6 +830,130 @@ void Renderer::renderHUD(Player* player)
     if (map) {
         renderMinimap(map, player, m_screenWidth - 150, 20, 130);
     }
+    
+    // Draw currently selected weapon
+    if (player->getCurrentWeapon() == WeaponType::CHAINSAW) {
+        renderWeapon();
+    }
+}
+
+// Function to print current working directory
+void printCurrentDirectory() {
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::cout << "Current working directory: " << cwd << std::endl;
+    } else {
+        std::cerr << "Error getting current directory" << std::endl;
+    }
+}
+
+// Render the current weapon
+void Renderer::renderWeapon() 
+{
+    std::cout << "RENDER WEAPON CALLED" << std::endl;
+    
+    // Use static variables to only load the image once
+    static SDL_Surface* chainsawSurface = nullptr;
+    
+    if (!chainsawSurface) {
+        // We already have debug info showing the image loads correctly, so we'll
+        // use the path that we know works based on the debug output
+        std::string imagePath = "bin/assets/textures/chainsaw.png";
+        std::cout << "Loading chainsaw from known working path: " << imagePath << std::endl;
+        chainsawSurface = IMG_Load(imagePath.c_str());
+        
+        if (!chainsawSurface) {
+            std::cerr << "ERROR: Failed to load chainsaw image: " << IMG_GetError() << std::endl;
+            return;
+        }
+        
+        std::cout << "Chainsaw loaded successfully: " << chainsawSurface->w << "x" 
+                  << chainsawSurface->h << " pixels" << std::endl;
+    }
+    
+    // Draw directly to the pixel buffer (skipping SDL texture/renderer)
+    if (chainsawSurface) {
+        // Get image dimensions
+        int imgWidth = chainsawSurface->w;
+        int imgHeight = chainsawSurface->h;
+        
+        // Make the chainsaw larger
+        float scale = 2.0f; // Double the size
+        
+        int displayWidth = (int)(imgWidth * scale);
+        int displayHeight = (int)(imgHeight * scale);
+        
+        // Position in the center bottom of the screen
+        int posX = (m_screenWidth - displayWidth) / 2;
+        int posY = m_screenHeight - displayHeight - 20; // Add padding from bottom
+        
+        // Draw a bright border around the weapon area
+        for (int y = posY - 5; y < posY + displayHeight + 5; y++) {
+            for (int x = posX - 5; x < posX + displayWidth + 5; x++) {
+                if ((y == posY - 5) || (y == posY + displayHeight + 4) || 
+                    (x == posX - 5) || (x == posX + displayWidth + 4)) {
+                    // Draw border pixels
+                    if (x >= 0 && x < m_screenWidth && y >= 0 && y < m_screenHeight) {
+                        setPixel(x, y, Colors::MAGENTA);
+                    }
+                }
+            }
+        }
+        
+        // Draw the chainsaw directly to pixel buffer
+        SDL_LockSurface(chainsawSurface);
+        
+        Uint32* pixels = (Uint32*)chainsawSurface->pixels;
+        int pitch = chainsawSurface->pitch / sizeof(Uint32);
+        
+        // Get format information
+        SDL_PixelFormat* format = chainsawSurface->format;
+        
+        // Draw the image
+        for (int y = 0; y < imgHeight; y++) {
+            for (int x = 0; x < imgWidth; x++) {
+                // Calculate scaled coordinates
+                int destX = posX + (int)(x * scale);
+                int destY = posY + (int)(y * scale);
+                
+                // Check bounds
+                if (destX >= 0 && destX < m_screenWidth && destY >= 0 && destY < m_screenHeight) {
+                    // Get pixel color from surface
+                    Uint32 pixel = pixels[y * pitch + x];
+                    
+                    // Extract color components
+                    Uint8 r, g, b, a;
+                    SDL_GetRGBA(pixel, format, &r, &g, &b, &a);
+                    
+                    // Skip white pixels (making them transparent)
+                    if (!(r > 240 && g > 240 && b > 240)) {
+                        // Draw the pixel
+                        setPixel(destX, destY, Color(r, g, b, a));
+                        
+                        // For scaled image, fill the scaled area
+                        if (scale > 1.0f) {
+                            for (int sy = 0; sy < (int)scale; sy++) {
+                                for (int sx = 0; sx < (int)scale; sx++) {
+                                    int fillX = posX + (int)(x * scale) + sx;
+                                    int fillY = posY + (int)(y * scale) + sy;
+                                    if (fillX >= 0 && fillX < m_screenWidth && 
+                                        fillY >= 0 && fillY < m_screenHeight) {
+                                        setPixel(fillX, fillY, Color(r, g, b, a));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        SDL_UnlockSurface(chainsawSurface);
+        
+        // Draw debug text above the weapon
+        std::string debugText = "CHAINSAW WEAPON";
+        drawText(debugText, posX, posY - 20, Colors::YELLOW);
+    }
 }
 
 void Renderer::renderMinimap(Map* map, Player* player, int x, int y, int size)
@@ -996,7 +1129,7 @@ void Renderer::renderDebugRect(const Rect& rect, const Color& color, bool filled
                 setPixel(px, py, color);
             }
         }
-        } else {
+    } else {
         // Draw rectangle outline
         for (int px = x; px < x + w; px++) {
             setPixel(px, y, color);
@@ -1344,10 +1477,10 @@ Color getDoomWallColor(int textureId, double u, double v, double distance) {
             
             // Circuit patterns (horizontal and vertical lines)
             bool isCircuitH = ((texY % (gridSize * 4)) / gridSize == 1) && 
-                             ((texX % gridSize) > 2) && ((texX % gridSize) < gridSize - 2);
+                                 ((texX % gridSize) > 2) && ((texX % gridSize) < gridSize - 2);
             
             bool isCircuitV = ((texX % (gridSize * 4)) / gridSize == 2) && 
-                             ((texY % gridSize) > 2) && ((texY % gridSize) < gridSize - 2);
+                                 ((texY % gridSize) > 2) && ((texY % gridSize) < gridSize - 2);
             
             // "Components" at certain intersections
             int blockX = texX / gridSize;

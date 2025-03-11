@@ -66,6 +66,16 @@ struct InputState {
     {}
 };
 
+// Weapon types
+enum class WeaponType {
+    NONE,
+    CHAINSAW,
+    PISTOL,
+    SHOTGUN,
+    CHAINGUN,
+    ROCKET_LAUNCHER
+};
+
 // Player class representing the game player
 class Player {
 public:
@@ -123,6 +133,10 @@ public:
     // Set player field of view
     void setFOV(double fov) { m_fov = clamp(fov, 60.0 * DEG_TO_RAD, 120.0 * DEG_TO_RAD); }
     
+    // Weapon handling
+    WeaponType getCurrentWeapon() const { return m_currentWeapon; }
+    void selectWeapon(WeaponType weapon) { m_currentWeapon = weapon; }
+    
     // Handle player entering a new sector
     void enterSector(std::shared_ptr<Sector> sector);
     
@@ -149,6 +163,7 @@ private:
     std::shared_ptr<Sector> m_currentSector; // Current sector
     Map* m_map;                             // Reference to the map
     Engine* m_engine;                       // Reference to the engine
+    WeaponType m_currentWeapon;             // Currently selected weapon
     
     // Update player direction vectors
     void updateDirectionVectors();

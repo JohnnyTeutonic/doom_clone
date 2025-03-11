@@ -9,8 +9,10 @@
 
 #ifdef _WIN32
 #include <SDL.h>
+#include <SDL_image.h>
 #else
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #endif
 
 // Create a simple test map
@@ -505,6 +507,11 @@ int main(int argc, char* argv[])
                         SDL_SetWindowFullscreen(SDL_GetWindowFromID(event.key.windowID),
                                                fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                         break;
+                    case SDLK_1:
+                        // Select chainsaw weapon
+                        player->selectWeapon(WeaponType::CHAINSAW);
+                        std::cout << "DEBUG: Chainsaw weapon selected!" << std::endl;
+                        break;
                     default:
                         break;
                 }
@@ -569,14 +576,20 @@ int main(int argc, char* argv[])
         // Update camera
         camera->update(deltaTime);
         
+        // Always select the chainsaw weapon for testing
+        player->selectWeapon(WeaponType::CHAINSAW);
+        
         // Start rendering frame
         renderer->beginFrame();
         
         // Render the map
         renderer->renderMap(map.get(), camera.get());
         
-        // Render HUD
+        // Render HUD with weapon
         renderer->renderHUD(player.get());
+        
+        // Add a debug message about the weapon
+        renderer->renderDebugInfo("Chainsaw weapon should be visible", 10, 30);
         
         // Calculate and display FPS
         frameCount++;
@@ -593,7 +606,7 @@ int main(int argc, char* argv[])
             renderer->renderDebugInfo(fpsText, 10, 10);
         }
         
-        // Present frame
+        // End the frame to update the screen
         renderer->endFrame();
         
         // Cap frame rate

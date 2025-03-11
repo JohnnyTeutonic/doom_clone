@@ -20,7 +20,8 @@ Player::Player() :
     m_fov(90.0 * DEG_TO_RAD),
     m_inputs(),
     m_map(nullptr),
-    m_engine(nullptr)
+    m_engine(nullptr),
+    m_currentWeapon(WeaponType::NONE)
 {
     // Initialize player settings with defaults
     m_settings = PlayerSettings();
@@ -45,6 +46,7 @@ void Player::init(const Vec2& position, double angle, Map* map)
     m_isJumping = false;
     m_health = 100;
     m_armor = 0;
+    m_currentWeapon = WeaponType::CHAINSAW; // Set chainsaw by default
     
     updateDirectionVectors();
     
@@ -275,6 +277,7 @@ void Player::reset()
     m_isJumping = false;
     m_eyeHeight = m_settings.eyeHeight;
     m_verticalAngle = 0.0;
+    m_currentWeapon = WeaponType::CHAINSAW; // Set chainsaw as default weapon
 }
 
 void Player::updateDirectionVectors()

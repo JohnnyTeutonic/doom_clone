@@ -139,6 +139,9 @@ public:
     // Render a minimap to help with navigation
     void renderMinimap(Map* map, Player* player, int x, int y, int size);
     
+    // Render the current weapon
+    void renderWeapon();
+    
     // Get SDL renderer
     SDL_Renderer* getSDLRenderer() const { return m_renderer; }
     

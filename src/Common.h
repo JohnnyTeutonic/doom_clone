@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <unordered_map>
 
+// Only define these if utils.h hasn't been included already
+#ifndef UTILS_H
+
 // Math constants
 constexpr double PI = 3.14159265358979323846;
 constexpr double TWO_PI = 2.0 * PI;
@@ -31,16 +34,17 @@ struct Vec2 {
     // Dot product
     double dot(const Vec2& other) const { return x * other.x + y * other.y; }
     
-    // Cross product (technically a scalar in 2D)
+    // Cross product (z-component only for 2D vectors)
     double cross(const Vec2& other) const { return x * other.y - y * other.x; }
     
-    // Length/magnitude
+    // Vector length
     double length() const { return std::sqrt(x * x + y * y); }
     
     // Normalized vector
     Vec2 normalized() const {
         double len = length();
-        return len > 0 ? Vec2(x / len, y / len) : Vec2(0, 0);
+        if (len < 1e-6) return Vec2(0, 0);
+        return Vec2(x / len, y / len);
     }
     
     // Distance to another point
@@ -50,13 +54,13 @@ struct Vec2 {
     
     // Rotate vector by angle (in radians)
     Vec2 rotated(double angle) const {
-        double cosA = std::cos(angle);
-        double sinA = std::sin(angle);
-        return Vec2(x * cosA - y * sinA, x * sinA + y * cosA);
+        double cs = std::cos(angle);
+        double sn = std::sin(angle);
+        return Vec2(x * cs - y * sn, x * sn + y * cs);
     }
 };
 
-// Line segment between two points
+// Line structure for 2D line segments
 struct Line {
     Vec2 start;
     Vec2 end;
@@ -70,38 +74,26 @@ struct Line {
     // Line length
     double length() const { return start.distanceTo(end); }
     
-    // Check if point is on line
+    // Check if a point is on the line segment (within epsilon)
     bool containsPoint(const Vec2& point, double epsilon = 0.001) const {
-        // Check if point is collinear and within segment bounds
-        double crossProduct = (point.y - start.y) * (end.x - start.x) - 
-                              (point.x - start.x) * (end.y - start.y);
-                              
-        if (std::abs(crossProduct) > epsilon)
-            return false;
-            
-        double dotProduct = (point.x - start.x) * (end.x - start.x) + 
-                           (point.y - start.y) * (end.y - start.y);
-                           
-        if (dotProduct < 0)
-            return false;
-            
-        double squaredLength = (end.x - start.x) * (end.x - start.x) + 
-                              (end.y - start.y) * (end.y - start.y);
-                              
-        return dotProduct <= squaredLength;
+        double d1 = point.distanceTo(start);
+        double d2 = point.distanceTo(end);
+        double lineLen = length();
+        return std::abs(d1 + d2 - lineLen) < epsilon;
     }
     
-    // Get closest point on line to a given point
+    // Get the closest point on the line to a given point
     Vec2 closestPoint(const Vec2& point) const {
         Vec2 dir = direction();
-        double len2 = dir.dot(dir);
+        double len = dir.length();
+        if (len < 1e-6) return start; // degenerate line
         
-        // If line is just a point, return that
-        if (len2 < 0.0000001)
-            return start;
-            
-        // Project point onto line
-        double t = std::max(0.0, std::min(1.0, (point - start).dot(dir) / len2));
+        dir = dir / len; // normalize
+        double t = dir.dot(point - start);
+        
+        if (t < 0) return start;
+        if (t > len) return end;
+        
         return start + dir * t;
     }
     
@@ -110,35 +102,42 @@ struct Line {
         return point.distanceTo(closestPoint(point));
     }
     
-    // Check if line intersects with another line
+    // Check if this line intersects with another line
     bool intersects(const Line& other, Vec2* intersection = nullptr) const {
-        // Calculate denominators
-        double den = (other.end.y - other.start.y) * (end.x - start.x) - 
-                    (other.end.x - other.start.x) * (end.y - start.y);
-                    
-        if (den == 0)
-            return false;  // Lines are parallel
-            
-        double ua = ((other.end.x - other.start.x) * (start.y - other.start.y) - 
-                    (other.end.y - other.start.y) * (start.x - other.start.x)) / den;
-        double ub = ((end.x - start.x) * (start.y - other.start.y) - 
-                    (end.y - start.y) * (start.x - other.start.x)) / den;
-                    
-        // Check if intersection is within both line segments
-        if (ua < 0 || ua > 1 || ub < 0 || ub > 1)
+        // Line 1 represented as a1x + b1y = c1
+        double a1 = end.y - start.y;
+        double b1 = start.x - end.x;
+        double c1 = a1 * start.x + b1 * start.y;
+        
+        // Line 2 represented as a2x + b2y = c2
+        double a2 = other.end.y - other.start.y;
+        double b2 = other.start.x - other.end.x;
+        double c2 = a2 * other.start.x + b2 * other.start.y;
+        
+        double determinant = a1 * b2 - a2 * b1;
+        
+        if (std::abs(determinant) < 1e-6) {
+            // Lines are parallel
             return false;
-            
-        // Calculate intersection point if needed
-        if (intersection) {
-            intersection->x = start.x + ua * (end.x - start.x);
-            intersection->y = start.y + ua * (end.y - start.y);
         }
         
-        return true;
+        // Find intersection point
+        Vec2 intersectionPoint(
+            (b2 * c1 - b1 * c2) / determinant,
+            (a1 * c2 - a2 * c1) / determinant
+        );
+        
+        // Check if the intersection point is on both line segments
+        if (containsPoint(intersectionPoint) && other.containsPoint(intersectionPoint)) {
+            if (intersection) *intersection = intersectionPoint;
+            return true;
+        }
+        
+        return false;
     }
 };
 
-// RGBA Color 
+// Color structure for RGBA color representation
 struct Color {
     uint8_t r;
     uint8_t g;
@@ -159,17 +158,26 @@ struct Color {
     
     // Blend with another color
     Color blend(const Color& other) const {
-        // Simple alpha blending
-        float alpha = other.a / 255.0f;
+        float srcAlpha = other.a / 255.0f;
+        float destAlpha = a / 255.0f;
+        float outAlpha = srcAlpha + destAlpha * (1.0f - srcAlpha);
+        
+        if (outAlpha < 0.001f) {
+            return Color(0, 0, 0, 0);
+        }
+        
+        float srcFactor = srcAlpha / outAlpha;
+        float destFactor = destAlpha * (1.0f - srcAlpha) / outAlpha;
+        
         return Color(
-            static_cast<uint8_t>(r * (1 - alpha) + other.r * alpha),
-            static_cast<uint8_t>(g * (1 - alpha) + other.g * alpha),
-            static_cast<uint8_t>(b * (1 - alpha) + other.b * alpha),
-            a
+            static_cast<uint8_t>(other.r * srcFactor + r * destFactor),
+            static_cast<uint8_t>(other.g * srcFactor + g * destFactor),
+            static_cast<uint8_t>(other.b * srcFactor + b * destFactor),
+            static_cast<uint8_t>(outAlpha * 255.0f)
         );
     }
     
-    // Create color with modified brightness
+    // Apply brightness factor
     Color withBrightness(float factor) const {
         return Color(
             static_cast<uint8_t>(std::min(255.0f, r * factor)),
@@ -180,7 +188,7 @@ struct Color {
     }
 };
 
-// Rectangle
+// Rectangle structure
 struct Rect {
     double x, y;
     double width, height;
@@ -189,50 +197,65 @@ struct Rect {
     Rect(double _x, double _y, double _w, double _h) 
         : x(_x), y(_y), width(_w), height(_h) {}
         
+    // Check if a point is inside the rectangle
     bool contains(const Vec2& point) const {
-        return point.x >= x && point.x <= x + width &&
-               point.y >= y && point.y <= y + height;
+        return point.x >= x && point.x < x + width &&
+               point.y >= y && point.y < y + height;
     }
     
+    // Check if this rectangle intersects with another
     bool intersects(const Rect& other) const {
-        return !(x + width < other.x || other.x + other.width < x ||
-                 y + height < other.y || other.y + other.height < y);
+        return x < other.x + other.width && x + width > other.x &&
+               y < other.y + other.height && y + height > other.y;
     }
 };
 
-// Side enum for BSP
+// Direction enumeration
 enum class Side {
-    FRONT,
-    BACK,
-    ON,
-    SPANNING
+    NONE,
+    LEFT,
+    RIGHT,
+    TOP,
+    BOTTOM
 };
 
-// Utility functions
-template <typename T>
+// Utility function to clamp a value between min and max
+template<typename T>
 T clamp(T value, T min, T max) {
     if (value < min) return min;
     if (value > max) return max;
     return value;
 }
 
-// Linear interpolation
-template <typename T>
-T lerp(T a, T b, float t) {
-    return a + (b - a) * t;
-}
-
-// Angle normalization
+// Normalize an angle to the range [0, 2π)
 inline double normalizeAngle(double angle) {
-    while (angle >= TWO_PI) angle -= TWO_PI;
-    while (angle < 0) angle += TWO_PI;
+    angle = std::fmod(angle, TWO_PI);
+    if (angle < 0.0) angle += TWO_PI;
     return angle;
 }
 
-// Distance between angles
+// Calculate the smallest difference between two angles
 inline double angleDifference(double a, double b) {
-    double diff = std::abs(a - b);
-    return std::min(diff, TWO_PI - diff);
+    double diff = std::fmod(std::abs(a - b), TWO_PI);
+    if (diff > PI) diff = TWO_PI - diff;
+    return diff;
 }
+
+// Define some common colors
+namespace Colors {
+    const Color BLACK(0, 0, 0);
+    const Color WHITE(255, 255, 255);
+    const Color RED(255, 0, 0);
+    const Color GREEN(0, 255, 0);
+    const Color BLUE(0, 0, 255);
+    const Color YELLOW(255, 255, 0);
+    const Color CYAN(0, 255, 255);
+    const Color MAGENTA(255, 0, 255);
+    const Color GRAY(128, 128, 128);
+    const Color DARK_GRAY(64, 64, 64);
+    const Color LIGHT_GRAY(192, 192, 192);
+}
+
+#endif // !UTILS_H
 
 #endif // COMMON_H 
