@@ -850,25 +850,18 @@ void printCurrentDirectory() {
 // Render the current weapon
 void Renderer::renderWeapon() 
 {
-    std::cout << "RENDER WEAPON CALLED" << std::endl;
-    
     // Use static variables to only load the image once
     static SDL_Surface* chainsawSurface = nullptr;
     
     if (!chainsawSurface) {
-        // We already have debug info showing the image loads correctly, so we'll
-        // use the path that we know works based on the debug output
+        // We already have debug info showing the image loads correctly
         std::string imagePath = "bin/assets/textures/chainsaw.png";
-        std::cout << "Loading chainsaw from known working path: " << imagePath << std::endl;
         chainsawSurface = IMG_Load(imagePath.c_str());
         
         if (!chainsawSurface) {
             std::cerr << "ERROR: Failed to load chainsaw image: " << IMG_GetError() << std::endl;
             return;
         }
-        
-        std::cout << "Chainsaw loaded successfully: " << chainsawSurface->w << "x" 
-                  << chainsawSurface->h << " pixels" << std::endl;
     }
     
     // Draw directly to the pixel buffer (skipping SDL texture/renderer)
@@ -886,19 +879,6 @@ void Renderer::renderWeapon()
         // Position in the center bottom of the screen
         int posX = (m_screenWidth - displayWidth) / 2;
         int posY = m_screenHeight - displayHeight - 20; // Add padding from bottom
-        
-        // Draw a bright border around the weapon area
-        for (int y = posY - 5; y < posY + displayHeight + 5; y++) {
-            for (int x = posX - 5; x < posX + displayWidth + 5; x++) {
-                if ((y == posY - 5) || (y == posY + displayHeight + 4) || 
-                    (x == posX - 5) || (x == posX + displayWidth + 4)) {
-                    // Draw border pixels
-                    if (x >= 0 && x < m_screenWidth && y >= 0 && y < m_screenHeight) {
-                        setPixel(x, y, Colors::MAGENTA);
-                    }
-                }
-            }
-        }
         
         // Draw the chainsaw directly to pixel buffer
         SDL_LockSurface(chainsawSurface);
@@ -949,10 +929,6 @@ void Renderer::renderWeapon()
         }
         
         SDL_UnlockSurface(chainsawSurface);
-        
-        // Draw debug text above the weapon
-        std::string debugText = "CHAINSAW WEAPON";
-        drawText(debugText, posX, posY - 20, Colors::YELLOW);
     }
 }
 

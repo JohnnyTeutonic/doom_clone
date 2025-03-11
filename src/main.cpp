@@ -588,9 +588,6 @@ int main(int argc, char* argv[])
         // Render HUD with weapon
         renderer->renderHUD(player.get());
         
-        // Add a debug message about the weapon
-        renderer->renderDebugInfo("Chainsaw weapon should be visible", 10, 30);
-        
         // Calculate and display FPS
         frameCount++;
         if (currentFrameTime - lastFPSUpdateTime >= 1000) {
