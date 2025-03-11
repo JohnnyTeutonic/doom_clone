@@ -267,6 +267,9 @@ void Renderer::renderSprites(Map* map, Camera* camera)
 
 void Renderer::renderSkybox(Camera* camera) 
 {
+    // Get the camera angle to position the sun correctly
+    double cameraAngle = camera ? camera->getAngle() : 0.0;
+    
     // Create a hellish DOOM-like skybox
     for (int y = 0; y < m_screenHeight / 4; y++) {
         // Calculate sky color - gradient from dark red to orange-red
@@ -293,14 +296,55 @@ void Renderer::renderSkybox(Camera* camera)
                 cloudNoise = 10.0;
             }
             
-            // Adjust color with noise
-            Color finalColor = Color(
-                std::min(255, std::max(0, static_cast<int>(skyColor.r + cloudNoise))),
-                std::min(255, std::max(0, static_cast<int>(skyColor.g + cloudNoise * 0.5))),
-                std::min(255, std::max(0, static_cast<int>(skyColor.b + cloudNoise * 0.2)))
-            );
+            // Calculate sun position based on camera angle
+            // Position sun much lower in skybox so it's visible in the limited view
+            double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.3;
+            double sunPositionY = m_screenHeight * 0.22; // Position sun much lower (near bottom of skybox)
+            double sunRadius = m_screenHeight * 0.08; // Make sun larger
+            
+            // Calculate distance from current pixel to sun center
+            double distToSun = sqrt(pow(x - sunPositionX, 2) + pow(y - sunPositionY, 2));
+            
+            // Adjust color with noise and sun effect
+            Color finalColor;
+            
+            // If pixel is in sun's core or outer glow
+            if (distToSun < sunRadius) {
+                // Inner sun - very bright yellow-white core to stand out more
+                double sunIntensity = 1.0 - (distToSun / sunRadius);
+                sunIntensity = pow(sunIntensity, 0.7); // Enhance the brightness of the core
+                finalColor = Color::lerp(
+                    Color(255, 200, 100), // Outer sun (orange-yellow)
+                    Color(255, 255, 230), // Inner sun (bright white-yellow)
+                    sunIntensity
+                );
+            } 
+            // Outer glow of the sun - make it more pronounced
+            else if (distToSun < sunRadius * 2.5) {
+                // Create a glow effect that transitions to the sky
+                double glowIntensity = 1.0 - ((distToSun - sunRadius) / (sunRadius * 1.5));
+                glowIntensity = pow(glowIntensity, 0.8); // Enhance the glow
+                Color glowColor = Color(
+                    std::min(255, static_cast<int>(200 * glowIntensity) + skyColor.r),
+                    std::min(255, static_cast<int>(160 * glowIntensity) + skyColor.g),
+                    std::min(255, static_cast<int>(100 * glowIntensity) + skyColor.b)
+                );
+                finalColor = glowColor;
+            }
+            // Regular sky with clouds
+            else {
+                finalColor = Color(
+                    std::min(255, std::max(0, static_cast<int>(skyColor.r + cloudNoise))),
+                    std::min(255, std::max(0, static_cast<int>(skyColor.g + cloudNoise * 0.5))),
+                    std::min(255, std::max(0, static_cast<int>(skyColor.b + cloudNoise * 0.2)))
+                );
+            }
             
             setPixel(x, y, finalColor);
+            
+            // Important: set z-buffer to a very large value so the sky isn't overwritten
+            // by floor/ceiling rendering - this will protect our sun from being overwritten
+            m_zBuffer[y * m_screenWidth + x] = 0.01; // Very small value = very far away
         }
     }
 }
@@ -739,7 +783,13 @@ void Renderer::drawFloorCeilingSpans(Camera* camera)
             // Calculate mirror position for ceiling
             int ceilingY = m_screenHeight - y - 1;
             
-            // Only draw ceiling if not already occupied by a wall
+            // Only draw ceiling if not already occupied by a wall or sky
+            // Skip rendering ceiling in the top quarter of screen where skybox is
+            if (ceilingY < m_screenHeight / 4) {
+                // This is skybox territory, don't draw ceiling here
+                continue;
+            }
+            
             if (m_zBuffer[ceilingY * m_screenWidth + x] == std::numeric_limits<double>::max()) {
                 // Get ceiling color - darker variation of floor
                 Color ceilingColor = getDoomCeilingColor(texX, texY, tileSize);
