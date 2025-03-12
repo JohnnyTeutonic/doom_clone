@@ -215,6 +215,9 @@ private:
     void castShadowRaysOnWalls(Camera* camera, double* wallShadowIntensity, double sunX, double sunY, double sunZ);
     void applyShadowsToScene(double* wallShadowIntensity);
     
+    // Ensure all structures are enclosed by filling gaps
+    void ensureStructuresEnclosed(Map* map);
+    
     // Set pixel in framebuffer
     void setPixel(int x, int y, const Color& color);
     

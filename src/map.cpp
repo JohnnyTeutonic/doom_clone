@@ -375,6 +375,14 @@ std::vector<std::shared_ptr<Wall>> BSPTree::getVisibleWalls(const Vec2& viewpoin
     return visibleWalls;
 }
 
+// New method to fill an existing vector with visible walls
+void BSPTree::traverse(const Vec2& viewpoint, std::vector<std::shared_ptr<Wall>>& visibleWalls) const
+{
+    if (m_root) {
+        m_root->traverse(viewpoint, visibleWalls);
+    }
+}
+
 std::shared_ptr<Sector> BSPTree::findSectorContainingPoint(const Vec2& point) const
 {
     // Simple linear search through all sectors
@@ -844,4 +852,22 @@ std::vector<Wall> Map::generateDoomMap(const Vec2& playerPosition) const
                        Vec2(pos.x - markerDistance, pos.y + markerSize), 2);
     
     return walls;
+}
+
+// Get visible walls from the camera position
+void Map::getVisibleWalls(const Vec2& viewpoint, std::vector<std::shared_ptr<Wall>>& visibleWalls)
+{
+    // Clear the output vector
+    visibleWalls.clear();
+    
+    // If we have a BSP tree, use it for visibility determination
+    if (m_bspTree) {
+        m_bspTree->traverse(viewpoint, visibleWalls);
+    } else {
+        // No BSP tree, just return all walls
+        for (const auto& sector : m_sectors) {
+            const auto& walls = sector->getWalls();
+            visibleWalls.insert(visibleWalls.end(), walls.begin(), walls.end());
+        }
+    }
 } 

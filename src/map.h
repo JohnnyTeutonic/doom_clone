@@ -281,6 +281,9 @@ public:
     // Get visible walls from a viewpoint
     std::vector<std::shared_ptr<Wall>> getVisibleWalls(const Vec2& viewpoint) const;
     
+    // Fill an existing vector with visible walls
+    void traverse(const Vec2& viewpoint, std::vector<std::shared_ptr<Wall>>& visibleWalls) const;
+    
     // Find the sector containing a point
     std::shared_ptr<Sector> findSectorContainingPoint(const Vec2& point) const;
     
@@ -308,14 +311,17 @@ public:
     // Add a sector to the map
     void addSector(std::shared_ptr<Sector> sector);
     
+    // Get visible walls from the camera position
+    std::vector<std::shared_ptr<Wall>> getVisibleWalls(const Vec2& viewpoint) const;
+    
+    // Overloaded version that fills a provided vector
+    void getVisibleWalls(const Vec2& viewpoint, std::vector<std::shared_ptr<Wall>>& visibleWalls);
+    
     // Get all sectors
     const std::vector<std::shared_ptr<Sector>>& getSectors() const { return m_sectors; }
     
     // Build the BSP tree
     bool buildBSPTree();
-    
-    // Get visible walls from a viewpoint
-    std::vector<std::shared_ptr<Wall>> getVisibleWalls(const Vec2& viewpoint) const;
     
     // Generate a DOOM-style map layout for the renderer
     std::vector<Wall> generateDoomMap(const Vec2& playerPosition) const;
