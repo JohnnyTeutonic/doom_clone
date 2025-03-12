@@ -212,6 +212,8 @@ private:
     double calculateSunLighting(const Vec2& worldPos, Camera* camera);
     double calculateSunLightingWithNormal(const Vec2& worldPos, const Vec2& normal, Camera* camera);
     void calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, double sunY, double sunZ);
+    void castShadowRaysOnWalls(Camera* camera, double* wallShadowIntensity, double sunX, double sunY, double sunZ);
+    void applyShadowsToScene(double* wallShadowIntensity);
     
     // Set pixel in framebuffer
     void setPixel(int x, int y, const Color& color);

@@ -442,6 +442,54 @@ void Renderer::renderSkybox(Camera* camera)
             m_zBuffer[y * m_screenWidth + x] = 0.01;
         }
     }
+    
+    // Add a smooth transition from skybox to ceiling
+    int transitionHeight = 20; // Height of the transition area
+    int startY = m_screenHeight / 4;
+    int endY = startY + transitionHeight;
+    
+    // Get current time for animation
+    double time = SDL_GetTicks() / 1000.0;
+    
+    // Calculate sun position for ray casting
+    double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.2;
+    double sunPositionY = m_screenHeight * 0.15;
+    
+    for (int y = startY; y < endY; y++) {
+        // Calculate blend factor (0 at start, 1 at end)
+        double blend = static_cast<double>(y - startY) / transitionHeight;
+        blend = pow(blend, 0.7); // Make transition more gradual
+        
+        // Get ceiling color at horizon
+        Color ceilingColor(45, 20, 10); // Base ceiling color
+        
+        // Blend from sky to ceiling
+        Color skyColor = Color(120, 30, 10); // Horizon color
+        Color transitionColor = Color::lerp(skyColor, ceilingColor, blend);
+        
+        for (int x = 0; x < m_screenWidth; x++) {
+            // Calculate distance from sun for light effect
+            double distToSun = sqrt(pow(x - sunPositionX, 2) + pow(y - sunPositionY, 2));
+            double sunInfluence = std::max(0.0, 1.0 - distToSun / (m_screenWidth * 0.3));
+            
+            // Add subtle ray effect in transition area
+            double angle = atan2(y - sunPositionY, x - sunPositionX);
+            double rayEffect = 0.2 * sin(angle * 8.0 + time * 2.0);
+            rayEffect *= sunInfluence;
+            
+            // Apply ray effect to transition color
+            Color finalColor = transitionColor;
+            if (rayEffect > 0.05) {
+                Color rayColor(255, 255, 220);
+                finalColor = Color::lerp(finalColor, rayColor, rayEffect);
+            }
+            
+            setPixel(x, y, finalColor);
+            
+            // Set z-buffer to allow rays to pass through
+            m_zBuffer[y * m_screenWidth + x] = 5.0; // Small value but larger than skybox
+        }
+    }
 }
 
 void Renderer::processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& walls, Camera* camera)
@@ -1878,244 +1926,6 @@ Color getDoomWallColor(int textureId, double u, double v, double distance) {
     return Color::lerp(Color(0, 0, 0), baseColor, static_cast<float>(1.0 - fogFactor));
 }
 
-// New method to render sun rays that cast into the scene
-void Renderer::renderSunRays(Camera* camera)
-{
-    if (!camera) return;
-    
-    // Get sun position in screen space
-    double cameraAngle = camera->getAngle();
-    double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.2;
-    double sunPositionY = m_screenHeight * 0.15;
-    
-    // Get sun position in world space
-    double sunWorldX = 50.0;
-    double sunWorldY = 50.0;
-    double sunWorldZ = 50.0;
-    
-    // Create a shadow map buffer
-    bool* shadowMap = new bool[m_screenWidth * m_screenHeight];
-    memset(shadowMap, 0, m_screenWidth * m_screenHeight * sizeof(bool));
-    
-    // Calculate shadow map by casting rays from the sun
-    calculateShadowMap(camera, shadowMap, sunWorldX, sunWorldY, sunWorldZ);
-    
-    // Number of rays to cast
-    const int numRays = 12;
-    
-    // Ray properties
-    const double rayLength = m_screenHeight * 1.5; // Long enough to reach across screen
-    const double rayWidth = 3.0;
-    const double rayFadeStart = 0.3; // Start fading at 30% of ray length
-    
-    // Get current time for animation
-    double time = SDL_GetTicks() / 1000.0;
-    
-    // Draw rays
-    for (int i = 0; i < numRays; i++) {
-        // Calculate ray angle with some animation
-        double baseAngle = (2.0 * PI * i) / numRays;
-        double animatedAngle = baseAngle + 0.2 * sin(time * 0.5 + i * 0.2);
-        
-        // Calculate ray intensity with animation
-        double rayIntensity = 0.4 + 0.2 * sin(time * 1.0 + i * 0.5);
-        
-        // Calculate ray direction
-        double rayDirX = cos(animatedAngle);
-        double rayDirY = sin(animatedAngle);
-        
-        // Draw the ray
-        for (double t = 0; t < rayLength; t += 0.5) {
-            // Calculate position along ray
-            int rayX = static_cast<int>(sunPositionX + rayDirX * t);
-            int rayY = static_cast<int>(sunPositionY + rayDirY * t);
-            
-            // Skip if out of bounds
-            if (rayX < 0 || rayX >= m_screenWidth || rayY < 0 || rayY >= m_screenHeight) {
-                continue;
-            }
-            
-            // Check z-buffer to see if we hit a wall or floor
-            int index = rayY * m_screenWidth + rayX;
-            if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
-                // We hit something - check distance
-                double hitDist = m_zBuffer[index];
-                
-                // Calculate fade based on distance along ray
-                double rayProgress = t / rayLength;
-                double fade = 1.0 - std::max(0.0, (rayProgress - rayFadeStart) / (1.0 - rayFadeStart));
-                
-                // Adjust intensity based on z-buffer value (closer objects get brighter rays)
-                double distanceFactor = std::max(0.0, 1.0 - hitDist / 20.0);
-                
-                // Check if this point is in shadow
-                double finalIntensity;
-                if (shadowMap[index]) {
-                    // In shadow - greatly reduce intensity
-                    finalIntensity = rayIntensity * fade * distanceFactor * 0.05; // 5% of normal intensity
-                } else {
-                    // In light - normal intensity
-                    finalIntensity = rayIntensity * fade * distanceFactor * 0.3;
-                }
-                
-                // Only draw if intensity is significant
-                if (finalIntensity > 0.02) {
-                    // Draw ray at this point with width
-                    for (int dx = -static_cast<int>(rayWidth/2); dx <= static_cast<int>(rayWidth/2); dx++) {
-                        for (int dy = -static_cast<int>(rayWidth/2); dy <= static_cast<int>(rayWidth/2); dy++) {
-                            // Calculate distance from ray center
-                            double dist = sqrt(dx*dx + dy*dy);
-                            if (dist <= rayWidth/2) {
-                                // Calculate intensity based on distance from ray center
-                                double pointIntensity = finalIntensity * (1.0 - dist/(rayWidth/2));
-                                
-                                // Get pixel coordinates
-                                int px = rayX + dx;
-                                int py = rayY + dy;
-                                
-                                // Skip if out of bounds
-                                if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
-                                    continue;
-                                }
-                                
-                                // Get current color
-                                uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
-                                uint8_t r = (currentPixel >> 16) & 0xFF;
-                                uint8_t g = (currentPixel >> 8) & 0xFF;
-                                uint8_t b = currentPixel & 0xFF;
-                                
-                                // Blend with ray color (bright yellow-white)
-                                Color rayColor(255, 255, 200);
-                                Color blendedColor(
-                                    std::min(255, static_cast<int>(r + (rayColor.r - r) * pointIntensity)),
-                                    std::min(255, static_cast<int>(g + (rayColor.g - g) * pointIntensity)),
-                                    std::min(255, static_cast<int>(b + (rayColor.b - b) * pointIntensity))
-                                );
-                                
-                                // Set the pixel
-                                setPixel(px, py, blendedColor);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Add volumetric light shafts from sun position
-    const int numShafts = 6;
-    const double shaftWidth = 15.0;
-    
-    for (int i = 0; i < numShafts; i++) {
-        // Calculate shaft angle with animation
-        double shaftAngle = (PI / 4) + (PI / 2) * i / numShafts + 0.05 * sin(time * 0.3 + i * 0.7);
-        
-        // Calculate shaft direction (mostly downward)
-        double shaftDirX = 0.3 * cos(shaftAngle);
-        double shaftDirY = 1.0; // Always pointing down
-        
-        // Normalize direction
-        double length = sqrt(shaftDirX*shaftDirX + shaftDirY*shaftDirY);
-        shaftDirX /= length;
-        shaftDirY /= length;
-        
-        // Shaft length
-        double shaftLength = m_screenHeight;
-        
-        // Track if we've hit a shadow
-        bool inShadow = false;
-        double shadowStartT = 0;
-        
-        // Draw the shaft
-        for (double t = 0; t < shaftLength; t += 1.0) {
-            // Calculate position along shaft
-            int shaftX = static_cast<int>(sunPositionX + shaftDirX * t);
-            int shaftY = static_cast<int>(sunPositionY + shaftDirY * t);
-            
-            // Skip if out of bounds
-            if (shaftX < 0 || shaftX >= m_screenWidth || shaftY < 0 || shaftY >= m_screenHeight) {
-                continue;
-            }
-            
-            // Check if this point is in shadow
-            int index = shaftY * m_screenWidth + shaftX;
-            bool pointInShadow = shadowMap[index];
-            
-            // If we just entered shadow, mark the transition point
-            if (!inShadow && pointInShadow) {
-                inShadow = true;
-                shadowStartT = t;
-            }
-            
-            // Calculate fade based on distance along shaft
-            double shaftProgress = t / shaftLength;
-            double fade = 1.0 - shaftProgress;
-            
-            // Add pulsing effect
-            double pulse = 0.1 * sin(time * 1.5 + i * 1.0 + shaftProgress * 5.0);
-            
-            // Adjust intensity based on shadow
-            double intensity;
-            if (inShadow) {
-                // Calculate how far into shadow we are
-                double shadowDepth = (t - shadowStartT) / 20.0; // Shadow fades over 20 units
-                shadowDepth = std::min(1.0, shadowDepth);
-                
-                // Reduce intensity in shadow, more the deeper we go
-                intensity = (0.15 * fade + pulse) * (1.0 - shadowDepth) * 0.2;
-            } else {
-                intensity = 0.15 * fade + pulse;
-            }
-            
-            // Only draw if intensity is significant
-            if (intensity > 0.01) {
-                // Draw shaft at this point with width
-                for (int dx = -static_cast<int>(shaftWidth/2); dx <= static_cast<int>(shaftWidth/2); dx++) {
-                    // Calculate distance from shaft center
-                    double dist = abs(dx);
-                    if (dist <= shaftWidth/2) {
-                        // Calculate intensity based on distance from shaft center
-                        double pointIntensity = intensity * (1.0 - dist/(shaftWidth/2));
-                        
-                        // Get pixel coordinates
-                        int px = shaftX + dx;
-                        int py = shaftY;
-                        
-                        // Skip if out of bounds
-                        if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
-                            continue;
-                        }
-                        
-                        // Check z-buffer to see if we hit a wall or floor
-                        int index = py * m_screenWidth + px;
-                        if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
-                            // Get current color
-                            uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
-                            uint8_t r = (currentPixel >> 16) & 0xFF;
-                            uint8_t g = (currentPixel >> 8) & 0xFF;
-                            uint8_t b = currentPixel & 0xFF;
-                            
-                            // Blend with shaft color (bright yellow-white)
-                            Color shaftColor(255, 255, 200);
-                            Color blendedColor(
-                                std::min(255, static_cast<int>(r + (shaftColor.r - r) * pointIntensity)),
-                                std::min(255, static_cast<int>(g + (shaftColor.g - g) * pointIntensity)),
-                                std::min(255, static_cast<int>(b + (shaftColor.b - b) * pointIntensity))
-                            );
-                            
-                            // Set the pixel
-                            setPixel(px, py, blendedColor);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Clean up shadow map
-    delete[] shadowMap;
-}
-
 // New method to calculate shadow map by casting rays from the sun
 void Renderer::calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, double sunY, double sunZ)
 {
@@ -2127,6 +1937,19 @@ void Renderer::calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, 
     
     // Calculate the horizon line (vertical center of the screen)
     int horizonY = m_screenHeight / 2;
+    
+    // Get map from engine if available
+    Map* map = m_engine ? m_engine->getMap() : nullptr;
+    if (!map) {
+        // If no map is available, use a simplified approach
+        for (int y = 0; y < m_screenHeight; y++) {
+            for (int x = 0; x < m_screenWidth; x++) {
+                int index = y * m_screenWidth + x;
+                shadowMap[index] = false; // No shadows without map data
+            }
+        }
+        return;
+    }
     
     // Process each pixel on screen
     for (int y = 0; y < m_screenHeight; y++) {
@@ -2232,14 +2055,18 @@ void Renderer::calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, 
             toSunY /= distToSun;
             toSunZ /= distToSun;
             
-            // Check if ray hits any walls
+            // Check if ray hits any walls using the map's ray casting functionality
             bool isInShadow = false;
             
-            // Simple shadow check - if there's a wall between this point and the sun
-            // We'll use a simplified approach for performance
-            double stepSize = 0.5;
-            double maxDist = 50.0; // Maximum distance to check
+            // Use a smaller step size for more accurate shadows
+            double stepSize = 0.2;
+            double maxDist = distToSun; // Only check up to the sun's distance
             
+            // Start a bit away from the surface to avoid self-shadowing
+            Vec2 rayStart(worldX + toSunX * 0.1, worldY + toSunY * 0.1);
+            Vec2 rayDir(toSunX, toSunY);
+            
+            // Cast ray through the map
             for (double t = 0.1; t < maxDist && !isInShadow; t += stepSize) {
                 double checkX = worldX + toSunX * t;
                 double checkY = worldY + toSunY * t;
@@ -2250,26 +2077,633 @@ void Renderer::calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, 
                     break;
                 }
                 
-                // Check if there's a wall at this position
-                // This is a simplified check - in a real implementation, you'd use the map data
-                // For now, we'll use a heuristic based on the world coordinates
-                
+                // Check if there's a wall at this position using the map data
                 // Get the map cell coordinates
                 int cellX = static_cast<int>(checkX);
                 int cellY = static_cast<int>(checkY);
                 
-                // Check if this is a wall cell (simplified check)
-                // This assumes walls are at integer coordinates
-                if (cellX % 2 == 0 && cellY % 2 == 0) {
-                    // Potential wall location - check height
-                    if (checkZ >= 0 && checkZ <= 4.0) {
-                        isInShadow = true;
+                // Check if this point is inside a wall
+                // Use the map's collision detection if available
+                Vec2 checkPoint(checkX, checkY);
+                
+                // Check if the point is inside any wall
+                const auto& sectors = map->getSectors();
+                for (const auto& sector : sectors) {
+                    const auto& walls = sector->getWalls();
+                    for (const auto& wall : walls) {
+                        // Simple check: if the ray passes close to a wall segment
+                        Vec2 wallStart = wall->getStart();
+                        Vec2 wallEnd = wall->getEnd();
+                        
+                        // Calculate distance from point to line segment
+                        Vec2 wallVec = wallEnd - wallStart;
+                        double wallLength = wallVec.length();
+                        if (wallLength < 0.001) continue; // Skip degenerate walls
+                        
+                        Vec2 wallDir = wallVec / wallLength;
+                        Vec2 toPoint = checkPoint - wallStart;
+                        
+                        // Project point onto wall line
+                        double projection = toPoint.dot(wallDir);
+                        
+                        // Check if projection is within wall segment
+                        if (projection >= 0 && projection <= wallLength) {
+                            // Calculate perpendicular distance
+                            double perpDist = (toPoint - wallDir * projection).length();
+                            
+                            // If close enough to wall and within height range
+                            if (perpDist < 0.1 && checkZ >= 0 && checkZ <= 4.0) {
+                                isInShadow = true;
+                                break;
+                            }
+                        }
                     }
+                    if (isInShadow) break;
                 }
             }
             
             // Mark this pixel as in shadow or not
             shadowMap[index] = isInShadow;
+        }
+    }
+}
+
+// New method to render sun rays that cast into the scene
+void Renderer::renderSunRays(Camera* camera)
+{
+    if (!camera) return;
+    
+    // Get sun position in screen space
+    double cameraAngle = camera->getAngle();
+    double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.2;
+    double sunPositionY = m_screenHeight * 0.15;
+    
+    // Get sun position in world space
+    double sunWorldX = 50.0;
+    double sunWorldY = 50.0;
+    double sunWorldZ = 50.0;
+    
+    // Create a shadow map buffer
+    bool* shadowMap = new bool[m_screenWidth * m_screenHeight];
+    memset(shadowMap, 0, m_screenWidth * m_screenHeight * sizeof(bool));
+    
+    // Calculate shadow map by casting rays from the sun
+    calculateShadowMap(camera, shadowMap, sunWorldX, sunWorldY, sunWorldZ);
+    
+    // Create a buffer to store wall shadow intensity
+    double* wallShadowIntensity = new double[m_screenWidth * m_screenHeight];
+    for (int i = 0; i < m_screenWidth * m_screenHeight; i++) {
+        wallShadowIntensity[i] = 0.0;
+    }
+    
+    // First pass: Cast shadow rays from sun to create shadow patterns on walls
+    castShadowRaysOnWalls(camera, wallShadowIntensity, sunWorldX, sunWorldY, sunWorldZ);
+    
+    // Apply shadow patterns to the scene
+    applyShadowsToScene(wallShadowIntensity);
+    
+    // Number of rays to cast
+    const int numRays = 16; // Increased from 12 for more rays
+    
+    // Ray properties
+    const double rayLength = m_screenHeight * 1.5; // Long enough to reach across screen
+    const double rayWidth = 4.0;  // Increased from 3.0 for more visible rays
+    const double rayFadeStart = 0.3; // Start fading at 30% of ray length
+    
+    // Get current time for animation
+    double time = SDL_GetTicks() / 1000.0;
+    
+    // Draw rays
+    for (int i = 0; i < numRays; i++) {
+        // Calculate ray angle with some animation
+        double baseAngle = (2.0 * PI * i) / numRays;
+        double animatedAngle = baseAngle + 0.2 * sin(time * 0.5 + i * 0.2);
+        
+        // Calculate ray intensity with animation
+        double rayIntensity = 0.5 + 0.3 * sin(time * 1.0 + i * 0.5); // Increased from 0.4+0.2 for brighter rays
+        
+        // Calculate ray direction
+        double rayDirX = cos(animatedAngle);
+        double rayDirY = sin(animatedAngle);
+        
+        // Track if we've hit a shadow
+        bool inShadow = false;
+        double shadowStartT = 0;
+        
+        // Draw the ray
+        for (double t = 0; t < rayLength; t += 0.5) {
+            // Calculate position along ray
+            int rayX = static_cast<int>(sunPositionX + rayDirX * t);
+            int rayY = static_cast<int>(sunPositionY + rayDirY * t);
+            
+            // Skip if out of bounds
+            if (rayX < 0 || rayX >= m_screenWidth || rayY < 0 || rayY >= m_screenHeight) {
+                continue;
+            }
+            
+            // Get index for this pixel
+            int index = rayY * m_screenWidth + rayX;
+            
+            // Check if this point is in shadow
+            bool pointInShadow = shadowMap[index];
+            
+            // If we just entered shadow, mark the transition point
+            if (!inShadow && pointInShadow) {
+                inShadow = true;
+                shadowStartT = t;
+            }
+            
+            // Special handling for the transition area (just below skybox)
+            bool isInTransitionArea = (rayY >= m_screenHeight / 4 && rayY < m_screenHeight / 4 + 20);
+            
+            // For transition area, always allow rays to pass through
+            if (isInTransitionArea) {
+                // Calculate fade based on distance along ray
+                double rayProgress = t / rayLength;
+                double fade = 1.0 - std::max(0.0, (rayProgress - rayFadeStart) / (1.0 - rayFadeStart));
+                
+                // Calculate intensity for transition area - brighter to ensure visibility
+                double transitionIntensity = rayIntensity * fade * 0.5;
+                
+                // Draw ray at this point with width
+                for (int dx = -static_cast<int>(rayWidth/2); dx <= static_cast<int>(rayWidth/2); dx++) {
+                    for (int dy = -static_cast<int>(rayWidth/2); dy <= static_cast<int>(rayWidth/2); dy++) {
+                        // Calculate distance from ray center
+                        double dist = sqrt(dx*dx + dy*dy);
+                        if (dist <= rayWidth/2) {
+                            // Calculate intensity based on distance from ray center
+                            double pointIntensity = transitionIntensity * (1.0 - dist/(rayWidth/2));
+                            
+                            // Get pixel coordinates
+                            int px = rayX + dx;
+                            int py = rayY + dy;
+                            
+                            // Skip if out of bounds
+                            if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
+                                continue;
+                            }
+                            
+                            // Get current color
+                            uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
+                            uint8_t r = (currentPixel >> 16) & 0xFF;
+                            uint8_t g = (currentPixel >> 8) & 0xFF;
+                            uint8_t b = currentPixel & 0xFF;
+                            
+                            // Blend with ray color (bright yellow-white)
+                            Color rayColor(255, 255, 220);
+                            Color blendedColor(
+                                std::min(255, static_cast<int>(r + (rayColor.r - r) * pointIntensity)),
+                                std::min(255, static_cast<int>(g + (rayColor.g - g) * pointIntensity)),
+                                std::min(255, static_cast<int>(b + (rayColor.b - b) * pointIntensity))
+                            );
+                            
+                            // Set the pixel
+                            setPixel(px, py, blendedColor);
+                        }
+                    }
+                }
+                
+                continue; // Skip the rest of the loop for transition area
+            }
+            
+            // Skip skybox area
+            if (rayY < m_screenHeight / 4) {
+                continue;
+            }
+            
+            // Check z-buffer to see if we hit a wall or floor
+            if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
+                // We hit something - check distance
+                double hitDist = m_zBuffer[index];
+                
+                // Calculate fade based on distance along ray
+                double rayProgress = t / rayLength;
+                double fade = 1.0 - std::max(0.0, (rayProgress - rayFadeStart) / (1.0 - rayFadeStart));
+                
+                // Adjust intensity based on z-buffer value (closer objects get brighter rays)
+                double distanceFactor = std::max(0.0, 1.0 - hitDist / 20.0);
+                
+                // Check if this point is in shadow
+                double finalIntensity;
+                if (inShadow) {
+                    // Calculate how far into shadow we are
+                    double shadowDepth = (t - shadowStartT) / 20.0; // Shadow fades over 20 units
+                    shadowDepth = std::min(1.0, shadowDepth);
+                    
+                    // In shadow - greatly reduce intensity but not completely dark
+                    // Increased from 0.05 to 0.1 for more visible shadows in the red environment
+                    finalIntensity = rayIntensity * fade * distanceFactor * 0.1 * (1.0 - shadowDepth * 0.7);
+                } else {
+                    // In light - normal intensity
+                    // Increased from 0.3 to 0.4 for more visible rays
+                    finalIntensity = rayIntensity * fade * distanceFactor * 0.4;
+                }
+                
+                // Only draw if intensity is significant
+                if (finalIntensity > 0.02) {
+                    // Draw ray at this point with width
+                    for (int dx = -static_cast<int>(rayWidth/2); dx <= static_cast<int>(rayWidth/2); dx++) {
+                        for (int dy = -static_cast<int>(rayWidth/2); dy <= static_cast<int>(rayWidth/2); dy++) {
+                            // Calculate distance from ray center
+                            double dist = sqrt(dx*dx + dy*dy);
+                            if (dist <= rayWidth/2) {
+                                // Calculate intensity based on distance from ray center
+                                double pointIntensity = finalIntensity * (1.0 - dist/(rayWidth/2));
+                                
+                                // Get pixel coordinates
+                                int px = rayX + dx;
+                                int py = rayY + dy;
+                                
+                                // Skip if out of bounds
+                                if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
+                                    continue;
+                                }
+                                
+                                // Get current color
+                                uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
+                                uint8_t r = (currentPixel >> 16) & 0xFF;
+                                uint8_t g = (currentPixel >> 8) & 0xFF;
+                                uint8_t b = currentPixel & 0xFF;
+                                
+                                // Blend with ray color (bright yellow-white)
+                                // Adjusted to be more visible against red background
+                                Color rayColor(255, 255, 220);
+                                Color blendedColor(
+                                    std::min(255, static_cast<int>(r + (rayColor.r - r) * pointIntensity)),
+                                    std::min(255, static_cast<int>(g + (rayColor.g - g) * pointIntensity)),
+                                    std::min(255, static_cast<int>(b + (rayColor.b - b) * pointIntensity))
+                                );
+                                
+                                // Set the pixel
+                                setPixel(px, py, blendedColor);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Add volumetric light shafts from sun position
+    const int numShafts = 8; // Increased from 6 for more shafts
+    const double shaftWidth = 20.0; // Increased from 15.0 for wider shafts
+    
+    for (int i = 0; i < numShafts; i++) {
+        // Calculate shaft angle with animation
+        double shaftAngle = (PI / 4) + (PI / 2) * i / numShafts + 0.05 * sin(time * 0.3 + i * 0.7);
+        
+        // Calculate shaft direction (mostly downward)
+        double shaftDirX = 0.3 * cos(shaftAngle);
+        double shaftDirY = 1.0; // Always pointing down
+        
+        // Normalize direction
+        double length = sqrt(shaftDirX*shaftDirX + shaftDirY*shaftDirY);
+        shaftDirX /= length;
+        shaftDirY /= length;
+        
+        // Shaft length
+        double shaftLength = m_screenHeight;
+        
+        // Track if we've hit a shadow
+        bool inShadow = false;
+        double shadowStartT = 0;
+        
+        // Draw the shaft
+        for (double t = 0; t < shaftLength; t += 1.0) {
+            // Calculate position along shaft
+            int shaftX = static_cast<int>(sunPositionX + shaftDirX * t);
+            int shaftY = static_cast<int>(sunPositionY + shaftDirY * t);
+            
+            // Skip if out of bounds
+            if (shaftX < 0 || shaftX >= m_screenWidth || shaftY < 0 || shaftY >= m_screenHeight) {
+                continue;
+            }
+            
+            // Get index for this pixel
+            int index = shaftY * m_screenWidth + shaftX;
+            
+            // Special handling for the transition area (just below skybox)
+            bool isInTransitionArea = (shaftY >= m_screenHeight / 4 && shaftY < m_screenHeight / 4 + 20);
+            
+            // For transition area, always allow shafts to pass through
+            if (isInTransitionArea) {
+                // Calculate fade based on distance along shaft
+                double shaftProgress = t / shaftLength;
+                double fade = 1.0 - shaftProgress;
+                
+                // Add pulsing effect
+                double pulse = 0.15 * sin(time * 1.5 + i * 1.0 + shaftProgress * 5.0);
+                
+                // Calculate intensity for transition area - brighter to ensure visibility
+                double transitionIntensity = 0.3 * fade + pulse;
+                
+                // Draw shaft at this point with width
+                for (int dx = -static_cast<int>(shaftWidth/2); dx <= static_cast<int>(shaftWidth/2); dx++) {
+                    // Calculate distance from shaft center
+                    double dist = abs(dx);
+                    if (dist <= shaftWidth/2) {
+                        // Calculate intensity based on distance from shaft center
+                        double pointIntensity = transitionIntensity * (1.0 - dist/(shaftWidth/2));
+                        
+                        // Get pixel coordinates
+                        int px = shaftX + dx;
+                        int py = shaftY;
+                        
+                        // Skip if out of bounds
+                        if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
+                            continue;
+                        }
+                        
+                        // Get current color
+                        uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
+                        uint8_t r = (currentPixel >> 16) & 0xFF;
+                        uint8_t g = (currentPixel >> 8) & 0xFF;
+                        uint8_t b = currentPixel & 0xFF;
+                        
+                        // Blend with shaft color (bright yellow-white)
+                        Color shaftColor(255, 255, 220);
+                        Color blendedColor(
+                            std::min(255, static_cast<int>(r + (shaftColor.r - r) * pointIntensity)),
+                            std::min(255, static_cast<int>(g + (shaftColor.g - g) * pointIntensity)),
+                            std::min(255, static_cast<int>(b + (shaftColor.b - b) * pointIntensity))
+                        );
+                        
+                        // Set the pixel
+                        setPixel(px, py, blendedColor);
+                    }
+                }
+                
+                continue; // Skip the rest of the loop for transition area
+            }
+            
+            // Skip skybox area
+            if (shaftY < m_screenHeight / 4) {
+                continue;
+            }
+            
+            // Check if this point is in shadow
+            bool pointInShadow = shadowMap[index];
+            
+            // If we just entered shadow, mark the transition point
+            if (!inShadow && pointInShadow) {
+                inShadow = true;
+                shadowStartT = t;
+            }
+            
+            // Calculate fade based on distance along shaft
+            double shaftProgress = t / shaftLength;
+            double fade = 1.0 - shaftProgress;
+            
+            // Add pulsing effect
+            double pulse = 0.15 * sin(time * 1.5 + i * 1.0 + shaftProgress * 5.0); // Increased from 0.1 for more visible pulse
+            
+            // Adjust intensity based on shadow
+            double intensity;
+            if (inShadow) {
+                // Calculate how far into shadow we are
+                double shadowDepth = (t - shadowStartT) / 20.0; // Shadow fades over 20 units
+                shadowDepth = std::min(1.0, shadowDepth);
+                
+                // Reduce intensity in shadow, more the deeper we go
+                // Increased from 0.2 to 0.25 for more visible shadows in red environment
+                intensity = (0.2 * fade + pulse) * (1.0 - shadowDepth) * 0.25;
+            } else {
+                // Increased from 0.15 to 0.2 for more visible shafts
+                intensity = 0.2 * fade + pulse;
+            }
+            
+            // Only draw if intensity is significant
+            if (intensity > 0.01) {
+                // Draw shaft at this point with width
+                for (int dx = -static_cast<int>(shaftWidth/2); dx <= static_cast<int>(shaftWidth/2); dx++) {
+                    // Calculate distance from shaft center
+                    double dist = abs(dx);
+                    if (dist <= shaftWidth/2) {
+                        // Calculate intensity based on distance from shaft center
+                        double pointIntensity = intensity * (1.0 - dist/(shaftWidth/2));
+                        
+                        // Get pixel coordinates
+                        int px = shaftX + dx;
+                        int py = shaftY;
+                        
+                        // Skip if out of bounds
+                        if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
+                            continue;
+                        }
+                        
+                        // Check z-buffer to see if we hit a wall or floor
+                        if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
+                            // Get current color
+                            uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
+                            uint8_t r = (currentPixel >> 16) & 0xFF;
+                            uint8_t g = (currentPixel >> 8) & 0xFF;
+                            uint8_t b = currentPixel & 0xFF;
+                            
+                            // Blend with shaft color (bright yellow-white)
+                            // Adjusted to be more visible against red background
+                            Color shaftColor(255, 255, 220);
+                            Color blendedColor(
+                                std::min(255, static_cast<int>(r + (shaftColor.r - r) * pointIntensity)),
+                                std::min(255, static_cast<int>(g + (shaftColor.g - g) * pointIntensity)),
+                                std::min(255, static_cast<int>(b + (shaftColor.b - b) * pointIntensity))
+                            );
+                            
+                            // Set the pixel
+                            setPixel(px, py, blendedColor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Clean up shadow map and wall shadow intensity
+    delete[] shadowMap;
+    delete[] wallShadowIntensity;
+}
+
+// New method to cast shadow rays on walls to create shadow patterns
+void Renderer::castShadowRaysOnWalls(Camera* camera, double* wallShadowIntensity, double sunX, double sunY, double sunZ)
+{
+    if (!camera || !wallShadowIntensity) return;
+    
+    // Get map from engine if available
+    Map* map = m_engine ? m_engine->getMap() : nullptr;
+    if (!map) return;
+    
+    // Get camera position
+    Vec2 cameraPos = camera->getPosition();
+    
+    // Calculate the horizon line (vertical center of the screen)
+    int horizonY = m_screenHeight / 2;
+    
+    // Number of shadow rays to cast from the sun
+    const int numRays = 200; // Many rays for detailed shadows
+    
+    // Cast rays in all directions from the sun
+    for (int i = 0; i < numRays; i++) {
+        // Calculate ray angle (full 360 degrees)
+        double angle = (2.0 * PI * i) / numRays;
+        
+        // Calculate ray direction (in 3D)
+        double rayDirX = cos(angle);
+        double rayDirY = sin(angle);
+        double rayDirZ = -0.5; // Downward component to hit walls
+        
+        // Normalize the direction
+        double dirLen = sqrt(rayDirX*rayDirX + rayDirY*rayDirY + rayDirZ*rayDirZ);
+        rayDirX /= dirLen;
+        rayDirY /= dirLen;
+        rayDirZ /= dirLen;
+        
+        // Maximum ray distance
+        double maxDist = 100.0;
+        
+        // Track if we've hit a wall
+        bool hitWall = false;
+        Vec2 hitPoint;
+        double hitDist = 0.0;
+        
+        // Cast ray through the map
+        for (double t = 0.1; t < maxDist && !hitWall; t += 0.2) {
+            // Calculate current position along ray
+            double checkX = sunX + rayDirX * t;
+            double checkY = sunY + rayDirY * t;
+            double checkZ = sunZ + rayDirZ * t;
+            
+            // Skip if below ground or above ceiling
+            if (checkZ < 0.0 || checkZ > 4.0) continue;
+            
+            // Check if this point is inside any wall
+            Vec2 checkPoint(checkX, checkY);
+            
+            // Check against all walls in the map
+            const auto& sectors = map->getSectors();
+            for (const auto& sector : sectors) {
+                const auto& walls = sector->getWalls();
+                for (const auto& wall : walls) {
+                    // Get wall segment
+                    Vec2 wallStart = wall->getStart();
+                    Vec2 wallEnd = wall->getEnd();
+                    
+                    // Calculate distance from point to line segment
+                    Vec2 wallVec = wallEnd - wallStart;
+                    double wallLength = wallVec.length();
+                    if (wallLength < 0.001) continue; // Skip degenerate walls
+                    
+                    Vec2 wallDir = wallVec / wallLength;
+                    Vec2 toPoint = checkPoint - wallStart;
+                    
+                    // Project point onto wall line
+                    double projection = toPoint.dot(wallDir);
+                    
+                    // Check if projection is within wall segment
+                    if (projection >= 0 && projection <= wallLength) {
+                        // Calculate perpendicular distance
+                        double perpDist = (toPoint - wallDir * projection).length();
+                        
+                        // If close enough to wall
+                        if (perpDist < 0.1) {
+                            hitWall = true;
+                            hitPoint = checkPoint;
+                            hitDist = t;
+                            break;
+                        }
+                    }
+                }
+                if (hitWall) break;
+            }
+        }
+        
+        // If we hit a wall, project it to screen space and mark shadow
+        if (hitWall) {
+            // Transform hit point to camera space
+            double hitX = hitPoint.x - cameraPos.x;
+            double hitY = hitPoint.y - cameraPos.y;
+            
+            // Rotate point around camera (inverse of camera rotation)
+            double cosAngle = cos(-camera->getAngle());
+            double sinAngle = sin(-camera->getAngle());
+            
+            double rotHitX = hitX * cosAngle - hitY * sinAngle;
+            double rotHitY = hitX * sinAngle + hitY * cosAngle;
+            
+            // Skip if behind camera
+            if (rotHitX < 0.1) continue;
+            
+            // Calculate screen coordinates
+            double fov = camera->getFOV();
+            double halfFovTan = tan(fov / 2.0);
+            double aspectRatio = static_cast<double>(m_screenWidth) / m_screenHeight;
+            
+            double screenX = (rotHitY / rotHitX / halfFovTan / aspectRatio + 1.0) * m_screenWidth / 2.0;
+            
+            // Estimate wall height based on distance
+            double wallHeight = 4.0; // Standard wall height
+            double eyeHeight = 0.6; // Camera height
+            
+            // Calculate screen Y coordinates for top and bottom of wall
+            double screenBottomY = m_screenHeight / 2.0 * (1.0 + (eyeHeight - 0.0) / (rotHitX * halfFovTan));
+            double screenTopY = m_screenHeight / 2.0 * (1.0 + (eyeHeight - wallHeight) / (rotHitX * halfFovTan));
+            
+            // Skip if off screen
+            if (screenX < 0 || screenX >= m_screenWidth) continue;
+            
+            // Calculate shadow intensity based on distance
+            double shadowIntensity = std::max(0.0, 1.0 - hitDist / 50.0);
+            shadowIntensity = pow(shadowIntensity, 0.5); // Adjust curve
+            
+            // Mark shadow on wall in screen space
+            int x = static_cast<int>(screenX);
+            for (int y = static_cast<int>(screenTopY); y <= static_cast<int>(screenBottomY); y++) {
+                if (y < 0 || y >= m_screenHeight) continue;
+                
+                int index = y * m_screenWidth + x;
+                
+                // Only mark if this is a wall pixel (check z-buffer)
+                if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
+                    // Store the maximum shadow intensity for this pixel
+                    wallShadowIntensity[index] = std::max(wallShadowIntensity[index], shadowIntensity);
+                }
+            }
+        }
+    }
+}
+
+// New method to apply shadow patterns to the scene
+void Renderer::applyShadowsToScene(double* wallShadowIntensity)
+{
+    if (!wallShadowIntensity) return;
+    
+    // Apply shadows to the entire scene
+    for (int y = 0; y < m_screenHeight; y++) {
+        for (int x = 0; x < m_screenWidth; x++) {
+            int index = y * m_screenWidth + x;
+            
+            // Skip pixels with no shadow
+            if (wallShadowIntensity[index] <= 0.0) continue;
+            
+            // Skip skybox and transition area
+            if (y < m_screenHeight / 4 + 20) continue;
+            
+            // Get current pixel color
+            uint32_t currentPixel = m_pixelBuffer[index];
+            uint8_t r = (currentPixel >> 16) & 0xFF;
+            uint8_t g = (currentPixel >> 8) & 0xFF;
+            uint8_t b = currentPixel & 0xFF;
+            
+            // Calculate shadow factor (0 = no shadow, 1 = full shadow)
+            double shadowFactor = wallShadowIntensity[index] * 0.7; // Adjust strength
+            
+            // Apply shadow by darkening the pixel
+            Color shadowedColor(
+                static_cast<int>(r * (1.0 - shadowFactor * 0.7)), // Less darkening for red (to maintain visibility)
+                static_cast<int>(g * (1.0 - shadowFactor)),
+                static_cast<int>(b * (1.0 - shadowFactor))
+            );
+            
+            // Set the pixel
+            setPixel(x, y, shadowedColor);
         }
     }
 }
