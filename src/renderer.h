@@ -208,6 +208,7 @@ private:
     Color applyLighting(const Color& color, double lightLevel);
     Color applyFog(const Color& color, double distance);
     double calculateLightLevel(Sector* sector, const Vec2& position, double height);
+    double calculateSunLighting(const Vec2& worldPos, Camera* camera);
     
     // Set pixel in framebuffer
     void setPixel(int x, int y, const Color& color);

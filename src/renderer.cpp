@@ -265,6 +265,30 @@ void Renderer::renderSprites(Map* map, Camera* camera)
     // This is now handled by drawSpriteSpans()
 }
 
+// Add this new method before renderSkybox
+double Renderer::calculateSunLighting(const Vec2& worldPos, Camera* camera) {
+    if (!camera) return 1.0;
+    
+    // Get sun position in world space - fixed position regardless of camera
+    double sunWorldX = 50.0; // Fixed sun position in world
+    double sunWorldY = 50.0;
+    double sunHeight = 30.0;  // Height of sun above ground
+    
+    // Calculate vector from point to sun
+    Vec2 toSun(sunWorldX - worldPos.x, sunWorldY - worldPos.y);
+    double distToSun = toSun.length();
+    
+    // Normalize the vector
+    toSun = toSun.normalized();
+    
+    // Calculate light intensity based on distance and angle
+    double baseIntensity = std::max(0.0, 1.0 - (distToSun / 100.0));
+    double angleIntensity = std::max(0.0, toSun.dot(camera->getDirection()));
+    
+    // Combine factors for final sun lighting
+    return std::min(1.0, 0.3 + baseIntensity * angleIntensity * 0.7);
+}
+
 void Renderer::renderSkybox(Camera* camera) 
 {
     // Get the camera angle to position the sun correctly
@@ -297,10 +321,9 @@ void Renderer::renderSkybox(Camera* camera)
             }
             
             // Calculate sun position based on camera angle
-            // Position sun much lower in skybox so it's visible in the limited view
             double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.3;
-            double sunPositionY = m_screenHeight * 0.22; // Position sun much lower (near bottom of skybox)
-            double sunRadius = m_screenHeight * 0.08; // Make sun larger
+            double sunPositionY = m_screenHeight * 0.22;
+            double sunRadius = m_screenHeight * 0.08;
             
             // Calculate distance from current pixel to sun center
             double distToSun = sqrt(pow(x - sunPositionX, 2) + pow(y - sunPositionY, 2));
@@ -310,26 +333,52 @@ void Renderer::renderSkybox(Camera* camera)
             
             // If pixel is in sun's core or outer glow
             if (distToSun < sunRadius) {
-                // Inner sun - very bright yellow-white core to stand out more
+                // Inner sun - very bright yellow-white core
                 double sunIntensity = 1.0 - (distToSun / sunRadius);
-                sunIntensity = pow(sunIntensity, 0.7); // Enhance the brightness of the core
+                sunIntensity = pow(sunIntensity, 0.7);
                 finalColor = Color::lerp(
                     Color(255, 200, 100), // Outer sun (orange-yellow)
                     Color(255, 255, 230), // Inner sun (bright white-yellow)
                     sunIntensity
                 );
+                
+                // Add sun rays
+                if (distToSun < sunRadius * 0.7) {
+                    // Create ray effect emanating from sun center
+                    double angle = atan2(y - sunPositionY, x - sunPositionX);
+                    double rayIntensity = 0.5 + 0.5 * sin(angle * 8.0); // 8 rays
+                    rayIntensity = pow(rayIntensity, 0.5); // Sharpen rays
+                    
+                    // Extend rays beyond sun
+                    double rayLength = sunRadius * 3.0;
+                    if (distToSun < rayLength) {
+                        double rayFalloff = 1.0 - (distToSun / rayLength);
+                        rayFalloff = pow(rayFalloff, 1.5);
+                        
+                        // Add ray color
+                        Color rayColor(255, 255, 200);
+                        finalColor = Color::lerp(finalColor, rayColor, rayIntensity * rayFalloff * 0.4);
+                    }
+                }
             } 
-            // Outer glow of the sun - make it more pronounced
+            // Outer glow of the sun
             else if (distToSun < sunRadius * 2.5) {
-                // Create a glow effect that transitions to the sky
                 double glowIntensity = 1.0 - ((distToSun - sunRadius) / (sunRadius * 1.5));
-                glowIntensity = pow(glowIntensity, 0.8); // Enhance the glow
+                glowIntensity = pow(glowIntensity, 0.8);
                 Color glowColor = Color(
                     std::min(255, static_cast<int>(200 * glowIntensity) + skyColor.r),
                     std::min(255, static_cast<int>(160 * glowIntensity) + skyColor.g),
                     std::min(255, static_cast<int>(100 * glowIntensity) + skyColor.b)
                 );
                 finalColor = glowColor;
+                
+                // Add subtle ray effect in glow region
+                double angle = atan2(y - sunPositionY, x - sunPositionX);
+                double rayIntensity = 0.3 + 0.7 * sin(angle * 8.0);
+                rayIntensity *= glowIntensity * 0.3;
+                
+                Color rayColor(255, 255, 200);
+                finalColor = Color::lerp(finalColor, rayColor, rayIntensity);
             }
             // Regular sky with clouds
             else {
@@ -342,9 +391,8 @@ void Renderer::renderSkybox(Camera* camera)
             
             setPixel(x, y, finalColor);
             
-            // Important: set z-buffer to a very large value so the sky isn't overwritten
-            // by floor/ceiling rendering - this will protect our sun from being overwritten
-            m_zBuffer[y * m_screenWidth + x] = 0.01; // Very small value = very far away
+            // Set z-buffer to a very large value for skybox
+            m_zBuffer[y * m_screenWidth + x] = 0.01;
         }
     }
 }
@@ -770,10 +818,21 @@ void Renderer::drawFloorCeilingSpans(Camera* camera)
             // Get the color for this floor position
             Color floorColor = getDoomFloorColor(texX, texY, tileSize);
             
+            // Calculate sun lighting for this floor position
+            Vec2 worldPos(floorX, floorY);
+            double sunLight = calculateSunLighting(worldPos, camera);
+            
+            // Brighten the floor color based on sun lighting
+            floorColor = Color(
+                std::min(255, static_cast<int>(floorColor.r * (0.7 + sunLight * 0.3))),
+                std::min(255, static_cast<int>(floorColor.g * (0.7 + sunLight * 0.3))),
+                std::min(255, static_cast<int>(floorColor.b * (0.7 + sunLight * 0.3)))
+            );
+            
             // Apply fog effect
             Color foggedFloorColor = Color::lerp(
                 floorColor,
-                Color(30, 30, 30), // Dark fog color
+                Color(30, 30, 30),
                 distFactor * 0.7
             );
             
