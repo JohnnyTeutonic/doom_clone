@@ -44,7 +44,7 @@ struct PlayerSettings {
 };
 
 // Structure to store player input state
-struct InputState {
+struct PlayerInputState {
     bool moveForward;
     bool moveBackward;
     bool moveLeft;
@@ -54,7 +54,7 @@ struct InputState {
     double mouseX;
     double mouseY;
     
-    InputState() :
+    PlayerInputState() :
         moveForward(false),
         moveBackward(false),
         moveLeft(false),
@@ -159,7 +159,7 @@ private:
     int m_armor;                            // Player armor
     double m_fov;                           // Field of view (in radians)
     PlayerSettings m_settings;              // Player settings
-    InputState m_inputs;                    // Current input state
+    PlayerInputState m_inputs;                // Current input state
     std::shared_ptr<Sector> m_currentSector; // Current sector
     Map* m_map;                             // Reference to the map
     Engine* m_engine;                       // Reference to the engine

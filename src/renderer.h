@@ -186,6 +186,7 @@ private:
     void renderFloorsCeilings(Map* map, Camera* camera);
     void renderSprites(Map* map, Camera* camera);
     void renderSkybox(Camera* camera);
+    void renderSunRays(Camera* camera);
     
     // Process visible walls for rendering
     void processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& walls, Camera* camera);
@@ -200,7 +201,7 @@ private:
     void calculateSpriteSpans(Sprite* sprite, Camera* camera);
     
     // Draw spans
-    void drawWallSpans();
+    void drawWallSpans(Camera* camera);
     void drawFloorCeilingSpans(Camera* camera);
     void drawSpriteSpans();
     
@@ -209,6 +210,7 @@ private:
     Color applyFog(const Color& color, double distance);
     double calculateLightLevel(Sector* sector, const Vec2& position, double height);
     double calculateSunLighting(const Vec2& worldPos, Camera* camera);
+    double calculateSunLightingWithNormal(const Vec2& worldPos, const Vec2& normal, Camera* camera);
     
     // Set pixel in framebuffer
     void setPixel(int x, int y, const Color& color);

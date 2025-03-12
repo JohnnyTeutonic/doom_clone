@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "player.h"
 #include "TextureManager.h"
+#include "engine.h"
 #include <iostream>
 #include <limits>
 #include <cstring>
@@ -209,30 +210,23 @@ void Renderer::renderMap(Map* map, Camera* camera)
     // Render skybox first (furthest away)
     renderSkybox(camera);
     
-    // REVERTING TO BSP-BASED RENDERING:
     // Get visible walls using BSP tree based on camera position
     std::vector<std::shared_ptr<Wall>> visibleWalls = map->getVisibleWalls(camera->getPosition());
-    
-    // DEBUG: Make sure we actually have walls
-    static int frameCount = 0;
-    frameCount++;
     
     // Process walls to generate spans
     processVisibleWalls(visibleWalls, camera);
     
-    // DEBUG: Verify spans are being created
-    if (frameCount % 60 == 0) {  // Print only once per second
-        std::cout << "  Generated " << m_wallSpans.size() << " wall spans" << std::endl;
-    }
-    
-    // Render all spans in the correct order:
+    // Draw all spans in the correct order:
     // 1. Draw floor first (which checks z-buffer to avoid overwriting walls)
     drawFloorCeilingSpans(camera);
     
     // 2. Draw walls (sorted back to front)
-    drawWallSpans();
+    drawWallSpans(camera);  // Add camera parameter
     
-    // 3. Finally draw sprites
+    // 3. Render sun rays that cast into the scene
+    renderSunRays(camera);
+    
+    // 4. Finally draw sprites
     drawSpriteSpans();
 }
 
@@ -270,9 +264,10 @@ double Renderer::calculateSunLighting(const Vec2& worldPos, Camera* camera) {
     if (!camera) return 1.0;
     
     // Get sun position in world space - fixed position regardless of camera
+    // Increase height and adjust position to match the visible sun in the skybox
     double sunWorldX = 50.0; // Fixed sun position in world
     double sunWorldY = 50.0;
-    double sunHeight = 30.0;  // Height of sun above ground
+    double sunHeight = 50.0;  // Increased height of sun above ground for stronger lighting
     
     // Calculate vector from point to sun
     Vec2 toSun(sunWorldX - worldPos.x, sunWorldY - worldPos.y);
@@ -281,12 +276,63 @@ double Renderer::calculateSunLighting(const Vec2& worldPos, Camera* camera) {
     // Normalize the vector
     toSun = toSun.normalized();
     
-    // Calculate light intensity based on distance and angle
-    double baseIntensity = std::max(0.0, 1.0 - (distToSun / 100.0));
-    double angleIntensity = std::max(0.0, toSun.dot(camera->getDirection()));
+    // Increase base ambient lighting for better visibility
+    double ambientLight = 0.5;  // Increased from 0.3 to 0.5
     
-    // Combine factors for final sun lighting
-    return std::min(1.0, 0.3 + baseIntensity * angleIntensity * 0.7);
+    // Distance attenuation - closer to sun = brighter
+    // Reduce the falloff rate to allow light to reach further
+    double distanceFactor = std::max(0.0, 1.0 - (distToSun / 150.0));  // Increased from 100.0 to 150.0
+    
+    // Add pulsing effect to simulate ray movement
+    double time = SDL_GetTicks() / 1000.0; // Get time in seconds
+    double pulse = 0.15 * sin(time * 2.0); // Slightly stronger pulsing effect
+    
+    // Combine factors for final lighting with increased intensity
+    double lightIntensity = ambientLight + distanceFactor * 0.9 + pulse * 0.15;  // Increased multipliers
+    
+    // Ensure light intensity is in valid range but allow for brighter highlights
+    return std::min(1.2, std::max(ambientLight, lightIntensity));  // Allow values slightly above 1.0 for bright highlights
+}
+
+// New function to calculate lighting with surface normal consideration
+double Renderer::calculateSunLightingWithNormal(const Vec2& worldPos, const Vec2& normal, Camera* camera) {
+    if (!camera) return 1.0;
+    
+    // Get sun position in world space - fixed position regardless of camera
+    // Match the sun position with the visible sun in the skybox
+    double sunWorldX = 50.0; // Fixed sun position in world
+    double sunWorldY = 50.0;
+    double sunHeight = 50.0;  // Increased height for stronger lighting
+    
+    // Calculate vector from point to sun
+    Vec2 toSun(sunWorldX - worldPos.x, sunWorldY - worldPos.y);
+    double distToSun = toSun.length();
+    
+    // Normalize the vector
+    toSun = toSun.normalized();
+    
+    // Increase base ambient lighting for better visibility
+    double ambientLight = 0.5;  // Increased from 0.3 to 0.5
+    
+    // Calculate how directly the surface faces the sun (dot product)
+    double normalFactor = std::max(0.0, normal.dot(toSun));
+    
+    // Apply a power function to make the lighting more dramatic
+    normalFactor = pow(normalFactor, 0.8);  // Less than 1.0 makes lighting more diffuse
+    
+    // Distance attenuation - closer to sun = brighter
+    // Reduce the falloff rate to allow light to reach further
+    double distanceFactor = std::max(0.0, 1.0 - (distToSun / 150.0));  // Increased from 100.0 to 150.0
+    
+    // Add pulsing effect to simulate ray movement
+    double time = SDL_GetTicks() / 1000.0; // Get time in seconds
+    double pulse = 0.15 * sin(time * 2.0); // Slightly stronger pulsing effect
+    
+    // Combine factors for final lighting with increased intensity
+    double lightIntensity = ambientLight + normalFactor * distanceFactor * 0.9 + pulse * 0.15;  // Increased multipliers
+    
+    // Ensure light intensity is in valid range but allow for brighter highlights
+    return std::min(1.2, std::max(ambientLight, lightIntensity));  // Allow values slightly above 1.0 for bright highlights
 }
 
 void Renderer::renderSkybox(Camera* camera) 
@@ -321,9 +367,10 @@ void Renderer::renderSkybox(Camera* camera)
             }
             
             // Calculate sun position based on camera angle
-            double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.3;
-            double sunPositionY = m_screenHeight * 0.22;
-            double sunRadius = m_screenHeight * 0.08;
+            // Position the sun more centrally and make it larger
+            double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.2;
+            double sunPositionY = m_screenHeight * 0.15; // Lower in the sky to be more visible
+            double sunRadius = m_screenHeight * 0.1;    // Larger sun
             
             // Calculate distance from current pixel to sun center
             double distToSun = sqrt(pow(x - sunPositionX, 2) + pow(y - sunPositionY, 2));
@@ -335,7 +382,7 @@ void Renderer::renderSkybox(Camera* camera)
             if (distToSun < sunRadius) {
                 // Inner sun - very bright yellow-white core
                 double sunIntensity = 1.0 - (distToSun / sunRadius);
-                sunIntensity = pow(sunIntensity, 0.7);
+                sunIntensity = pow(sunIntensity, 0.6); // Make the falloff more gradual
                 finalColor = Color::lerp(
                     Color(255, 200, 100), // Outer sun (orange-yellow)
                     Color(255, 255, 230), // Inner sun (bright white-yellow)
@@ -350,42 +397,42 @@ void Renderer::renderSkybox(Camera* camera)
                     rayIntensity = pow(rayIntensity, 0.5); // Sharpen rays
                     
                     // Extend rays beyond sun
-                    double rayLength = sunRadius * 3.0;
+                    double rayLength = sunRadius * 4.0; // Longer rays
                     if (distToSun < rayLength) {
                         double rayFalloff = 1.0 - (distToSun / rayLength);
-                        rayFalloff = pow(rayFalloff, 1.5);
+                        rayFalloff = pow(rayFalloff, 1.3); // Adjust falloff
                         
                         // Add ray color
                         Color rayColor(255, 255, 200);
-                        finalColor = Color::lerp(finalColor, rayColor, rayIntensity * rayFalloff * 0.4);
+                        finalColor = Color::lerp(finalColor, rayColor, rayIntensity * rayFalloff * 0.5); // Stronger ray effect
                     }
                 }
             } 
-            // Outer glow of the sun
-            else if (distToSun < sunRadius * 2.5) {
-                double glowIntensity = 1.0 - ((distToSun - sunRadius) / (sunRadius * 1.5));
-                glowIntensity = pow(glowIntensity, 0.8);
+            // Outer glow of the sun - extend this further
+            else if (distToSun < sunRadius * 3.5) { // Increased from 2.5 to 3.5
+                double glowIntensity = 1.0 - ((distToSun - sunRadius) / (sunRadius * 2.5)); // Increased glow range
+                glowIntensity = pow(glowIntensity, 0.7); // More gradual falloff
                 Color glowColor = Color(
-                    std::min(255, static_cast<int>(200 * glowIntensity) + skyColor.r),
-                    std::min(255, static_cast<int>(160 * glowIntensity) + skyColor.g),
-                    std::min(255, static_cast<int>(100 * glowIntensity) + skyColor.b)
+                    std::min(255, static_cast<int>(220 * glowIntensity) + skyColor.r), // Brighter glow
+                    std::min(255, static_cast<int>(180 * glowIntensity) + skyColor.g),
+                    std::min(255, static_cast<int>(120 * glowIntensity) + skyColor.b)
                 );
                 finalColor = glowColor;
                 
-                // Add subtle ray effect in glow region
+                // Add stronger ray effect in glow region
                 double angle = atan2(y - sunPositionY, x - sunPositionX);
-                double rayIntensity = 0.3 + 0.7 * sin(angle * 8.0);
-                rayIntensity *= glowIntensity * 0.3;
+                double rayIntensity = 0.4 + 0.6 * sin(angle * 8.0); // Stronger contrast
+                rayIntensity *= glowIntensity * 0.4; // Increased from 0.3
                 
                 Color rayColor(255, 255, 200);
                 finalColor = Color::lerp(finalColor, rayColor, rayIntensity);
             }
-            // Regular sky with clouds
+            // Regular sky with clouds - make it brighter overall
             else {
                 finalColor = Color(
-                    std::min(255, std::max(0, static_cast<int>(skyColor.r + cloudNoise))),
-                    std::min(255, std::max(0, static_cast<int>(skyColor.g + cloudNoise * 0.5))),
-                    std::min(255, std::max(0, static_cast<int>(skyColor.b + cloudNoise * 0.2)))
+                    std::min(255, std::max(0, static_cast<int>(skyColor.r * 1.2 + cloudNoise))), // Multiply by 1.2 for brighter sky
+                    std::min(255, std::max(0, static_cast<int>(skyColor.g * 1.2 + cloudNoise * 0.5))),
+                    std::min(255, std::max(0, static_cast<int>(skyColor.b * 1.2 + cloudNoise * 0.2)))
                 );
             }
             
@@ -414,6 +461,10 @@ void Renderer::processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& wal
         // Get wall points in world space
         Vec2 start = wall->getStart();
         Vec2 end = wall->getEnd();
+        
+        // Calculate wall direction and normal
+        Vec2 wallDir = (end - start).normalized();
+        Vec2 wallNormal(-wallDir.y, wallDir.x); // Perpendicular to wall direction
         
         // Transform points to camera space
         // First, translate relative to camera position
@@ -496,8 +547,33 @@ void Renderer::processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& wal
         double wallLength = Vec2(end - start).length();
         double textureScaleX = 1.0 / wallLength;
         
-        // Wall direction for texture mapping
-        Vec2 wallDir = (end - start).normalized();
+        // Wall direction for texture mapping - REMOVED DUPLICATE DECLARATION
+        // Using the wallDir already declared above
+        
+        // Calculate wall center for lighting
+        Vec2 wallCenter = Vec2((start.x + end.x) * 0.5, (start.y + end.y) * 0.5);
+        
+        // Calculate sun lighting using wall normal
+        // Get sun position in world space
+        double sunWorldX = 50.0;
+        double sunWorldY = 50.0;
+        
+        // Calculate vector from wall center to sun
+        Vec2 toSun(sunWorldX - wallCenter.x, sunWorldY - wallCenter.y);
+        toSun = toSun.normalized();
+        
+        // Calculate how directly the wall faces the sun (dot product)
+        double normalFactor = std::max(0.0, wallNormal.dot(toSun));
+        
+        // Calculate distance-based attenuation
+        double distToSun = Vec2(sunWorldX - wallCenter.x, sunWorldY - wallCenter.y).length();
+        double distanceFactor = std::max(0.0, 1.0 - (distToSun / 100.0));
+        
+        // Base ambient lighting
+        double ambientLight = 0.3;
+        
+        // Calculate final lighting for this wall
+        double wallLighting = ambientLight + normalFactor * distanceFactor * 0.7;
         
         // Generate wall spans for each vertical column
         for (int x = screenStartX; x <= screenEndX; x++) {
@@ -537,7 +613,7 @@ void Renderer::processVisibleWalls(const std::vector<std::shared_ptr<Wall>>& wal
             span.distance = distance;
             span.textureId = wall->getTextureId();
             span.isPortal = false; // Simple map doesn't have portals
-            span.lightLevel = lightLevel;
+            span.lightLevel = wallLighting; // Use our calculated lighting
             span.sector = nullptr; // No sector info in simple map
             span.wall = nullptr; // No wall pointer needed
             
@@ -562,8 +638,10 @@ void Renderer::calculateSpriteSpans(Sprite* sprite, Camera* camera)
     // Sprite rendering not implemented in this basic version
 }
 
-void Renderer::drawWallSpans() 
+void Renderer::drawWallSpans(Camera* camera)  // Add camera parameter
 {
+    if (!camera) return;
+    
     // Sort spans by distance (far to near) for proper rendering
     std::sort(m_wallSpans.begin(), m_wallSpans.end(), [](const WallSpan& a, const WallSpan& b) {
         return a.distance > b.distance;
@@ -596,13 +674,17 @@ void Renderer::drawWallSpans()
         // Force texture ID to be a reasonable value
         int textureId = abs(span.textureId) % 4;  // Make sure it's 0-3
         
+        // Use the pre-calculated lighting level from the wall span
+        // Boost the lighting to make walls brighter
+        double lightLevel = std::min(1.2, span.lightLevel * 1.3); // Boost lighting by 30%
+        
         // Draw the vertical strip
         for (int y = y1; y <= y2; y++) {
             // Calculate vertical texture coordinate - normalized position on wall
             double texV = static_cast<double>(y - y1) / static_cast<double>(y2 - y1 + 1);
             
             // Calculate horizontal texture coordinate - use span.u but ensure it wraps
-            // Force texU to have visible repetition for debugging
+            // Force texU to have visible repetition
             double texU = span.u * 3.0;  // Multiply to create more visible repetition
             
             // Ensure texture coordinates wrap properly
@@ -629,13 +711,13 @@ void Renderer::drawWallSpans()
                     bool isBloodStain = (seed < 40);  // 40% chance for blood (more common)
                     
                     if (isMortar) {
-                        wallColor = Color(30, 20, 20);  // Dark mortar
+                        wallColor = Color(40, 30, 30);  // Slightly lighter mortar
                     } else if (isBloodStain) {
                         // Brighter blood stains
-                        wallColor = Color(200, 20, 20);  // Bright red blood
+                        wallColor = Color(220, 30, 30);  // Even brighter red blood
                     } else {
                         // Stone with high contrast
-                        wallColor = Color(90, 80, 70);  // Lighter stone
+                        wallColor = Color(110, 100, 90);  // Lighter stone for better visibility
                     }
                     break;
                 }
@@ -674,20 +756,20 @@ void Renderer::drawWallSpans()
                     
                     if (isEdge) {
                         // Dark metal edge
-                        wallColor = Color(70, 70, 80);
+                        wallColor = Color(85, 85, 95); // Lighter edge
                     } else if (isSubdivision) {
                         // Secondary panel divider
-                        wallColor = Color(85, 85, 95);
+                        wallColor = Color(100, 100, 110); // Lighter divider
                     } else if (isBolt) {
                         // Bolt/rivet detail
-                        wallColor = Color(110, 110, 120);
+                        wallColor = Color(130, 130, 140); // Brighter bolts
                     } else {
                         // Base industrial metal panel
                         int variation = ((cornerX * 5 + cornerY * 7) % 10) - 5;
                         wallColor = Color(
-                            60 + variation + (wear > 7 ? -15 : 0),
-                            65 + variation + (wear > 7 ? -10 : 0),
-                            75 + variation + (wear > 7 ? -5 : 0)
+                            80 + variation + (wear > 7 ? -15 : 0), // Brighter base colors
+                            85 + variation + (wear > 7 ? -10 : 0),
+                            95 + variation + (wear > 7 ? -5 : 0)
                         );
                     }
                     break;
@@ -709,13 +791,13 @@ void Renderer::drawWallSpans()
                     }
                     
                     if (onVein) {
-                        wallColor = Color(180, 10, 10);  // Bright red veins
+                        wallColor = Color(200, 20, 20);  // Even brighter red veins
                     } else {
                         // Base flesh color with pattern
                         int pattern = ((noiseX + noiseY) % 3);
-                        int baseR = 100 + pattern * 20;
-                        int baseG = 30 + pattern * 10;
-                        int baseB = 30 + pattern * 10;
+                        int baseR = 120 + pattern * 20; // Brighter base red
+                        int baseG = 40 + pattern * 10;  // Slightly more green
+                        int baseB = 40 + pattern * 10;  // Slightly more blue
                         wallColor = Color(baseR, baseG, baseB);
                     }
                     break;
@@ -736,11 +818,11 @@ void Renderer::drawWallSpans()
                                   (fabs(localU - 0.5) < 0.3 && fabs(localV - 0.5) < 0.1);
                     
                     if (onRune) {
-                        wallColor = Color(220, 80, 0);  // Bright orange-red rune
+                        wallColor = Color(240, 100, 20);  // Brighter orange-red rune
                     } else if (isGrid) {
-                        wallColor = Color(80, 50, 30);  // Rusty edge
+                        wallColor = Color(100, 70, 50);  // Lighter rusty edge
                     } else {
-                        wallColor = Color(50, 40, 30);  // Dark metal
+                        wallColor = Color(70, 60, 50);  // Lighter dark metal
                     }
                     break;
                 }
@@ -748,12 +830,20 @@ void Renderer::drawWallSpans()
                 default:
                     // Fallback - checkered pattern for visibility
                     bool isCheckerDark = ((static_cast<int>(texU * 8) + static_cast<int>(texV * 8)) % 2 == 0);
-                    wallColor = isCheckerDark ? Color(40, 40, 40) : Color(160, 160, 160);
+                    wallColor = isCheckerDark ? Color(60, 60, 60) : Color(180, 180, 180); // Higher contrast
             }
             
-            // Apply minimal shading to preserve texture visibility
-            double fogFactor = std::max(0.7, 1.0 - span.distance / 30.0);
-            Color finalColor = Color::lerp(wallColor, Color(0, 0, 0), static_cast<float>(1.0 - fogFactor));
+            // Apply lighting to the wall color
+            wallColor = Color(
+                std::min(255, static_cast<int>(wallColor.r * lightLevel)),
+                std::min(255, static_cast<int>(wallColor.g * lightLevel)),
+                std::min(255, static_cast<int>(wallColor.b * lightLevel))
+            );
+            
+            // Apply minimal shading to preserve texture visibility and allow lighting to be visible
+            // Significantly reduce fog effect for better visibility
+            double fogFactor = std::max(0.92, 1.0 - span.distance / 60.0); // Reduced fog effect, increased distance
+            Color finalColor = Color::lerp(wallColor, Color(30, 30, 30), static_cast<float>(1.0 - fogFactor)); // Lighter fog color
             
             // Set in Z-buffer and draw
             int index = y * m_screenWidth + span.x;
@@ -786,8 +876,8 @@ void Renderer::drawFloorCeilingSpans(Camera* camera)
         // This formula creates the classic DOOM floor perspective with correct depth
         double rowDistance = cameraHeight / (2.0 * relativeY - 1.0 + 1e-5); // Add small epsilon to avoid division by zero
         
-        // Distance factor for fog effect
-        double distFactor = std::min(1.0, rowDistance / 20.0);
+        // Distance factor for fog effect - reduce fog for better visibility
+        double distFactor = std::min(1.0, rowDistance / 30.0); // Increased from 20.0 to 30.0
         
         for (int x = 0; x < m_screenWidth; x++) {
             // Skip if a wall has already been drawn here (check z-buffer)
@@ -818,22 +908,59 @@ void Renderer::drawFloorCeilingSpans(Camera* camera)
             // Get the color for this floor position
             Color floorColor = getDoomFloorColor(texX, texY, tileSize);
             
-            // Calculate sun lighting for this floor position
-            Vec2 worldPos(floorX, floorY);
-            double sunLight = calculateSunLighting(worldPos, camera);
+            // Calculate lighting for floor (floor normal is always (0,0,1) - pointing up)
+            // Get sun position in world space
+            double sunWorldX = 50.0;
+            double sunWorldY = 50.0;
+            double sunWorldZ = 50.0; // Increased sun height to match other changes
             
-            // Brighten the floor color based on sun lighting
+            // Calculate 3D vector from floor point to sun
+            double toSunX = sunWorldX - floorX;
+            double toSunY = sunWorldY - floorY;
+            double toSunZ = sunWorldZ - 0.0; // Floor is at Z=0
+            
+            // Normalize the vector
+            double toSunLength = sqrt(toSunX*toSunX + toSunY*toSunY + toSunZ*toSunZ);
+            toSunX /= toSunLength;
+            toSunY /= toSunLength;
+            toSunZ /= toSunLength;
+            
+            // Dot product with floor normal (0,0,1) is just the Z component of the normalized vector
+            double normalFactor = std::max(0.0, toSunZ);
+            
+            // Apply a power function to make the lighting more dramatic
+            normalFactor = pow(normalFactor, 0.8); // Less than 1.0 makes lighting more diffuse
+            
+            // Distance-based attenuation
+            double distToSun = sqrt(pow(sunWorldX - floorX, 2) + pow(sunWorldY - floorY, 2) + pow(sunWorldZ, 2));
+            double distanceFactor = std::max(0.0, 1.0 - (distToSun / 150.0)); // Increased from 100.0 to 150.0
+            
+            // Base ambient lighting - increased for better visibility
+            double ambientLight = 0.5; // Increased from 0.3 to 0.5
+            
+            // Calculate final lighting with increased intensity
+            double floorLighting = ambientLight + normalFactor * distanceFactor * 0.9; // Increased from 0.7 to 0.9
+            
+            // Add subtle pulsing effect
+            double time = SDL_GetTicks() / 1000.0;
+            double pulse = 0.05 * sin(time * 2.0);
+            floorLighting += pulse;
+            
+            // Ensure lighting is in valid range but allow for brighter highlights
+            floorLighting = std::min(1.2, std::max(ambientLight, floorLighting));
+            
+            // Apply lighting to the floor color
             floorColor = Color(
-                std::min(255, static_cast<int>(floorColor.r * (0.7 + sunLight * 0.3))),
-                std::min(255, static_cast<int>(floorColor.g * (0.7 + sunLight * 0.3))),
-                std::min(255, static_cast<int>(floorColor.b * (0.7 + sunLight * 0.3)))
+                std::min(255, static_cast<int>(floorColor.r * floorLighting)),
+                std::min(255, static_cast<int>(floorColor.g * floorLighting)),
+                std::min(255, static_cast<int>(floorColor.b * floorLighting))
             );
             
-            // Apply fog effect
+            // Apply reduced fog effect to allow lighting to be visible
             Color foggedFloorColor = Color::lerp(
                 floorColor,
-                Color(30, 30, 30),
-                distFactor * 0.7
+                Color(50, 50, 50), // Lighter fog color (increased from 40,40,40)
+                distFactor * 0.4  // Reduced fog intensity (from 0.5 to 0.4)
             );
             
             // Set the pixel for the floor
@@ -853,11 +980,34 @@ void Renderer::drawFloorCeilingSpans(Camera* camera)
                 // Get ceiling color - darker variation of floor
                 Color ceilingColor = getDoomCeilingColor(texX, texY, tileSize);
                 
-                // Apply fog effect to ceiling
+                // Calculate lighting for ceiling (ceiling normal is always (0,0,-1) - pointing down)
+                // Dot product with ceiling normal (0,0,-1) is the negative of the Z component
+                double ceilingNormalFactor = std::max(0.0, -toSunZ);
+                
+                // Apply a power function to make the lighting more dramatic
+                ceilingNormalFactor = pow(ceilingNormalFactor, 0.8); // Less than 1.0 makes lighting more diffuse
+                
+                // Calculate final lighting for ceiling with increased intensity
+                double ceilingLighting = ambientLight + ceilingNormalFactor * distanceFactor * 0.9; // Increased from 0.7 to 0.9
+                
+                // Add subtle pulsing effect
+                ceilingLighting += pulse;
+                
+                // Ensure lighting is in valid range but allow for brighter highlights
+                ceilingLighting = std::min(1.2, std::max(ambientLight, ceilingLighting));
+                
+                // Apply lighting to the ceiling color
+                ceilingColor = Color(
+                    std::min(255, static_cast<int>(ceilingColor.r * ceilingLighting)),
+                    std::min(255, static_cast<int>(ceilingColor.g * ceilingLighting)),
+                    std::min(255, static_cast<int>(ceilingColor.b * ceilingLighting))
+                );
+                
+                // Apply reduced fog effect to ceiling
                 Color foggedCeilingColor = Color::lerp(
                     ceilingColor,
-                    Color(20, 15, 15), // Darker fog for ceiling
-                    distFactor * 0.8
+                    Color(40, 35, 35), // Slightly lighter fog for ceiling (increased from 30,25,25)
+                    distFactor * 0.5   // Reduced fog intensity (from 0.6 to 0.5)
                 );
                 
                 // Set the pixel for the ceiling
@@ -1327,9 +1477,10 @@ bool isInsidePentagram(double x, double y, double centerX, double centerY, doubl
 // Generate a DOOM-like floor texture (pentagrams)
 Color getDoomFloorColor(int x, int y, int floorTileSize) {
     // Default floor and pentagram colors (dark reddish tones)
-    Color baseFloorColor(40, 20, 20);     // Dark brown-red
-    Color floorBorderColor(60, 30, 30);   // Slightly lighter
-    Color pentagramColor(120, 0, 0);      // Blood red
+    // Brighten the base colors for better visibility
+    Color baseFloorColor(60, 30, 30);     // Brighter brown-red (was 40,20,20)
+    Color floorBorderColor(80, 40, 40);   // Brighter border (was 60,30,30)
+    Color pentagramColor(160, 20, 20);    // Brighter blood red (was 120,0,0)
 
     // Calculate tile coordinates
     int tileX = x / floorTileSize;
@@ -1360,7 +1511,20 @@ Color getDoomFloorColor(int x, int y, int floorTileSize) {
         double lineWidth = 0.05;      // Width of pentagram lines
         
         if (isInsidePentagram(relX, relY, 0, 0, pentagramRadius, lineWidth)) {
-            return pentagramColor;
+            // Add subtle glow effect to pentagrams
+            double distToCenter = sqrt(relX*relX + relY*relY);
+            double glowFactor = 1.0 - std::min(1.0, distToCenter / 0.2);
+            glowFactor = std::max(0.0, glowFactor);
+            
+            // Add pulsing effect to pentagrams
+            double time = SDL_GetTicks() / 1000.0;
+            double pulse = 0.2 * sin(time * 1.5);
+            
+            return Color(
+                std::min(255, static_cast<int>(pentagramColor.r + glowFactor * 40 + pulse * 20)),
+                std::min(255, static_cast<int>(pentagramColor.g + glowFactor * 10)),
+                std::min(255, static_cast<int>(pentagramColor.b + glowFactor * 10))
+            );
         }
     }
     
@@ -1376,9 +1540,10 @@ Color getDoomFloorColor(int x, int y, int floorTileSize) {
 // Generate a DOOM-like ceiling texture
 Color getDoomCeilingColor(int x, int y, int tileSize) {
     // Default ceiling colors (dark red-orange)
-    Color baseCeilingColor(30, 10, 5);      // Dark red-brown
-    Color ceilingPatternColor(50, 20, 10);  // Lighter brown
-    Color glowingCrackColor(80, 30, 5);     // Orange-red "cracks"
+    // Brighten the base colors for better visibility
+    Color baseCeilingColor(45, 20, 10);      // Brighter dark red-brown (was 30,10,5)
+    Color ceilingPatternColor(70, 30, 15);   // Brighter pattern (was 50,20,10)
+    Color glowingCrackColor(110, 50, 15);    // Brighter orange-red "cracks" (was 80,30,5)
     
     // Calculate tile coordinates
     int tileX = x / tileSize;
@@ -1399,14 +1564,22 @@ Color getDoomCeilingColor(int x, int y, int tileSize) {
     
     // Create random cracks (using deterministic variation based on position)
     int seed = (tileX * 12345 + tileY * 67890) % 100;
-    if (seed < 30) {  // 30% of tiles have cracks
+    if (seed < 40) {  // Increased from 30% to 40% of tiles have cracks
         // Calculate crack pattern (diagonal cracks)
         double diag1 = fabs(localX - localY);
         double diag2 = fabs(localX - (1.0 - localY));
         
         // If near diagonal and seed-dependent pattern matches
         if ((diag1 < 0.05 || diag2 < 0.05) && (seed % 3 == (x * y) % 3)) {
-            return glowingCrackColor;
+            // Add subtle pulsing glow to cracks
+            double time = SDL_GetTicks() / 1000.0;
+            double pulse = 0.15 * sin(time * 1.2 + seed * 0.1);
+            
+            return Color(
+                std::min(255, static_cast<int>(glowingCrackColor.r + pulse * 20)),
+                std::min(255, static_cast<int>(glowingCrackColor.g + pulse * 10)),
+                std::min(255, static_cast<int>(glowingCrackColor.b))
+            );
         }
     }
     
@@ -1703,4 +1876,192 @@ Color getDoomWallColor(int textureId, double u, double v, double distance) {
     // Apply distance-based darkening
     double fogFactor = 1.0 - std::min(1.0, distance / 20.0);
     return Color::lerp(Color(0, 0, 0), baseColor, static_cast<float>(1.0 - fogFactor));
+}
+
+// New method to render sun rays that cast into the scene
+void Renderer::renderSunRays(Camera* camera)
+{
+    if (!camera) return;
+    
+    // Get sun position in screen space
+    double cameraAngle = camera->getAngle();
+    double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.2;
+    double sunPositionY = m_screenHeight * 0.15;
+    
+    // Number of rays to cast
+    const int numRays = 12;
+    
+    // Ray properties
+    const double rayLength = m_screenHeight * 1.5; // Long enough to reach across screen
+    const double rayWidth = 3.0;
+    const double rayFadeStart = 0.3; // Start fading at 30% of ray length
+    
+    // Get current time for animation
+    double time = SDL_GetTicks() / 1000.0;
+    
+    // Draw rays
+    for (int i = 0; i < numRays; i++) {
+        // Calculate ray angle with some animation
+        double baseAngle = (2.0 * PI * i) / numRays;
+        double animatedAngle = baseAngle + 0.2 * sin(time * 0.5 + i * 0.2);
+        
+        // Calculate ray intensity with animation
+        double rayIntensity = 0.4 + 0.2 * sin(time * 1.0 + i * 0.5);
+        
+        // Calculate ray direction
+        double rayDirX = cos(animatedAngle);
+        double rayDirY = sin(animatedAngle);
+        
+        // Draw the ray
+        for (double t = 0; t < rayLength; t += 0.5) {
+            // Calculate position along ray
+            int rayX = static_cast<int>(sunPositionX + rayDirX * t);
+            int rayY = static_cast<int>(sunPositionY + rayDirY * t);
+            
+            // Skip if out of bounds
+            if (rayX < 0 || rayX >= m_screenWidth || rayY < 0 || rayY >= m_screenHeight) {
+                continue;
+            }
+            
+            // Check z-buffer to see if we hit a wall or floor
+            int index = rayY * m_screenWidth + rayX;
+            if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
+                // We hit something - check distance
+                double hitDist = m_zBuffer[index];
+                
+                // Calculate fade based on distance along ray
+                double rayProgress = t / rayLength;
+                double fade = 1.0 - std::max(0.0, (rayProgress - rayFadeStart) / (1.0 - rayFadeStart));
+                
+                // Adjust intensity based on z-buffer value (closer objects get brighter rays)
+                double distanceFactor = std::max(0.0, 1.0 - hitDist / 20.0);
+                double finalIntensity = rayIntensity * fade * distanceFactor * 0.3;
+                
+                // Only draw if intensity is significant
+                if (finalIntensity > 0.02) {
+                    // Draw ray at this point with width
+                    for (int dx = -static_cast<int>(rayWidth/2); dx <= static_cast<int>(rayWidth/2); dx++) {
+                        for (int dy = -static_cast<int>(rayWidth/2); dy <= static_cast<int>(rayWidth/2); dy++) {
+                            // Calculate distance from ray center
+                            double dist = sqrt(dx*dx + dy*dy);
+                            if (dist <= rayWidth/2) {
+                                // Calculate intensity based on distance from ray center
+                                double pointIntensity = finalIntensity * (1.0 - dist/(rayWidth/2));
+                                
+                                // Get pixel coordinates
+                                int px = rayX + dx;
+                                int py = rayY + dy;
+                                
+                                // Skip if out of bounds
+                                if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
+                                    continue;
+                                }
+                                
+                                // Get current color
+                                uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
+                                uint8_t r = (currentPixel >> 16) & 0xFF;
+                                uint8_t g = (currentPixel >> 8) & 0xFF;
+                                uint8_t b = currentPixel & 0xFF;
+                                
+                                // Blend with ray color (bright yellow-white)
+                                Color rayColor(255, 255, 200);
+                                Color blendedColor(
+                                    std::min(255, static_cast<int>(r + (rayColor.r - r) * pointIntensity)),
+                                    std::min(255, static_cast<int>(g + (rayColor.g - g) * pointIntensity)),
+                                    std::min(255, static_cast<int>(b + (rayColor.b - b) * pointIntensity))
+                                );
+                                
+                                // Set the pixel
+                                setPixel(px, py, blendedColor);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Add volumetric light shafts from sun position
+    const int numShafts = 6;
+    const double shaftWidth = 15.0;
+    
+    for (int i = 0; i < numShafts; i++) {
+        // Calculate shaft angle with animation
+        double shaftAngle = (PI / 4) + (PI / 2) * i / numShafts + 0.05 * sin(time * 0.3 + i * 0.7);
+        
+        // Calculate shaft direction (mostly downward)
+        double shaftDirX = 0.3 * cos(shaftAngle);
+        double shaftDirY = 1.0; // Always pointing down
+        
+        // Normalize direction
+        double length = sqrt(shaftDirX*shaftDirX + shaftDirY*shaftDirY);
+        shaftDirX /= length;
+        shaftDirY /= length;
+        
+        // Shaft length
+        double shaftLength = m_screenHeight;
+        
+        // Draw the shaft
+        for (double t = 0; t < shaftLength; t += 1.0) {
+            // Calculate position along shaft
+            int shaftX = static_cast<int>(sunPositionX + shaftDirX * t);
+            int shaftY = static_cast<int>(sunPositionY + shaftDirY * t);
+            
+            // Skip if out of bounds
+            if (shaftX < 0 || shaftX >= m_screenWidth || shaftY < 0 || shaftY >= m_screenHeight) {
+                continue;
+            }
+            
+            // Calculate fade based on distance along shaft
+            double shaftProgress = t / shaftLength;
+            double fade = 1.0 - shaftProgress;
+            
+            // Add pulsing effect
+            double pulse = 0.1 * sin(time * 1.5 + i * 1.0 + shaftProgress * 5.0);
+            double intensity = 0.15 * fade + pulse;
+            
+            // Only draw if intensity is significant
+            if (intensity > 0.01) {
+                // Draw shaft at this point with width
+                for (int dx = -static_cast<int>(shaftWidth/2); dx <= static_cast<int>(shaftWidth/2); dx++) {
+                    // Calculate distance from shaft center
+                    double dist = abs(dx);
+                    if (dist <= shaftWidth/2) {
+                        // Calculate intensity based on distance from shaft center
+                        double pointIntensity = intensity * (1.0 - dist/(shaftWidth/2));
+                        
+                        // Get pixel coordinates
+                        int px = shaftX + dx;
+                        int py = shaftY;
+                        
+                        // Skip if out of bounds
+                        if (px < 0 || px >= m_screenWidth || py < 0 || py >= m_screenHeight) {
+                            continue;
+                        }
+                        
+                        // Check z-buffer to see if we hit a wall or floor
+                        int index = py * m_screenWidth + px;
+                        if (m_zBuffer[index] < std::numeric_limits<double>::max()) {
+                            // Get current color
+                            uint32_t currentPixel = m_pixelBuffer[py * m_screenWidth + px];
+                            uint8_t r = (currentPixel >> 16) & 0xFF;
+                            uint8_t g = (currentPixel >> 8) & 0xFF;
+                            uint8_t b = currentPixel & 0xFF;
+                            
+                            // Blend with shaft color (bright yellow-white)
+                            Color shaftColor(255, 255, 200);
+                            Color blendedColor(
+                                std::min(255, static_cast<int>(r + (shaftColor.r - r) * pointIntensity)),
+                                std::min(255, static_cast<int>(g + (shaftColor.g - g) * pointIntensity)),
+                                std::min(255, static_cast<int>(b + (shaftColor.b - b) * pointIntensity))
+                            );
+                            
+                            // Set the pixel
+                            setPixel(px, py, blendedColor);
+                        }
+                    }
+                }
+            }
+        }
+    }
 } 
