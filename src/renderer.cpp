@@ -1888,6 +1888,18 @@ void Renderer::renderSunRays(Camera* camera)
     double sunPositionX = m_screenWidth * 0.5 + sin(cameraAngle) * m_screenWidth * 0.2;
     double sunPositionY = m_screenHeight * 0.15;
     
+    // Get sun position in world space
+    double sunWorldX = 50.0;
+    double sunWorldY = 50.0;
+    double sunWorldZ = 50.0;
+    
+    // Create a shadow map buffer
+    bool* shadowMap = new bool[m_screenWidth * m_screenHeight];
+    memset(shadowMap, 0, m_screenWidth * m_screenHeight * sizeof(bool));
+    
+    // Calculate shadow map by casting rays from the sun
+    calculateShadowMap(camera, shadowMap, sunWorldX, sunWorldY, sunWorldZ);
+    
     // Number of rays to cast
     const int numRays = 12;
     
@@ -1935,7 +1947,16 @@ void Renderer::renderSunRays(Camera* camera)
                 
                 // Adjust intensity based on z-buffer value (closer objects get brighter rays)
                 double distanceFactor = std::max(0.0, 1.0 - hitDist / 20.0);
-                double finalIntensity = rayIntensity * fade * distanceFactor * 0.3;
+                
+                // Check if this point is in shadow
+                double finalIntensity;
+                if (shadowMap[index]) {
+                    // In shadow - greatly reduce intensity
+                    finalIntensity = rayIntensity * fade * distanceFactor * 0.05; // 5% of normal intensity
+                } else {
+                    // In light - normal intensity
+                    finalIntensity = rayIntensity * fade * distanceFactor * 0.3;
+                }
                 
                 // Only draw if intensity is significant
                 if (finalIntensity > 0.02) {
@@ -2001,6 +2022,10 @@ void Renderer::renderSunRays(Camera* camera)
         // Shaft length
         double shaftLength = m_screenHeight;
         
+        // Track if we've hit a shadow
+        bool inShadow = false;
+        double shadowStartT = 0;
+        
         // Draw the shaft
         for (double t = 0; t < shaftLength; t += 1.0) {
             // Calculate position along shaft
@@ -2012,13 +2037,35 @@ void Renderer::renderSunRays(Camera* camera)
                 continue;
             }
             
+            // Check if this point is in shadow
+            int index = shaftY * m_screenWidth + shaftX;
+            bool pointInShadow = shadowMap[index];
+            
+            // If we just entered shadow, mark the transition point
+            if (!inShadow && pointInShadow) {
+                inShadow = true;
+                shadowStartT = t;
+            }
+            
             // Calculate fade based on distance along shaft
             double shaftProgress = t / shaftLength;
             double fade = 1.0 - shaftProgress;
             
             // Add pulsing effect
             double pulse = 0.1 * sin(time * 1.5 + i * 1.0 + shaftProgress * 5.0);
-            double intensity = 0.15 * fade + pulse;
+            
+            // Adjust intensity based on shadow
+            double intensity;
+            if (inShadow) {
+                // Calculate how far into shadow we are
+                double shadowDepth = (t - shadowStartT) / 20.0; // Shadow fades over 20 units
+                shadowDepth = std::min(1.0, shadowDepth);
+                
+                // Reduce intensity in shadow, more the deeper we go
+                intensity = (0.15 * fade + pulse) * (1.0 - shadowDepth) * 0.2;
+            } else {
+                intensity = 0.15 * fade + pulse;
+            }
             
             // Only draw if intensity is significant
             if (intensity > 0.01) {
@@ -2064,4 +2111,166 @@ void Renderer::renderSunRays(Camera* camera)
             }
         }
     }
-} 
+    
+    // Clean up shadow map
+    delete[] shadowMap;
+}
+
+// New method to calculate shadow map by casting rays from the sun
+void Renderer::calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, double sunY, double sunZ)
+{
+    if (!camera || !shadowMap) return;
+    
+    // Get camera position
+    Vec2 cameraPos = camera->getPosition();
+    double cameraHeight = 0.6; // Camera height (eye level)
+    
+    // Calculate the horizon line (vertical center of the screen)
+    int horizonY = m_screenHeight / 2;
+    
+    // Process each pixel on screen
+    for (int y = 0; y < m_screenHeight; y++) {
+        for (int x = 0; x < m_screenWidth; x++) {
+            // Skip if no geometry at this pixel (z-buffer is at max)
+            int index = y * m_screenWidth + x;
+            if (m_zBuffer[index] == std::numeric_limits<double>::max()) {
+                continue;
+            }
+            
+            // Get the world position of this pixel
+            double worldX, worldY, worldZ;
+            
+            // For floor pixels (below horizon)
+            if (y > horizonY) {
+                // Calculate position relative to horizon (0 at horizon, 1 at bottom of screen)
+                double relativeY = (y - horizonY) / static_cast<double>(m_screenHeight - horizonY);
+                
+                // Apply DOOM-like perspective for floor
+                double rowDistance = cameraHeight / (2.0 * relativeY - 1.0 + 1e-5);
+                
+                // Calculate ray direction for this pixel
+                double rayRatio = (2.0 * x / static_cast<double>(m_screenWidth) - 1.0);
+                Vec2 camDir = camera->getDirection();
+                Vec2 camRight = camera->getRight();
+                
+                // Calculate ray direction using camera direction and right vectors
+                double rayDirX = camDir.x + camRight.x * rayRatio * 1.2;
+                double rayDirY = camDir.y + camRight.y * rayRatio * 1.2;
+                double dirLen = sqrt(rayDirX * rayDirX + rayDirY * rayDirY);
+                rayDirX /= dirLen;
+                rayDirY /= dirLen;
+                
+                // Calculate the real-world floor coordinate
+                worldX = cameraPos.x + rowDistance * rayDirX;
+                worldY = cameraPos.y + rowDistance * rayDirY;
+                worldZ = 0.0; // Floor is at Z=0
+            }
+            // For ceiling pixels (above horizon but below skybox)
+            else if (y >= m_screenHeight / 4 && y < horizonY) {
+                // Calculate position relative to horizon (0 at horizon, 1 at top of ceiling)
+                double relativeY = (horizonY - y) / static_cast<double>(horizonY - m_screenHeight / 4);
+                
+                // Apply DOOM-like perspective for ceiling
+                double rowDistance = cameraHeight / (2.0 * relativeY - 1.0 + 1e-5);
+                
+                // Calculate ray direction for this pixel
+                double rayRatio = (2.0 * x / static_cast<double>(m_screenWidth) - 1.0);
+                Vec2 camDir = camera->getDirection();
+                Vec2 camRight = camera->getRight();
+                
+                // Calculate ray direction using camera direction and right vectors
+                double rayDirX = camDir.x + camRight.x * rayRatio * 1.2;
+                double rayDirY = camDir.y + camRight.y * rayRatio * 1.2;
+                double dirLen = sqrt(rayDirX * rayDirX + rayDirY * rayDirY);
+                rayDirX /= dirLen;
+                rayDirY /= dirLen;
+                
+                // Calculate the real-world ceiling coordinate
+                worldX = cameraPos.x + rowDistance * rayDirX;
+                worldY = cameraPos.y + rowDistance * rayDirY;
+                worldZ = 4.0; // Ceiling is at Z=4.0
+            }
+            // For wall pixels
+            else if (y >= m_screenHeight / 4) {
+                // For walls, we need to use the z-buffer to determine distance
+                double wallDist = m_zBuffer[index];
+                
+                // Calculate ray direction for this pixel
+                double rayRatio = (2.0 * x / static_cast<double>(m_screenWidth) - 1.0);
+                Vec2 camDir = camera->getDirection();
+                Vec2 camRight = camera->getRight();
+                
+                // Calculate ray direction using camera direction and right vectors
+                double rayDirX = camDir.x + camRight.x * rayRatio * 1.2;
+                double rayDirY = camDir.y + camRight.y * rayRatio * 1.2;
+                double dirLen = sqrt(rayDirX * rayDirX + rayDirY * rayDirY);
+                rayDirX /= dirLen;
+                rayDirY /= dirLen;
+                
+                // Calculate the real-world wall coordinate
+                worldX = cameraPos.x + wallDist * rayDirX;
+                worldY = cameraPos.y + wallDist * rayDirY;
+                
+                // Estimate Z based on screen Y position relative to horizon
+                double relativeY = (double)(horizonY - y) / (double)(horizonY - m_screenHeight / 4);
+                worldZ = 2.0 + relativeY * 2.0; // Approximate height between 0 and 4
+            }
+            else {
+                // Skybox pixels - no shadow calculation needed
+                continue;
+            }
+            
+            // Now we have the world position, check if it's in shadow
+            // Cast a ray from this point to the sun
+            double toSunX = sunX - worldX;
+            double toSunY = sunY - worldY;
+            double toSunZ = sunZ - worldZ;
+            
+            // Normalize the vector
+            double distToSun = sqrt(toSunX*toSunX + toSunY*toSunY + toSunZ*toSunZ);
+            toSunX /= distToSun;
+            toSunY /= distToSun;
+            toSunZ /= distToSun;
+            
+            // Check if ray hits any walls
+            bool isInShadow = false;
+            
+            // Simple shadow check - if there's a wall between this point and the sun
+            // We'll use a simplified approach for performance
+            double stepSize = 0.5;
+            double maxDist = 50.0; // Maximum distance to check
+            
+            for (double t = 0.1; t < maxDist && !isInShadow; t += stepSize) {
+                double checkX = worldX + toSunX * t;
+                double checkY = worldY + toSunY * t;
+                double checkZ = worldZ + toSunZ * t;
+                
+                // If we're close to the sun, we're done
+                if (sqrt(pow(checkX - sunX, 2) + pow(checkY - sunY, 2) + pow(checkZ - sunZ, 2)) < 5.0) {
+                    break;
+                }
+                
+                // Check if there's a wall at this position
+                // This is a simplified check - in a real implementation, you'd use the map data
+                // For now, we'll use a heuristic based on the world coordinates
+                
+                // Get the map cell coordinates
+                int cellX = static_cast<int>(checkX);
+                int cellY = static_cast<int>(checkY);
+                
+                // Check if this is a wall cell (simplified check)
+                // This assumes walls are at integer coordinates
+                if (cellX % 2 == 0 && cellY % 2 == 0) {
+                    // Potential wall location - check height
+                    if (checkZ >= 0 && checkZ <= 4.0) {
+                        isInShadow = true;
+                    }
+                }
+            }
+            
+            // Mark this pixel as in shadow or not
+            shadowMap[index] = isInShadow;
+        }
+    }
+}
+  

@@ -211,6 +211,7 @@ private:
     double calculateLightLevel(Sector* sector, const Vec2& position, double height);
     double calculateSunLighting(const Vec2& worldPos, Camera* camera);
     double calculateSunLightingWithNormal(const Vec2& worldPos, const Vec2& normal, Camera* camera);
+    void calculateShadowMap(Camera* camera, bool* shadowMap, double sunX, double sunY, double sunZ);
     
     // Set pixel in framebuffer
     void setPixel(int x, int y, const Color& color);
