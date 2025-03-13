@@ -1,6 +1,9 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 
+// Define ENABLE_CUDA for compiling with CUDA support
+#define ENABLE_CUDA
+
 #include "utils.h"
 #include <memory>
 #include <vector>
@@ -15,6 +18,11 @@
 #else
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#endif
+
+// CUDA support
+#ifdef ENABLE_CUDA
+#include "CUDARenderer.h"
 #endif
 
 // Forward declarations
@@ -122,6 +130,11 @@ public:
     void setGammaCorrectionEnabled(bool enabled) { m_gammaCorrectionEnabled = enabled; }
     void setTextureFiltering(bool enabled) { m_textureFiltering = enabled; }
     
+    // CUDA rendering options
+    void setCUDARenderingEnabled(bool enabled) { m_cudaRenderingEnabled = enabled; }
+    bool isCUDARenderingEnabled() const { return m_cudaRenderingEnabled; }
+    bool isCUDAAvailable() const;
+    
     // Screenshot functions
     bool takeScreenshot(const std::string& filename);
     
@@ -171,6 +184,25 @@ private:
     bool m_textureFiltering;          // Whether texture filtering is enabled
     bool m_debugMode;                 // Whether debug mode is enabled
     Color m_backgroundColor;          // Background color
+    
+    // CUDA rendering
+    bool m_cudaRenderingEnabled;      // Whether CUDA rendering is enabled
+    bool m_cudaInitialized;           // Whether CUDA has been initialized
+    
+#ifdef ENABLE_CUDA
+    CUDARenderer* m_cudaRenderer;     // CUDA renderer instance
+    
+    // Initialize CUDA renderer
+    bool initCUDA();
+    
+    // Render using CUDA
+    void renderMapCUDA(Map* map, Camera* camera);
+    
+    // Convert spans to CUDA format
+    void convertWallSpanToCUDA(const WallSpan& span, CUDAWallSpan& cudaSpan);
+    void convertFloorCeilingSpanToCUDA(const FloorCeilingSpan& span, CUDAFloorCeilingSpan& cudaSpan);
+    void convertSpriteSpanToCUDA(const SpriteSpan& span, CUDASpriteSpan& cudaSpan);
+#endif
     
     // References
     TextureManager* m_textureManager; // Texture manager

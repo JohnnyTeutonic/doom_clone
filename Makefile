@@ -129,6 +129,126 @@ doom_clone/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/build
 .PHONY : doom_clone/fast
 
+src/CUDARenderer.o: src/CUDARenderer.cu.o
+.PHONY : src/CUDARenderer.o
+
+# target to build an object file
+src/CUDARenderer.cu.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/CUDARenderer.cu.o
+.PHONY : src/CUDARenderer.cu.o
+
+src/CUDARenderer.i: src/CUDARenderer.cu.i
+.PHONY : src/CUDARenderer.i
+
+# target to preprocess a source file
+src/CUDARenderer.cu.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/CUDARenderer.cu.i
+.PHONY : src/CUDARenderer.cu.i
+
+src/CUDARenderer.s: src/CUDARenderer.cu.s
+.PHONY : src/CUDARenderer.s
+
+# target to generate assembly for a file
+src/CUDARenderer.cu.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/CUDARenderer.cu.s
+.PHONY : src/CUDARenderer.cu.s
+
+src/RendererCUDA.o: src/RendererCUDA.cpp.o
+.PHONY : src/RendererCUDA.o
+
+# target to build an object file
+src/RendererCUDA.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/RendererCUDA.cpp.o
+.PHONY : src/RendererCUDA.cpp.o
+
+src/RendererCUDA.i: src/RendererCUDA.cpp.i
+.PHONY : src/RendererCUDA.i
+
+# target to preprocess a source file
+src/RendererCUDA.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/RendererCUDA.cpp.i
+.PHONY : src/RendererCUDA.cpp.i
+
+src/RendererCUDA.s: src/RendererCUDA.cpp.s
+.PHONY : src/RendererCUDA.s
+
+# target to generate assembly for a file
+src/RendererCUDA.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/RendererCUDA.cpp.s
+.PHONY : src/RendererCUDA.cpp.s
+
+src/Texture.o: src/Texture.cpp.o
+.PHONY : src/Texture.o
+
+# target to build an object file
+src/Texture.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/Texture.cpp.o
+.PHONY : src/Texture.cpp.o
+
+src/Texture.i: src/Texture.cpp.i
+.PHONY : src/Texture.i
+
+# target to preprocess a source file
+src/Texture.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/Texture.cpp.i
+.PHONY : src/Texture.cpp.i
+
+src/Texture.s: src/Texture.cpp.s
+.PHONY : src/Texture.s
+
+# target to generate assembly for a file
+src/Texture.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/Texture.cpp.s
+.PHONY : src/Texture.cpp.s
+
+src/TextureManager.o: src/TextureManager.cpp.o
+.PHONY : src/TextureManager.o
+
+# target to build an object file
+src/TextureManager.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/TextureManager.cpp.o
+.PHONY : src/TextureManager.cpp.o
+
+src/TextureManager.i: src/TextureManager.cpp.i
+.PHONY : src/TextureManager.i
+
+# target to preprocess a source file
+src/TextureManager.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/TextureManager.cpp.i
+.PHONY : src/TextureManager.cpp.i
+
+src/TextureManager.s: src/TextureManager.cpp.s
+.PHONY : src/TextureManager.s
+
+# target to generate assembly for a file
+src/TextureManager.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/TextureManager.cpp.s
+.PHONY : src/TextureManager.cpp.s
+
+src/TextureManagerCUDA.o: src/TextureManagerCUDA.cpp.o
+.PHONY : src/TextureManagerCUDA.o
+
+# target to build an object file
+src/TextureManagerCUDA.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/TextureManagerCUDA.cpp.o
+.PHONY : src/TextureManagerCUDA.cpp.o
+
+src/TextureManagerCUDA.i: src/TextureManagerCUDA.cpp.i
+.PHONY : src/TextureManagerCUDA.i
+
+# target to preprocess a source file
+src/TextureManagerCUDA.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/TextureManagerCUDA.cpp.i
+.PHONY : src/TextureManagerCUDA.cpp.i
+
+src/TextureManagerCUDA.s: src/TextureManagerCUDA.cpp.s
+.PHONY : src/TextureManagerCUDA.s
+
+# target to generate assembly for a file
+src/TextureManagerCUDA.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/doom_clone.dir/build.make CMakeFiles/doom_clone.dir/src/TextureManagerCUDA.cpp.s
+.PHONY : src/TextureManagerCUDA.cpp.s
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -258,6 +378,21 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... doom_clone"
+	@echo "... src/CUDARenderer.o"
+	@echo "... src/CUDARenderer.i"
+	@echo "... src/CUDARenderer.s"
+	@echo "... src/RendererCUDA.o"
+	@echo "... src/RendererCUDA.i"
+	@echo "... src/RendererCUDA.s"
+	@echo "... src/Texture.o"
+	@echo "... src/Texture.i"
+	@echo "... src/Texture.s"
+	@echo "... src/TextureManager.o"
+	@echo "... src/TextureManager.i"
+	@echo "... src/TextureManager.s"
+	@echo "... src/TextureManagerCUDA.o"
+	@echo "... src/TextureManagerCUDA.i"
+	@echo "... src/TextureManagerCUDA.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

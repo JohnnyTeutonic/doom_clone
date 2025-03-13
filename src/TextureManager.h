@@ -1,6 +1,9 @@
 #ifndef TEXTURE_MANAGER_H
 #define TEXTURE_MANAGER_H
 
+// Define ENABLE_CUDA for compiling with CUDA support
+#define ENABLE_CUDA
+
 #include "Common.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -8,6 +11,12 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <functional>
+
+// If CUDA is enabled, include CUDA utilities
+#ifdef ENABLE_CUDA
+#include "CUDAUtils.h"
+#endif
 
 // Texture class for loaded textures
 class Texture {
@@ -50,6 +59,17 @@ public:
     // Get SDL texture
     SDL_Texture* getSDLTexture() const { return m_texture; }
     
+#ifdef ENABLE_CUDA
+    // Create CUDA texture
+    bool createCUDATexture();
+    
+    // Get CUDA texture
+    CUDATexture* getCUDATexture() { return &m_cudaTexture; }
+    
+    // Get CUDA texture object
+    cudaTextureObject_t getCUDATextureObject() const { return m_cudaTexture.textureObject; }
+#endif
+    
 private:
     // Texture dimensions
     int m_width;
@@ -60,6 +80,11 @@ private:
     
     // Pixel data for CPU access
     std::vector<uint32_t> m_pixels;
+    
+#ifdef ENABLE_CUDA
+    // CUDA texture
+    CUDATexture m_cudaTexture;
+#endif
     
     // Free resources
     void free();
@@ -111,6 +136,17 @@ public:
     // Create pentagram texture
     int createPentagramTexture(bool isWall);
     
+#ifdef ENABLE_CUDA
+    // Create CUDA textures for all loaded textures
+    bool createAllCUDATextures();
+    
+    // Get all CUDA texture objects
+    cudaTextureObject_t* getCUDATextureObjects();
+    
+    // Free CUDA texture objects
+    void freeCUDATextureObjects();
+#endif
+    
 private:
     // SDL renderer reference
     SDL_Renderer* m_renderer;
@@ -120,6 +156,12 @@ private:
     
     // Name to ID mapping
     std::unordered_map<std::string, int> m_nameToId;
+    
+#ifdef ENABLE_CUDA
+    // CUDA texture objects
+    std::vector<cudaTextureObject_t> m_cudaTextureObjects;
+    cudaTextureObject_t* m_deviceTextureObjects;
+#endif
     
     // Helpers for procedural textures
     SDL_Surface* createProcedural(int width, int height, 

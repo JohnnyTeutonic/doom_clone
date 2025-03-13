@@ -8,6 +8,9 @@
 #include <limits>
 #include <cstring>
 
+// Define ENABLE_CUDA for CUDA support
+#define ENABLE_CUDA
+
 #ifdef _WIN32
 #include <direct.h>
 #define getcwd _getcwd
@@ -41,7 +44,12 @@ Renderer::Renderer() :
     m_debugMode(false),
     m_backgroundColor(0, 0, 0),
     m_textureManager(nullptr),
-    m_engine(nullptr)
+    m_engine(nullptr),
+    m_cudaRenderingEnabled(false),
+    m_cudaInitialized(false)
+#ifdef ENABLE_CUDA
+    , m_cudaRenderer(nullptr)
+#endif
 {
 }
 
@@ -118,6 +126,29 @@ bool Renderer::init(int screenWidth, int screenHeight, bool fullscreen, bool vsy
     // Initialize buffers
     clear();
     
+#ifdef ENABLE_CUDA
+    // Check if CUDA is available
+    m_cudaRenderingEnabled = isCUDAAvailable();
+    
+    // Enable CUDA by default if available
+    if (m_cudaRenderingEnabled) {
+        std::cout << "CUDA is available, initializing CUDA renderer..." << std::endl;
+        
+        // Initialize CUDA right away
+        if (!initCUDA()) {
+            std::cerr << "Failed to initialize CUDA, falling back to CPU rendering" << std::endl;
+            m_cudaRenderingEnabled = false;
+        } else {
+            std::cout << "CUDA renderer initialized successfully!" << std::endl;
+        }
+    } else {
+        std::cout << "CUDA is not available, using CPU renderer" << std::endl;
+    }
+#else
+    m_cudaRenderingEnabled = false;
+    std::cout << "CUDA support is not enabled in this build" << std::endl;
+#endif
+    
     return true;
 }
 
@@ -148,6 +179,17 @@ void Renderer::shutdown()
         SDL_DestroyWindow(m_window);
         m_window = nullptr;
     }
+    
+#ifdef ENABLE_CUDA
+    // Free CUDA resources
+    if (m_cudaRenderer) {
+        m_cudaRenderer->shutdown();
+        delete m_cudaRenderer;
+        m_cudaRenderer = nullptr;
+    }
+    
+    m_cudaInitialized = false;
+#endif
 }
 
 void Renderer::beginFrame()
@@ -201,6 +243,17 @@ void Renderer::renderMap(Map* map, Camera* camera)
     if (!map || !camera) {
         return;
     }
+    
+#ifdef ENABLE_CUDA
+    // Use CUDA rendering if enabled and initialized
+    if (m_cudaRenderingEnabled && m_cudaInitialized && m_cudaRenderer) {
+        // Render using CUDA
+        renderMapCUDA(map, camera);
+        return;
+    }
+#endif
+    
+    // Fallback to CPU rendering
     
     // Ensure all structures are enclosed before rendering
     ensureStructuresEnclosed(map);
